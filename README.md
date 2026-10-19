@@ -24,6 +24,21 @@
 
 ![SmartSub 主界面](./resources/preview/home.png)
 
+## 特别赞助
+
+<a href="https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM" target="_blank" rel="noopener noreferrer"><img src="./resources/sponsors/crazytoken-zh.png" alt="SmartSub × CrazyToken：全模型服务，最高省 99%，低至 0.05x，新用户注册即领 $20 体验额度" /></a>
+
+❤️ 感谢 [**CrazyToken**](https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM) 对 SmartSub 的赞助支持！
+
+#### CrazyToken | 多模型助力字幕翻译，让跨语言表达更自然，倍率低至0.05x，最高省99%
+
+CrazyToken 提供 Claude、GPT、Gemini、Kimi、GLM、DeepSeek、Qwen、Grok 等主流模型 API，为字幕翻译、语境理解、术语统一与校对润色提供模型支持。无论是课程视频、访谈播客，还是多语言内容制作，都能按语言和任务需求选择合适的模型。
+
+- 💰 **最低 0.05×，字幕翻译更省成本**：模型价格低至官方价格的 5%，Token 级账单透明可查，降低长视频字幕翻译与批量处理的模型调用成本。
+- ✨ **官方原生通道**：不掺水、不混模、不压缩长上下文，为理解前后文、统一术语和打磨译文提供模型支持。
+- ⚡ **稳定高速，高并发不限流**：为批量字幕翻译与多任务处理提供稳定的 API 服务，减少调用等待。
+- 🎁 **新用户注册赠送 $20**：通过[专属链接](https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM)注册即送 **$20 体验额度**，充值额外加赠；提供 **1 对 1 远程配置服务**，真人协助完成模型 API 配置。
+
 ## 妙幕是什么
 
 妙幕（SmartSub）是一款开源的音视频字幕与配音工具，把「语音转文字 → 字幕翻译 → 校对润色 → TTS 配音 → 烧录合成」整条流水线装进一个桌面应用，还内置在线视频下载，粘贴 B 站 / YouTube 等平台链接即可直接取材。转写基于 whisper.cpp、sherpa-onnx 等本地模型完成，文件不出本机；支持批量处理，支持 NVIDIA / AMD / Intel / Apple Silicon 硬件加速，可在 Windows、macOS、Linux 上运行。

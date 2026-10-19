@@ -24,6 +24,21 @@
 
 ![SmartSub ホーム画面](./resources/preview/home.png)
 
+## スペシャルスポンサー
+
+<a href="https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM" target="_blank" rel="noopener noreferrer"><img src="./resources/sponsors/crazytoken-ja.png" alt="SmartSub × CrazyToken：全モデル対応、最大 99% 節約、最低 0.05x、新規登録で $20 分のお試しクレジット" /></a>
+
+❤️ SmartSub をご支援いただいているスポンサー [**CrazyToken**](https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM) に感謝いたします！
+
+#### CrazyToken | 多彩なモデルで字幕翻訳をサポート。言語を越えて、より自然な表現へ。料金倍率は最低0.05x、最大99%節約
+
+CrazyToken は、Claude、GPT、Gemini、Kimi、GLM、DeepSeek、Qwen、Grok などの主要モデルの API を提供し、字幕翻訳、文脈理解、用語統一、校正・推敲をサポートします。講義動画、インタビュー・ポッドキャスト、多言語コンテンツの制作など、言語や作業内容に応じて最適なモデルを選べます。
+
+- 💰 **最低0.05×で、字幕翻訳のコストを削減**：モデル料金は公式価格の5%から。トークン単位の明細を確認できる透明な料金体系で、長尺動画の字幕翻訳や一括処理にかかるモデル API の利用コストを抑えられます。
+- ✨ **公式のネイティブチャネルを利用**：出力品質の意図的な低下、モデルの混在、長いコンテキストの圧縮は行いません。前後の文脈の理解、用語の統一、訳文のブラッシュアップをモデルがサポートします。
+- ⚡ **安定・高速、大量の同時リクエストにもレート制限なし**：字幕の一括翻訳や複数タスクの処理に安定した API サービスを提供し、待ち時間を短縮します。
+- 🎁 **新規登録で$20分のクレジットをプレゼント**：[専用リンク](https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM)から登録すると、**$20分のお試しクレジット**を獲得できます。チャージ時には追加ボーナスもご用意。**1対1のリモート設定サポート**で、担当者がモデル API の設定をお手伝いします。
+
 ## SmartSub とは
 
 妙幕（SmartSub）はオープンソースの字幕・吹き替えツールです。**音声の文字起こし → 字幕翻訳 → 校正 → AI 吹き替え（TTS）→ 焼き込み合成** という一連のパイプラインを、1 つのデスクトップアプリで完結できます。オンライン動画ダウンロードも内蔵しており、YouTube や Bilibili などのリンクを貼り付けるだけで素材を取得できます。文字起こしは whisper.cpp や sherpa-onnx などのローカルモデルで実行され、ファイルが外部に送信されることはありません。バッチ処理に対応し、NVIDIA / AMD / Intel / Apple Silicon の GPU アクセラレーションを利用でき、Windows・macOS・Linux で動作します。

@@ -24,6 +24,21 @@ Make every frame speak beautifully
 
 ![SmartSub home screen](./resources/preview/home-en.png)
 
+## Special Sponsor
+
+<a href="https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM" target="_blank" rel="noopener noreferrer"><img src="./resources/sponsors/crazytoken-en.png" alt="SmartSub × CrazyToken: all models, save up to 99%, from 0.05x, new users get $20 in free trial credits" /></a>
+
+❤️ Thank you to [**CrazyToken**](https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM) for sponsoring SmartSub!
+
+#### CrazyToken | Multiple models for more natural subtitle translation across languages — rates as low as 0.05x, savings of up to 99%
+
+CrazyToken offers APIs for leading models including Claude, GPT, Gemini, Kimi, GLM, DeepSeek, Qwen, and Grok, supporting subtitle translation, contextual understanding, terminology consistency, proofreading, and polishing. Whether you work with educational videos, interviews and podcasts, or multilingual content, you can choose the model that best fits your language and task.
+
+- 💰 **As low as 0.05× for more affordable subtitle translation**: Model pricing starts at just 5% of official prices, with transparent, token-level billing you can review. Reduce model API costs for translating subtitles for long videos and processing subtitles in batches.
+- ✨ **Native access through official channels**: No watered-down responses, model mixing, or long-context compression. Get model support for understanding surrounding context, maintaining consistent terminology, and refining translations.
+- ⚡ **Stable, fast, high-concurrency access with no rate limits**: Reliable API services for batch subtitle translation and multitasking help reduce waiting time.
+- 🎁 **$20 in free credits for new users**: Register through the [exclusive link](https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM) to receive **$20 in trial credits**, plus additional bonuses when you top up. **One-on-one remote setup assistance** is also available, with a real person helping you configure your model API.
+
 ## What is SmartSub?
 
 SmartSub is an open-source subtitle and dubbing tool that packs the whole pipeline — **speech-to-text → subtitle translation → proofreading → AI dubbing → burn-in** — into one desktop app, with a built-in online video downloader: paste a YouTube / Bilibili link and the source video is fetched for you. Transcription runs on local models (whisper.cpp, sherpa-onnx and more), so your files never leave your machine. It handles batch jobs, accelerates on NVIDIA / AMD / Intel / Apple Silicon GPUs, and runs on Windows, macOS, and Linux.
