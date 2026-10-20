@@ -214,8 +214,10 @@ const TaskSettingsSheet: React.FC<TaskSettingsSheetProps> = ({
             </div>
           )}
 
-          {/* 内边距放在视口内部：避免输入框 focus ring 被 ScrollArea 视口横向裁剪 */}
-          <ScrollArea className="min-h-0 flex-1">
+          {/* 内边距放在视口内部：避免输入框 focus ring 被 ScrollArea 视口横向裁剪。
+              以 tab 为 key：两页共用一个滚动视口，不换 key 的话，切页会停在上一页留下的
+              滚动位置，常用页的第一组就被卷到视口上方。 */}
+          <ScrollArea key={activeTab} className="min-h-0 flex-1">
             <div className="px-6 pb-6 pt-1">
               <Form {...form}>
                 <form onSubmit={(event) => event.preventDefault()}>
