@@ -186,6 +186,10 @@ const config: Config = {
               label: 'GitHub',
               href: 'https://github.com/buxuku/SmartSub',
             },
+            {
+              label: '赞助合作',
+              to: '/sponsorship',
+            },
           ],
         },
       ],

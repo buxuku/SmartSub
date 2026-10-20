@@ -26,6 +26,8 @@
 
 ## 特别赞助
 
+🤝 想成为赞助商或洽谈合作？请查看 [**赞助合作说明**](https://smartsub.linxiaodong.com/sponsorship)。
+
 <a href="https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM" target="_blank" rel="noopener noreferrer"><img src="./resources/sponsors/crazytoken-zh.png" alt="SmartSub × CrazyToken：全模型服务，最高省 99%，低至 0.05x，新用户注册即领 $20 体验额度" /></a>
 
 ❤️ 感谢 [**CrazyToken**](https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM) 对 SmartSub 的赞助支持！
