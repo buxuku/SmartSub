@@ -4,6 +4,7 @@ import type {
   ScenarioPresetFields,
 } from '../../types/scenarioPresets';
 import {
+  inferDisplayOutcome,
   resolveEffectiveSettings,
   TASK_VAD_FIELDS,
 } from '../../types/subtitleOutcome';
@@ -184,34 +185,169 @@ export function convertToCustomOutcome(
   form.setValue('scenarioPreset', 'custom', { shouldDirty: true });
 }
 
+/**
+ * The two fields whose factory default is `0` ("let SmartSub decide": automatic subtitle
+ * length, automatic speaker count). Every other unset field is undefined / null / '' / false,
+ * so a zero only counts as "not touched" for these two. Reading the zero as a change made
+ * every fresh install start on "专家自定义".
+ */
+const ZERO_IS_UNTOUCHED_KEYS: ReadonlySet<string> = new Set([
+  'maxSubtitleChars',
+  'speakerDiarizationCount',
+]);
+
+function isUntouchedValue(key: string, value: unknown): boolean {
+  if (value === undefined || value === null || value === '' || value === false)
+    return true;
+  return value === 0 && ZERO_IS_UNTOUCHED_KEYS.has(key);
+}
+
+/**
+ * The scenario a task is based on: the one the user picked, 通用均衡 when none was picked,
+ * and 'custom' for an explicit 自定义 or an id this version does not know any more.
+ */
+export function getBaseScenarioPreset(
+  formData: Record<string, any> | undefined,
+): ScenarioPresetId {
+  const id = formData?.scenarioPreset;
+  if (!id) return 'balanced';
+  return getScenarioPresetDef(id) ? id : 'custom';
+}
+
+/**
+ * The preset fields that no longer hold what the scenario would set (and the fields the
+ * scenario leaves alone but the task has touched), in `ALL_PRESET_FIELD_KEYS` order.
+ * Empty when the task is exactly the scenario, and for 'custom', which has nothing to
+ * compare against.
+ *
+ * `subtitleOutcome` is compared as shown on screen: a snapshot saved before the tiers
+ * existed has none, and reads as the tier its VAD / context knobs add up to.
+ */
+export function getPresetDeviations(
+  formData: Record<string, any> | undefined,
+  presetId?: ScenarioPresetId,
+): string[] {
+  if (!formData) return [];
+  const targetId = presetId ?? getBaseScenarioPreset(formData);
+  const preset = getScenarioPresetDef(targetId);
+  if (!preset || targetId === 'custom') return [];
+
+  const deviations: string[] = [];
+  for (const key of ALL_PRESET_FIELD_KEYS as string[]) {
+    const expected = preset.fields[key];
+    const actual =
+      key === 'subtitleOutcome'
+        ? inferDisplayOutcome(formData, undefined)
+        : formData[key];
+    const deviates =
+      expected !== undefined
+        ? actual !== expected
+        : !isUntouchedValue(key, actual);
+    if (deviates) deviations.push(key);
+  }
+  return deviations;
+}
+
+/** Groups a person recognises in the settings, the unit "已调整" counts in. */
+export type PresetDeviationGroup =
+  | 'recognitionStrategy'
+  | 'decoding'
+  | 'vadRepetition'
+  | 'segmentLength'
+  | 'segmentTuning'
+  | 'speakerDiarization'
+  | 'aiCorrection'
+  | 'fillerPolicy'
+  | 'translationStyle'
+  | 'subtitleLayout';
+
+const DEVIATION_GROUP_BY_KEY: Record<string, PresetDeviationGroup> = {
+  subtitleOutcome: 'recognitionStrategy',
+  fasterWhisperBeamSize: 'decoding',
+  fasterWhisperTemperature: 'decoding',
+  fasterWhisperCompressionRatioThreshold: 'decoding',
+  fasterWhisperLogProbThreshold: 'decoding',
+  useVAD: 'vadRepetition',
+  ...Object.fromEntries(
+    TASK_VAD_FIELDS.map((key) => [key, 'vadRepetition' as const]),
+  ),
+  maxContext: 'vadRepetition',
+  reduceRepetition: 'vadRepetition',
+  maxSubtitleChars: 'segmentLength',
+  subtitleMaxDuration: 'segmentTuning',
+  subtitleMaxGap: 'segmentTuning',
+  preserveSpeechPauses: 'segmentTuning',
+  speakerDiarization: 'speakerDiarization',
+  speakerDiarizationCount: 'speakerDiarization',
+  speakerDiarizationEmbedInSubtitle: 'speakerDiarization',
+  aiCorrection: 'aiCorrection',
+  subtitleFillerPolicy: 'fillerPolicy',
+  subtitleTranslationStyle: 'translationStyle',
+  subtitleLayout: 'subtitleLayout',
+  subtitleLineWidth: 'subtitleLayout',
+};
+
+/** The groups that live on the 专家 page of 更多设置 (the others are on 常用 or the toolbar). */
+const EXPERT_PAGE_GROUPS: ReadonlySet<PresetDeviationGroup> =
+  new Set<PresetDeviationGroup>([
+    'recognitionStrategy',
+    'decoding',
+    'vadRepetition',
+    'segmentTuning',
+  ]);
+
+export function isExpertPageGroup(group: PresetDeviationGroup): boolean {
+  return EXPERT_PAGE_GROUPS.has(group);
+}
+
+/** Folds field keys into the recognisable groups, once each, in first-seen order. */
+export function groupPresetDeviations(
+  keys: readonly string[],
+): PresetDeviationGroup[] {
+  const groups: PresetDeviationGroup[] = [];
+  for (const key of keys) {
+    const group = DEVIATION_GROUP_BY_KEY[key];
+    if (group && !groups.includes(group)) groups.push(group);
+  }
+  return groups;
+}
+
+export interface ScenarioState {
+  /** The scenario the task is based on ('custom' when the user chose 自定义). */
+  presetId: ScenarioPresetId;
+  /** The field keys that differ from that scenario; always empty for 'custom'. */
+  deviations: string[];
+  /** The same differences as the groups a person recognises. */
+  groups: PresetDeviationGroup[];
+  /** Something differs from the scenario. */
+  adjusted: boolean;
+  /** Something on the 专家 page differs from the scenario. */
+  expertAdjusted: boolean;
+}
+
+/** What the scenario button, the summary strip and the 专家 tab dot all read from. */
+export function getScenarioState(
+  formData: Record<string, any> | undefined,
+): ScenarioState {
+  const presetId = getBaseScenarioPreset(formData);
+  const deviations = getPresetDeviations(formData, presetId);
+  const groups = groupPresetDeviations(deviations);
+  return {
+    presetId,
+    deviations,
+    groups,
+    adjusted: groups.length > 0,
+    expertAdjusted: groups.some(isExpertPageGroup),
+  };
+}
+
 export function detectCurrentPreset(
   formData: Record<string, any> | undefined,
 ): ScenarioPresetId {
   if (!formData) return 'balanced';
-  if (formData.scenarioPreset === 'custom') return 'custom';
-
-  const targetId: ScenarioPresetId = formData.scenarioPreset || 'balanced';
-  const preset = getScenarioPresetDef(targetId);
-  if (!preset || targetId === 'custom') return 'custom';
-
-  for (const key of ALL_PRESET_FIELD_KEYS) {
-    const expected = preset.fields[key];
-    const actual = formData[key];
-    if (expected !== undefined) {
-      if (actual !== expected) {
-        return 'custom';
-      }
-    } else {
-      if (
-        actual !== undefined &&
-        actual !== null &&
-        actual !== '' &&
-        actual !== false
-      ) {
-        return 'custom';
-      }
-    }
-  }
-
-  return targetId;
+  const presetId = getBaseScenarioPreset(formData);
+  if (presetId === 'custom') return 'custom';
+  return getPresetDeviations(formData, presetId).length > 0
+    ? 'custom'
+    : presetId;
 }

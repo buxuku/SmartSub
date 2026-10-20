@@ -23,11 +23,21 @@ export const TASK_VAD_SPECS = [
 ] as const;
 export const TASK_VAD_FIELDS = TASK_VAD_SPECS.map((spec) => spec.key);
 
+/**
+ * Whether the engine reads 识别策略 (the outcome tier) and the task-level VAD knobs at all.
+ * The cloud and local-command engines hand the audio to someone else and never call
+ * `resolveEffectiveSettings`, so the UI shows a one-line note for them instead of a choice
+ * that would do nothing.
+ */
+export function supportsOutcomeStrategy(engine: string | undefined): boolean {
+  return engine !== 'cloud' && engine !== 'localCli';
+}
+
 export function supportsTaskVadField(
   engine: string | undefined,
   key: string,
 ): boolean {
-  if (engine === 'cloud' || engine === 'localCli') return false;
+  if (!supportsOutcomeStrategy(engine)) return false;
   if (key === 'vadSamplesOverlap') return isBuiltinEngineId(engine);
   if (key === 'vadSpeechPad')
     return isBuiltinEngineId(engine) || engine === 'fasterWhisper';
