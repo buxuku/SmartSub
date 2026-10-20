@@ -7,6 +7,7 @@ export {
   resolveEffectiveSettings,
   TASK_VAD_FIELDS,
   TASK_VAD_SPECS,
+  supportsOutcomeStrategy,
   supportsTaskVadField,
   type SubtitleOutcome,
 } from '../../types/subtitleOutcome';

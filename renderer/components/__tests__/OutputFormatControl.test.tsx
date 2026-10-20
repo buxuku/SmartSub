@@ -51,8 +51,8 @@ describe('the output style summary', () => {
     const example = screen.getByLabelText('outputExample');
     expect(within(example).getByText('outputExampleTarget')).toBeVisible();
     expect(within(example).queryByText('outputExampleSource')).toBeNull();
-    // The embedded subtitles switch moved to Advanced options; this popover is only the
-    // output format and style now.
+    // The embedded subtitles switch lives in More settings; this popover is only the
+    // output format and style.
     expect(screen.getByText('configBar.format')).toBeVisible();
     expect(screen.queryByRole('switch')).toBeNull();
     expect(screen.queryByText('configBar.embeddedSubtitles')).toBeNull();

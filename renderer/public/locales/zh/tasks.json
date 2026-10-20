@@ -7,10 +7,9 @@
     "retry": "重试保存",
     "loadFailed": "任务草稿读取失败，暂不可编辑或运行。"
   },
-  "advancedSettings": "专家参数",
   "readiness": {
-    "translation_style_requires_ai": "情感口语化翻译需要 AI 翻译服务。请选择 AI 服务，或在专家参数中切换为常规翻译。",
-    "speaker_diarization_unavailable": "角色分离模型或运行库未就绪。请在引擎页安装，或在专家参数中关闭角色分离。",
+    "translation_style_requires_ai": "情感口语化翻译需要 AI 翻译服务。请选择 AI 服务，或在「更多设置 › 常用」中切换为常规翻译。",
+    "speaker_diarization_unavailable": "角色分离模型或运行库未就绪。请在引擎页安装，或在「更多设置 › 常用」中关闭角色分离。",
     "tts_unavailable": "所选配音引擎不存在或配置不完整。",
     "tts_voice_unavailable": "所选音色已不可用，请重新选择。",
     "tts_language_unsupported": "所选配音引擎不支持当前配音语言。",
@@ -247,10 +246,35 @@
   "skippedDuplicates": "已跳过 {{count}} 个重复文件",
   "goDownloadModel": "去下载模型",
   "goConfigureProvider": "去配置翻译服务",
-  "advanced": "高级选项",
-  "advancedDesc": "不常改的细节设置，默认值即最佳实践",
+  "settings": {
+    "title": "更多设置",
+    "description": "默认值适合大多数视频，按需调整",
+    "tabs": {
+      "common": "常用",
+      "expert": "专家"
+    },
+    "summary": {
+      "scenario": "场景",
+      "adjusted": "已调整 {{count}} 项",
+      "restore": "恢复场景默认"
+    },
+    "groups": {
+      "source": "字幕来源",
+      "assist": "识别辅助",
+      "translate": "翻译与润色",
+      "output": "输出与保存",
+      "run": "运行",
+      "strategy": "识别策略",
+      "segmentTuning": "断句精调",
+      "decoding": "解码参数"
+    },
+    "strategy": {
+      "hint": "决定识别时更偏向保留每个细节，还是更偏向压制重复与幻觉字幕。场景已经带了合适的档位，想覆盖它时才需要改。",
+      "unsupported": "当前引擎（云端听写 / 本地命令行）不使用识别策略，识别效果由服务或命令本身决定。"
+    }
+  },
   "outcome": {
-    "label": "字幕效果",
+    "label": "识别策略",
     "recommended": "推荐",
     "accurate": {
       "title": "文字最准",
@@ -269,9 +293,9 @@
       "scene": "适合长视频，或含音乐 / 掌声 / 长静音的素材"
     },
     "custom": {
-      "title": "自定义",
+      "title": "手动调节",
       "desc": "手动调整上下文长度、VAD、抗重复等底层参数。",
-      "sectionTitle": "自定义参数",
+      "sectionTitle": "手动调节参数",
       "sherpaNote": "当前引擎（FunASR / Qwen / FireRed / Parakeet）的 VAD 为结构性常开，且无「上下文长度 / 抗重复」概念。如需细调 VAD 灵敏度，请到「设置」页调整。"
     },
     "compare": {
@@ -281,11 +305,6 @@
       "balanced": "今天我们来讲一下这个新功能。",
       "clean": "今天我们来讲一下这个新功能"
     }
-  },
-  "section": {
-    "recognition": "转写",
-    "output": "输出与保存",
-    "execution": "执行"
   },
   "embeddedSubtitleSetting": {
     "description": "视频自带文本字幕轨时直接提取，跳过语音识别；没有字幕轨的视频照常识别。",
@@ -517,7 +536,7 @@
     "subtitleFormats": "支持 SRT / VTT / ASS / SSA / LRC 字幕",
     "step1": "导入文件",
     "step2": "核对配置",
-    "step2Desc": "在上方配置条选择引擎、模型与语言，高级参数在右上角",
+    "step2Desc": "在上方配置条选择引擎、模型与语言，更多设置在右上角",
     "step3": "开始任务",
     "step3Desc": "点击右下角开始按钮，批量处理并实时查看进度"
   },
@@ -570,7 +589,6 @@
       "preserveSpeechPauses": "保留原声停顿"
     },
     "title": "场景预设",
-    "customHint": "微调以下参数将自动切换为自定义",
     "adjusted": "已调整",
     "footer": {
       "adjusted": "已调整：{{groups}}。切换场景会重置这些调整。",

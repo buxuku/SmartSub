@@ -7,10 +7,9 @@
     "retry": "Retry save",
     "loadFailed": "The task draft could not be loaded. Editing and running are unavailable."
   },
-  "advancedSettings": "Expert settings",
   "readiness": {
-    "translation_style_requires_ai": "Conversational translation requires an AI provider. Select one, or choose standard translation in expert settings.",
-    "speaker_diarization_unavailable": "Speaker models or runtime are unavailable. Install them on the Engines page, or turn off speaker diarization in expert settings.",
+    "translation_style_requires_ai": "Conversational translation requires an AI provider. Select one, or choose standard translation in More settings › Common.",
+    "speaker_diarization_unavailable": "Speaker models or runtime are unavailable. Install them on the Engines page, or turn off speaker diarization in More settings › Common.",
     "tts_unavailable": "The selected speech engine is missing or not configured.",
     "tts_voice_unavailable": "The selected voice is no longer available. Select it again.",
     "tts_language_unsupported": "The selected speech engine does not support the dubbing language.",
@@ -247,10 +246,35 @@
   "skippedDuplicates": "Skipped {{count}} duplicate file(s)",
   "goDownloadModel": "Download model",
   "goConfigureProvider": "Set up service",
-  "advanced": "Advanced options",
-  "advancedDesc": "Details you rarely change — the defaults are best practice",
+  "settings": {
+    "title": "More settings",
+    "description": "Defaults suit most videos. Adjust only what you need.",
+    "tabs": {
+      "common": "Common",
+      "expert": "Expert"
+    },
+    "summary": {
+      "scenario": "Scenario",
+      "adjusted": "{{count}} adjusted",
+      "restore": "Restore scenario defaults"
+    },
+    "groups": {
+      "source": "Subtitle source",
+      "assist": "Recognition aids",
+      "translate": "Translation & polish",
+      "output": "Output & saving",
+      "run": "Run",
+      "strategy": "Recognition strategy",
+      "segmentTuning": "Line-break tuning",
+      "decoding": "Decoding parameters"
+    },
+    "strategy": {
+      "hint": "Decides whether recognition favors keeping every detail or suppressing repeated and hallucinated lines. The scenario already picked a fitting level; change it only to override.",
+      "unsupported": "The current engine (cloud transcription / local command) does not use a recognition strategy; the service or command decides the result."
+    }
+  },
   "outcome": {
-    "label": "Subtitle effect",
+    "label": "Recognition strategy",
     "recommended": "Recommended",
     "accurate": {
       "title": "Most accurate text",
@@ -269,9 +293,9 @@
       "scene": "Best for long videos or material with music / applause / long silence"
     },
     "custom": {
-      "title": "Custom",
+      "title": "Manual tuning",
       "desc": "Manually tune context length, VAD, repetition reduction and other low-level parameters.",
-      "sectionTitle": "Custom parameters",
+      "sectionTitle": "Manual parameters",
       "sherpaNote": "For the current engine (FunASR / Qwen / FireRed / Parakeet), VAD is always on and there is no context-length / repetition concept. To fine-tune VAD sensitivity, use the Settings page."
     },
     "compare": {
@@ -281,11 +305,6 @@
       "balanced": "Today let's go over this new feature.",
       "clean": "Today let's go over this new feature"
     }
-  },
-  "section": {
-    "recognition": "Transcription",
-    "output": "Output & saving",
-    "execution": "Execution"
   },
   "embeddedSubtitleSetting": {
     "description": "When a video carries a text subtitle track, extract it instead of running speech recognition. Videos without one are transcribed as usual.",
@@ -517,7 +536,7 @@
     "subtitleFormats": "Supports SRT / VTT / ASS / SSA / LRC subtitles",
     "step1": "Import files",
     "step2": "Check the configuration",
-    "step2Desc": "Pick engine, model and languages in the config bar above; advanced options are top right",
+    "step2Desc": "Pick engine, model and languages in the config bar above; More settings is top right",
     "step3": "Start the task",
     "step3Desc": "Hit Start in the bottom-right corner to batch-process with live progress"
   },
@@ -570,7 +589,6 @@
       "preserveSpeechPauses": "Preserve speech pauses"
     },
     "title": "Scenario Presets",
-    "customHint": "Tuning parameters below switches to custom",
     "adjusted": "Adjusted",
     "footer": {
       "adjusted": "Adjusted: {{groups}}. Switching scenario resets them.",

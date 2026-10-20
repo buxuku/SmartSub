@@ -30,6 +30,7 @@ import {
   Bookmark,
   Play,
   RotateCcw,
+  SlidersHorizontal,
   Trash2,
   TriangleAlert,
   Upload,
@@ -77,7 +78,8 @@ import {
 } from 'lib/subtitleRefineValidation';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
 import CpuAdvisoryNotice from '@/components/diagnostics/CpuAdvisoryNotice';
-import AdvancedSheet from '@/components/tasks/AdvancedSheet';
+import TaskSettingsSheet from '@/components/tasks/TaskSettingsSheet';
+import type { TaskSettingsTab } from '@/components/tasks/settings/types';
 import TaskLoadStatus from '@/components/tasks/TaskLoadStatus';
 import useTaskDependencies from 'hooks/useTaskDependencies';
 import useUnifiedTaskConfig from 'hooks/useUnifiedTaskConfig';
@@ -716,7 +718,13 @@ export default function TaskWizard() {
   }, [form]);
   const [refinePopoverOpen, setRefinePopoverOpen] = useState(false);
   const [summaryPopoverOpen, setSummaryPopoverOpen] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** 更多设置停在哪一页：再次打开回到上次停留的页，场景弹层的「专家设置」直达专家页 */
+  const [settingsTab, setSettingsTab] = useState<TaskSettingsTab>('common');
+  const openSettings = (tab?: TaskSettingsTab) => {
+    if (tab) setSettingsTab(tab);
+    setSettingsOpen(true);
+  };
   const dependencies = useTaskDependencies();
   const { systemInfo, providers, asrProviders, settings } = dependencies;
   const systemInfoLoaded = dependencies.loaded;
@@ -2377,7 +2385,20 @@ export default function TaskWizard() {
       {/* 字幕段配置（转写/翻译）：复用任务页配置条 */}
       {showSubtitleConfig && (
         <Panel className="flex-none">
-          <PanelHeader title={t('wizard.subtitleConfigTitle')} />
+          <PanelHeader
+            title={t('wizard.subtitleConfigTitle')}
+            actions={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5 text-xs"
+                onClick={() => openSettings()}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                {t('settings.title')}
+              </Button>
+            }
+          />
           <div className="p-2.5">
             {/* 内置引擎且需要转写时，CPU 不满足就提前提醒（只提醒，不拦截） */}
             {formData?.transcriptionEngine === 'builtin' &&
@@ -2395,20 +2416,22 @@ export default function TaskWizard() {
               onRefineOpenChange={setRefinePopoverOpen}
               summaryOpen={summaryPopoverOpen}
               onSummaryOpenChange={setSummaryPopoverOpen}
-              onOpenSettings={() => setAdvancedOpen(true)}
+              onOpenSettings={openSettings}
             />
           </div>
         </Panel>
       )}
 
       {/* 配音配置 */}
-      <AdvancedSheet
-        open={advancedOpen}
-        onOpenChange={setAdvancedOpen}
+      <TaskSettingsSheet
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
         form={form}
         formData={formData}
         typeDef={configTypeDef}
         hasMediaInput={inputKind !== 'subtitle'}
+        tab={settingsTab}
+        onTabChange={setSettingsTab}
       />
       {dubOn && (
         <Panel className="flex-none">

@@ -20,21 +20,21 @@
 
 ## 3. 更多设置面板
 
-- [ ] 3.1 `git mv` `AdvancedSheet.tsx` → `TaskSettingsSheet.tsx`，组件与 props 类型改名；`renderer/components/tasks/settings/` 新增 `SettingsGroup`、`SettingRow`（左标签 + ⓘ、右控件；多行内容上下排）
-- [ ] 3.2 外壳：标题「更多设置」与说明；媒体任务的摘要条（场景名、「已调整 N 项」、「恢复场景默认」）；`常用 | 专家` tab（专家 tab 仅媒体任务，有偏离时带圆点）；纯翻译任务单页无 tab；`tab` 状态可由外部指定（`initialTab`）并在会话内记住
-- [ ] 3.3 常用页（`settings/CommonSettings.tsx`）：字幕来源、识别辅助、翻译与润色、输出与保存、运行五组，条件与规格一致；语气词处理仅在 `aiCorrection` 开启时出现；`translateRetryTimes` 放在「运行」；删除场景横幅与「字幕输出格式」
-- [ ] 3.4 专家页（`settings/ExpertSettings.tsx`）：识别策略（紧凑单选 + 当前档位一句话说明；样例对比与手动调节展开区原样搬入；`supportsOutcomeStrategy` 为 `false` 时只显示一行说明）、断句精调、解码参数（`FasterWhisperAdvancedFields` 原样搬入，默认折叠）
-- [ ] 3.5 `outcome.label` 改为「识别策略」，`outcome.custom.title` 改为「手动调节」，`outcome.custom.sectionTitle` 同步；`SavePathNotice` 的弹层宽度改为不超出窗口；删除 `SubtitleFormatSelect.tsx`
-- [ ] 3.6 `renderer/components/__tests__/AdvancedSheetEmbeddedSubtitles.test.tsx` 改名为 `TaskSettingsSheetEmbeddedSubtitles.test.tsx`，断言开关在「字幕来源」组
-- [ ] 3.7 `renderer/components/__tests__/TaskSettingsSheet.test.tsx`（新增，真实表单 + 真实面板）：tab 显隐（媒体任务有、纯翻译无）；没有「字幕输出格式」与场景横幅；常用页不含识别策略 / VAD / 断句精调；语气词处理与角色分离子项按需出现；`cloud` / `localCli` 不显示识别策略只有说明；专家 tab 圆点；切 tab 不丢值与脏标记；摘要条与「恢复场景默认」；`initialTab`
-- [ ] 3.8 提交 `feat(tasks)`：更多设置面板（含入口与文案，见第 4 组，两者同属一个可运行的状态）
+- [x] 3.1 `git mv` `AdvancedSheet.tsx` → `TaskSettingsSheet.tsx`，组件与 props 类型改名；`renderer/components/tasks/settings/` 新增 `SettingsGroup`、`SettingRow`（左标签 + ⓘ、右控件；多行内容上下排）；ⓘ 提示抽成 `renderer/components/tasks/ConfigItemHint.tsx`，工具栏与面板共用（各用自己的 `testId`）
+- [x] 3.2 外壳：标题「更多设置」与说明；媒体任务的摘要条（场景名、「已调整 N 项」、「恢复场景默认」）；`常用 | 专家` tab（专家 tab 仅媒体任务，有偏离时带圆点）；纯翻译任务单页无 tab；`tab` / `onTabChange` 受控：父组件持有 `settingsTab`，入口（场景脚注的「专家设置」、页头按钮）据此指定要打开的页，并在会话内记住用户翻到的页；不传则面板自管（取代原计划的 `initialTab`，一次关闭再打开不会丢掉用户翻到的页）
+- [x] 3.3 常用页（`settings/CommonSettings.tsx`）：字幕来源、识别辅助、翻译与润色、输出与保存、运行五组，条件与规格一致；语气词处理仅在 `aiCorrection` 开启时出现；`translateRetryTimes` 放在「运行」；删除场景横幅与「字幕输出格式」；全局参考文稿由「标签 + 两行说明 + 通栏虚线按钮」改成一行（标签 + ⓘ + 选择按钮，说明收进提示，选定后换成文件卡片与「清除」），1024×700 下前三组的内容才放得进首屏
+- [x] 3.4 专家页（`settings/ExpertSettings.tsx`）：识别策略（紧凑单选 + 当前档位一句话说明；样例对比与手动调节展开区原样搬入；`supportsOutcomeStrategy` 为 `false` 时只显示一行说明）、断句精调、解码参数（`FasterWhisperAdvancedFields` 原样搬入，默认折叠）
+- [x] 3.5 `outcome.label` 改为「识别策略」，`outcome.custom.title` 改为「手动调节」，`outcome.custom.sectionTitle` 同步；`SavePathNotice` 的弹层宽度改为不超出窗口；删除 `SubtitleFormatSelect.tsx`
+- [x] 3.6 `renderer/components/__tests__/AdvancedSheetEmbeddedSubtitles.test.tsx` 改名为 `TaskSettingsSheetEmbeddedSubtitles.test.tsx`，断言开关在「字幕来源」组
+- [x] 3.7 `renderer/components/__tests__/TaskSettingsSheet.test.tsx`（新增，真实表单 + 真实面板）：tab 显隐（媒体任务有、纯翻译无）；没有「字幕输出格式」与场景横幅；常用页不含识别策略 / VAD / 断句精调；语气词处理与角色分离子项按需出现；`cloud` / `localCli` 不显示识别策略只有说明；专家 tab 圆点；切 tab 不丢值与脏标记；摘要条与「恢复场景默认」；受控 / 非受控的 tab
+- [x] 3.8 提交 `feat(tasks)`：更多设置面板（含入口与文案，见第 4 组，两者同属一个可运行的状态）
 
 ## 4. 入口与文案
 
-- [ ] 4.1 `renderer/pages/[locale]/tasks/[type].tsx`：页头按钮改「更多设置」（有参考文稿时仍带提示点），`settingsTab` 状态，`onOpenSettings` 接到工具栏与面板；`renderer/components/tasks/wizard/TaskWizard.tsx`：配置面板 `PanelHeader` 新增同名 `actions` 按钮，同样的状态与接线
-- [ ] 4.2 `renderer/public/locales/{zh,en}/tasks.json`：`advanced` / `advancedDesc` → `settings.*`（标题、说明、tab 名、分组名、摘要条、引擎说明）；删除 `advancedSettings` 与 `presets.customHint`；就绪提示（`translation_style_requires_ai`、`speaker_diarization_unavailable`）改指「更多设置 › 常用」
-- [ ] 4.3 `renderer/public/locales/{zh,en}/home.json`：内封字幕提示改指「更多设置 › 常用」；`renderer/public/locales/{zh,en}/settings.json`：对「字幕效果」档位的引用改为「识别策略」；`renderer/components/tasks/AiRefineControl.tsx` 头注释同步
-- [ ] 4.4 `npm run check:i18n` 通过（zh / en 键一致、无 `t() || '…'` 回退）
+- [x] 4.1 `renderer/pages/[locale]/tasks/[type].tsx`：页头按钮改「更多设置」（有参考文稿时仍带提示点），`settingsTab` 状态，`onOpenSettings` 接到工具栏与面板；`renderer/components/tasks/wizard/TaskWizard.tsx`：配置面板 `PanelHeader` 新增同名 `actions` 按钮，同样的状态与接线
+- [x] 4.2 `renderer/public/locales/{zh,en}/tasks.json`：`advanced` / `advancedDesc` → `settings.*`（标题、说明、tab 名、分组名、摘要条、引擎说明）；删除 `advancedSettings` 与 `presets.customHint`；就绪提示（`translation_style_requires_ai`、`speaker_diarization_unavailable`）改指「更多设置 › 常用」；空状态引导 `empty.step2Desc` 的「高级参数在右上角」改为「更多设置在右上角」
+- [x] 4.3 `renderer/public/locales/{zh,en}/home.json`：内封字幕提示改指「更多设置 › 常用」；`renderer/public/locales/{zh,en}/settings.json`：对「字幕效果」档位的引用改为「识别策略」；`renderer/components/tasks/AiRefineControl.tsx` 头注释同步
+- [x] 4.4 `npm run check:i18n` 通过（zh / en 键一致、无 `t() || '…'` 回退）
 
 ## 5. 工具栏
 

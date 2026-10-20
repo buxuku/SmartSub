@@ -1,14 +1,14 @@
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { useForm } from 'react-hook-form';
-import AdvancedSheet from '../tasks/AdvancedSheet';
+import TaskSettingsSheet from '../tasks/TaskSettingsSheet';
 import { getTaskTypeBySlug } from '../../lib/taskTypes';
 
 /**
  * The embedded subtitles switch used to sit at the bottom of the subtitle format popover;
- * it now leads the Transcription section of Advanced options, which the task page and
- * the wizard share. Radix's dialog and scroll area are replaced by plain elements: they
- * cost seconds in jsdom and have nothing to do with what is asserted here.
+ * it now leads 更多设置 › 常用 as the whole 字幕来源 group, which the task page and the
+ * wizard share. Radix's dialog and scroll area are replaced by plain elements: they cost
+ * seconds in jsdom and have nothing to do with what is asserted here.
  */
 jest.mock('next-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -41,7 +41,7 @@ function Sheet({
 }) {
   form = useForm({ defaultValues: defaults });
   return (
-    <AdvancedSheet
+    <TaskSettingsSheet
       open
       onOpenChange={() => {}}
       form={form}
@@ -75,20 +75,27 @@ beforeEach(() => {
   } as any;
 });
 
-test('the Transcription section leads with the switch, on unless the task says otherwise', async () => {
+test('the subtitle source group leads the common page with the switch, on unless the task says otherwise', async () => {
   await mount({ typeDef: getTaskTypeBySlug('generate')! });
   const embedded = screen.getByRole('switch', { name: SWITCH });
   expect(embedded).toHaveAttribute('aria-checked', 'true');
-  const section = screen.getByText('section.recognition');
+
+  const source = screen.getByTestId('settings-group-source');
   expect(
-    section.compareDocumentPosition(embedded) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
+    within(source).getByText('settings.groups.source'),
+  ).toBeInTheDocument();
+  expect(within(source).getByRole('switch', { name: SWITCH })).toBe(embedded);
   expect(
-    screen.getByRole('checkbox', {
+    within(source).getByRole('checkbox', {
       name: 'embeddedSubtitleSetting.promptLabel',
     }),
   ).toBeInTheDocument();
+
+  // First on the page, ahead of every other group.
+  const groups = screen
+    .getAllByTestId(/^settings-group-/)
+    .map((group) => group.getAttribute('data-testid'));
+  expect(groups[0]).toBe('settings-group-source');
 });
 
 test('shows a task that forces speech recognition as switched off', async () => {

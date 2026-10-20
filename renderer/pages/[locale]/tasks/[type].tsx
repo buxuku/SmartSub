@@ -79,7 +79,8 @@ import { useNavigationGuard } from '@/context/NavigationGuardContext';
 import TaskControls from '@/components/TaskControls';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
 import SnapshotConfigBar from '@/components/tasks/SnapshotConfigBar';
-import AdvancedSheet from '@/components/tasks/AdvancedSheet';
+import TaskSettingsSheet from '@/components/tasks/TaskSettingsSheet';
+import type { TaskSettingsTab } from '@/components/tasks/settings/types';
 import TaskLoadStatus from '@/components/tasks/TaskLoadStatus';
 import TaskRowList from '@/components/tasks/TaskRowList';
 import TaskGridList from '@/components/tasks/TaskGridList';
@@ -120,7 +121,13 @@ export default function TaskPage() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [taskStatus, setTaskStatus] = useState('idle');
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** 更多设置停在哪一页：再次打开回到上次停留的页，场景弹层的「专家设置」直达专家页 */
+  const [settingsTab, setSettingsTab] = useState<TaskSettingsTab>('common');
+  const openSettings = (tab?: TaskSettingsTab) => {
+    if (tab) setSettingsTab(tab);
+    setSettingsOpen(true);
+  };
   const [refinePopoverOpen, setRefinePopoverOpen] = useState(false);
   const [summaryPopoverOpen, setSummaryPopoverOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -1581,15 +1588,15 @@ export default function TaskPage() {
                   variant="outline"
                   size="sm"
                   className="relative h-8 text-xs gap-1.5"
-                  onClick={() => setAdvancedOpen(true)}
+                  onClick={() => openSettings()}
                   title={
                     hasActiveManuscript
-                      ? `${t('advanced')} (${t('manuscript.label')})`
-                      : t('advanced')
+                      ? `${t('settings.title')} (${t('manuscript.label')})`
+                      : t('settings.title')
                   }
                 >
                   <SlidersHorizontal className="h-3.5 w-3.5" />
-                  {t('advanced')}
+                  {t('settings.title')}
                   {hasActiveManuscript && (
                     <span
                       className="absolute -top-1 -right-1 flex h-2 w-2 rounded-full bg-primary"
@@ -1627,7 +1634,7 @@ export default function TaskPage() {
             onRefineOpenChange={setRefinePopoverOpen}
             summaryOpen={summaryPopoverOpen}
             onSummaryOpenChange={setSummaryPopoverOpen}
-            onOpenSettings={() => setAdvancedOpen(true)}
+            onOpenSettings={openSettings}
           />
         )}
       </div>
@@ -1846,12 +1853,14 @@ export default function TaskPage() {
       <LogPanel className="flex-shrink-0" projectId={projectId} />
       {retrySubmission.dialog}
 
-      <AdvancedSheet
-        open={advancedOpen}
-        onOpenChange={setAdvancedOpen}
+      <TaskSettingsSheet
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
         form={form}
         formData={formData}
         typeDef={typeDef}
+        tab={settingsTab}
+        onTabChange={setSettingsTab}
       />
 
       {/* 全部放行二次确认（含文件数） */}
