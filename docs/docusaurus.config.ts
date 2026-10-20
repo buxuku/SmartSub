@@ -170,7 +170,7 @@ const config: Config = {
           title: '社区',
           items: [
             {
-              label: '微信交流群',
+              label: 'QQ 交流群',
               href: 'https://github.com/buxuku/SmartSub#社区与支持',
             },
             {

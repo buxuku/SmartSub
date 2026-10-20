@@ -15,7 +15,7 @@ keywords:
 
 # 常见问题
 
-遇到问题先来这里查。没找到答案的话，打开[日志中心](/advanced/logs)复制相关日志，到 [GitHub Issues](https://github.com/buxuku/SmartSub/issues) 反馈，或加入微信交流群。
+遇到问题先来这里查。没找到答案的话，打开[日志中心](/advanced/logs)复制相关日志，到 [GitHub Issues](https://github.com/buxuku/SmartSub/issues) 反馈，或加入 QQ 交流群。
 
 ## 安装与启动
 
@@ -131,4 +131,4 @@ Edge 免费通道为逆向接口（曾大规模断供），**不承诺可用性*
 
 1. 打开[日志中心](/advanced/logs)复制错误前后的日志
 2. 附上应用版本、系统信息与复现步骤，[提交 Issue](https://github.com/buxuku/SmartSub/issues)
-3. 或加入微信交流群交流（入口见 [GitHub 仓库](https://github.com/buxuku/SmartSub)）
+3. 或加入 QQ 交流群交流（入口见 [GitHub 仓库](https://github.com/buxuku/SmartSub)）
