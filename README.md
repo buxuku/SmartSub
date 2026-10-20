@@ -192,6 +192,16 @@ brew upgrade --cask smartsub # 升级
 2. 在启动台选择任务，拖入音视频或字幕文件（或粘贴链接下载在线视频），设置源语言、目标语言等参数
 3. 开始处理；完成后可继续校对字幕、配音或烧录合成
 
+## 代码签名策略（Code signing policy）
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+
+- **签名范围**：Windows 安装包（`SmartSub_Windows_<版本>_x64.exe`）。签名在 GitHub Actions 中自动完成，每个正式版本发布前都要经过人工批准。签名从证书签发后的首个版本开始生效，此前发布的版本未签名。
+- **团队角色**：
+  - Authors（可直接修改源码）与 Reviewers（审核外部贡献者提交的 Pull Request）：[@buxuku](https://github.com/buxuku)
+  - Approvers（批准每一次发布签名）：[@buxuku](https://github.com/buxuku)
+- **隐私政策**：SmartSub 不收集、不上传任何使用数据，也不含统计 SDK。启动时唯一自动联网的是检查更新（请求 GitHub Releases，可在设置中关闭「启动时检查更新」）。下载模型、加速包与视频下载引擎、下载在线视频，以及云端翻译、云端听写、云端配音，都只在你使用对应功能时才联网，内容只发往你自己选择或配置的服务，这些服务适用它们各自的隐私政策。崩溃诊断与日志只保存在本机，不会自动上传。详见[隐私政策](https://smartsub.linxiaodong.com/code-signing-policy#privacy-policy)。
+
 ## 进阶指南
 
 <details>
