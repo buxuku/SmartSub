@@ -90,6 +90,13 @@ Radix 在对话框打开时聚焦第一个可 Tab 的元素。没有 tab 的单�
 **14. 每页从顶部开始：滚动区以当前 tab 为 key。（实现中补充）**
 常用与专家是同一个面板的两页，共用一个滚动视口。在专家页滚动后切回常用，视口留在旧的偏移上，常用页的第一组被卷到上方，像是面板从中间打开。给 `ScrollArea` 加上 `key={activeTab}`，切页就换一个新视口，回到顶部。重建不丢任何东西：值与脏标记在表单里，不在页里（`shouldUnregister` 为 false，`TaskSettingsSheet.test.tsx` 锁定"切页不丢值，脏标记也在"）。不记住每页各自的滚动位置：两页内容差别大，回到上次位置的收益小，"打开就在顶部"是确定的。
 
+**15. 「仅生成字幕」的源字幕保存方式：向导在提交时修正，面板只改显示。（评审后补充）**
+「保存源字幕文件」出厂是「不保存」（`noSave`）。「仅生成字幕」任务的源字幕就是交付物，停在 `noSave` 会让它以 `<视频名>_temp.srt` 落盘（`getSrtFileName` 的 `noSave` 分支）；主进程为了不丢交付物，对这种旧配置照常导出，只是名字不对。任务页一直有一个 effect 把它改成 `fileName`，面板对这类任务隐藏「不保存」并把残留值显示成「文件名」，向导没有那个 effect——面板显示「文件名」，提交的却是 `noSave`。实测（真 Electron + 本地假 ASR，向导里不改任何设置走「视频 → 原文字幕」）：完成后视频旁边是 `pauses_temp.srt`，五秒后仍在；显式设成 `fileName` 的对照组是 `pauses.srt`。v3.10.1 就是这样，不是本分支引入的；本分支新增的向导「更多设置」按钮只是让「显示 ≠ 实际」更容易被看到。
+决定：规则只写一处，`renderer/lib/taskTypes.ts` 的 `correctedSourceSrtSaveOption(taskType, option)`（仅生成字幕且为 `noSave` / 空值时返回 `fileName`，否则返回 `undefined`），三个入口按各自的方式使用：任务页改表单（`correctValue`，不记为默认值，`sync-task-defaults-on-edit` 的规则不变）；面板只改显示；向导**只改提交的配置，不改表单**。
+为什么向导不改表单：任务页每种任务一页，页上的表单只会是这一种任务；向导的同一份表单会随「翻译」目标的开关在「仅生成」与「生成并翻译」之间来回切，若把 `fileName` 写进表单，切到翻译后源字幕就会多保存一份——带翻译的任务不保存源字幕才是默认。提交时再按当时的任务类型读一次，表单里的值始终是用户的选择（或出厂默认）。
+备选：在主进程提交的唯一入口（`persistTaskSubmission`，已有 `withValidTranslateContent` 的先例）统一修正——本次否决：决策 12 把主进程与流水线划在范围外，且会让所有入口（包括自动化显式传入的值）的行为一起变；备选：向导里加一个跟任务页一样的 effect——否决：理由同上，会污染切到翻译后的表单。
+范围之外：下载流水线（`main/helpers/videoDownload/pipeline.ts`）用 `defaultUserConfig` + 用户配置 + 配方里存的配置组任务，`taskType` 为 `generateOnly` 时没有人读这个字段，读代码看同样会落成 `_temp.srt`（未实测）。见待办。
+
 ## Risks / Trade-offs
 
 - [1024px 下加分隔线让工具栏换行] → 分隔线做成边框而非额外元素；`task-project-persistence` e2e（英文长标签下 1024 / 1440 核心控件同一行）与 `wizard-recovery` e2e（每个控件都在 inspector 内且可点击）把关；不通过就只保留顺序。
@@ -106,3 +113,5 @@ Radix 在对话框打开时聚焦第一个可 Tab 的元素。没有 tab 的单�
 - 尚未归档的 `embedded-subtitle-start-prompt` 与 `sync-task-defaults-on-edit` 两个变更的规格 / 设计里仍写着「高级选项」「高级选项 › 转写」（写成时面板还叫这个名字）。它们归档前应改成「更多设置 › 常用」，免得主规格里留下一个界面上已经没有的名字；本次没有动别的变更的文件。
 - `main/helpers/engines/*.ts` 与 `main/helpers/ipcStoreHandlers.ts` 的注释仍说「字幕效果档位」。只是注释，`types/subtitleOutcome.ts` 的头注释写明了新旧名字的对应，之后顺手改即可。
 - 在「手动调节」之后改选内置档位，`scenarioPreset` 仍是 `custom`（按钮继续显示「自定义」），直到用户再选一次场景：`convertToCustomOutcome` 一向只往一个方向走，数据层不动，所以本次不改。
+  评审后补记这一步的另一个后果：留在表单里的任务级 VAD 值（`vadThreshold` 等四项）不会被清掉，仍叠在内置档位上（`resolveEffectiveSettings` 的 `withTaskVad` 对每一档都生效，界面上只有「手动调节」展开时才看得到滑块）。以真实函数验证：whisper 系只有拖过 VAD 滑块才有残留（拖到 0.2 / 600 再切回「文字最准」，实际仍是 0.2 / 600，该档位本是 0.35 / 100）；sherpa 系（funasr / qwen / fireRedAsr / parakeet）的档位只映射 VAD，只要点开过一次「手动调节」（一个滑块都没动）再切回内置档位，VAD 就停在进入时那一档的值，各档之间对 VAD 不再有区别。`main` 的 `AdvancedSheet` 里是同一段处理，不是本分支引入；只影响 VAD 灵敏度，且必须先进专家页的「手动调节」再退回，评审后决定不修。要修的话，切回内置档位时清掉 `TASK_VAD_FIELDS` 即可。
+- 下载流水线（`main/helpers/videoDownload/pipeline.ts`）生成的「仅生成字幕」任务可能仍落成 `<视频名>_temp.srt`，见决策 15 的「范围之外」（读代码得出，未实测）。要修，可以在那里组任务配置时用同一条规则，或在 `persistTaskSubmission` 统一处理。
