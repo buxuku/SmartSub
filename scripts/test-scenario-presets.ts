@@ -11,6 +11,7 @@ import {
   groupPresetDeviations,
   isExpertPageGroup,
   convertToCustomOutcome,
+  leaveCustomOutcome,
   type ScenarioPresetId,
 } from '../renderer/lib/scenarioPresets';
 import {
@@ -513,6 +514,76 @@ for (const engine of [
     0.42,
   );
   assert.deepEqual(globalSettings, before);
+}
+
+// Leaving 手动调节 for a built-in tier hands the task back to that tier. 手动调节 writes the
+// effective VAD / context / repetition values of the tier it replaces into the task, and
+// `withTaskVad` applies task-level VAD values under every tier, so values left behind would make
+// 最干净最稳 run with the VAD of whichever tier (or slider position) the user came from.
+{
+  const globalSettings = {
+    vadThreshold: 0.5,
+    vadMinSpeechDuration: 250,
+    vadMinSilenceDuration: 180,
+    vadSpeechPad: 320,
+  };
+  const tiers = ['accurate', 'balanced', 'clean'] as const;
+  const manualKnobs = [
+    'maxContext',
+    'useVAD',
+    'reduceRepetition',
+    ...TASK_VAD_FIELDS,
+  ];
+  for (const transcriptionEngine of [
+    'builtin',
+    'fasterWhisper',
+    'funasr',
+    'qwen',
+    'fireRedAsr',
+    'parakeet',
+  ]) {
+    for (const from of tiers) {
+      for (const to of tiers) {
+        const label = `${transcriptionEngine}: ${from} → 手动调节 → ${to}`;
+        const values: Record<string, unknown> = {
+          transcriptionEngine,
+          subtitleOutcome: from,
+          fasterWhisperBeamSize: 5,
+        };
+        const form = {
+          setValue: (key: string, value: unknown) => {
+            values[key] = value;
+          },
+        };
+        convertToCustomOutcome(form, values, globalSettings);
+        // On 手动调节 the user may also move a slider.
+        values.vadThreshold = 0.2;
+        values.vadMinSpeechDuration = 600;
+        leaveCustomOutcome(form, to);
+        assert.equal(values.subtitleOutcome, to, label);
+        assert.deepEqual(
+          resolveEffectiveSettings(values, globalSettings),
+          resolveEffectiveSettings(
+            { transcriptionEngine, subtitleOutcome: to },
+            globalSettings,
+          ),
+          `${label} runs like a task that was on ${to} all along`,
+        );
+        for (const key of manualKnobs)
+          assert.equal(values[key], undefined, `${label}: ${key} is dropped`);
+        assert.equal(
+          values.fasterWhisperBeamSize,
+          5,
+          'nothing else is touched',
+        );
+        assert.equal(
+          values.scenarioPreset,
+          'custom',
+          'the scenario label stays 自定义 (one-way by design)',
+        );
+      }
+    }
+  }
 }
 assert.equal(
   resolveEffectiveSettings(

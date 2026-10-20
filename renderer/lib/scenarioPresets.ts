@@ -7,6 +7,7 @@ import {
   inferDisplayOutcome,
   resolveEffectiveSettings,
   TASK_VAD_FIELDS,
+  type SubtitleOutcome,
 } from '../../types/subtitleOutcome';
 
 export type { ScenarioPresetId, ScenarioPresetDef, ScenarioPresetFields };
@@ -166,23 +167,48 @@ export function applyScenarioPreset(
   });
 }
 
+/**
+ * The task-level values 手动调节 owns. `convertToCustomOutcome` writes the effective values
+ * of the tier it replaces into them, so the user can tune from there; `leaveCustomOutcome`
+ * takes them out again. A built-in tier ignores `maxContext` / `useVAD` / `reduceRepetition`
+ * but not the VAD values (`resolveEffectiveSettings` lets task-level VAD values win under
+ * every tier), so anything left behind would quietly change what the tier does.
+ */
+const CUSTOM_OUTCOME_KNOB_KEYS = [
+  'maxContext',
+  'useVAD',
+  'reduceRepetition',
+  ...TASK_VAD_FIELDS,
+] as const;
+
 export function convertToCustomOutcome(
   form: { setValue: (key: string, value: any, options?: any) => void },
   values: Record<string, unknown>,
   settings?: Record<string, unknown>,
 ): void {
   const effective = resolveEffectiveSettings(values, settings);
-  for (const key of [
-    'maxContext',
-    'useVAD',
-    'reduceRepetition',
-    ...TASK_VAD_FIELDS,
-  ]) {
+  for (const key of CUSTOM_OUTCOME_KNOB_KEYS) {
     if (effective[key] !== undefined)
       form.setValue(key, effective[key], { shouldDirty: true });
   }
   form.setValue('subtitleOutcome', 'custom', { shouldDirty: true });
   form.setValue('scenarioPreset', 'custom', { shouldDirty: true });
+}
+
+/**
+ * Pick a built-in recognition strategy while on 手动调节: the task goes back to what that
+ * tier does, so the values 手动调节 held are dropped (an `undefined` also takes them out of
+ * the remembered task defaults). Only for leaving 手动调节: between built-in tiers the VAD
+ * values a scenario set stay, as they always did. `scenarioPreset` stays `custom`, the
+ * one-way direction `convertToCustomOutcome` has always had.
+ */
+export function leaveCustomOutcome(
+  form: { setValue: (key: string, value: any, options?: any) => void },
+  tier: Exclude<SubtitleOutcome, 'custom'>,
+): void {
+  for (const key of CUSTOM_OUTCOME_KNOB_KEYS)
+    form.setValue(key, undefined, { shouldDirty: true });
+  form.setValue('subtitleOutcome', tier, { shouldDirty: true });
 }
 
 /**

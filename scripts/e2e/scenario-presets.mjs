@@ -240,6 +240,32 @@ try {
     'expert edits stay task-local',
   );
 
+  // Picking a built-in strategy again hands the task back to that tier: what 手动调节 held
+  // (the slider tuned above included) goes with it, so the tier means what its name says.
+  await page.getByRole('button', { name: '更多设置', exact: true }).click();
+  await sheet.getByTestId('settings-tab-expert').click();
+  await expect(vad).toHaveAttribute('aria-valuenow', '0.36');
+  await sheet.getByTestId('outcome-select').click();
+  await page.getByRole('option', { name: /^最干净最稳/ }).click();
+  await expect
+    .poll(async () => (await draftConfig()).subtitleOutcome)
+    .toBe('clean');
+  const handedBack = await draftConfig();
+  for (const key of [
+    'vadThreshold',
+    'maxContext',
+    'useVAD',
+    'reduceRepetition',
+  ])
+    assert.equal(
+      handedBack[key],
+      undefined,
+      `${key} does not outlive 手动调节`,
+    );
+  assert.equal(handedBack.preserveSpeechPauses, true, 'the scenario stays');
+  await expect(vad).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
   // Keep the actual task values, switch only the ASR transport to a local fixture. 「保存源
   // 字幕文件」 is deliberately left at the factory 「不保存」: a task that only generates
   // subtitles has to read that as the video's file name (see the assertions below).
@@ -315,6 +341,7 @@ try {
         '1024/1440 layout and 常用 starting at its top after 专家',
         'refresh recovery',
         'global isolation',
+        'leaving 手动调节 for a tier drops the values it held',
         'real local ASR pipeline',
         'factory 「不保存」 delivers pauses.srt, not pauses_temp.srt, for a subtitles-only task',
         'pause-preserving SRT',

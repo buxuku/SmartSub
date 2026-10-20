@@ -35,7 +35,10 @@ import {
   TASK_VAD_SPECS,
   type SubtitleOutcome,
 } from 'lib/subtitleOutcome';
-import { convertToCustomOutcome } from '@/lib/scenarioPresets';
+import {
+  convertToCustomOutcome,
+  leaveCustomOutcome,
+} from '@/lib/scenarioPresets';
 import { supportsFasterWhisperAdvancedParams } from '../../../../types/transcriptionParams';
 
 /** 断句精调的两根滑块：范围与"没设过"时的显示值。 */
@@ -111,6 +114,11 @@ export default function ExpertSettings({
                           form,
                           form.getValues(),
                           settings,
+                        );
+                      else if (currentOutcome === 'custom')
+                        leaveCustomOutcome(
+                          form,
+                          tier as Exclude<SubtitleOutcome, 'custom'>,
                         );
                       else field.onChange(tier);
                     }}
