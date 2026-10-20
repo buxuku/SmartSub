@@ -130,7 +130,17 @@ const TaskSettingsSheet: React.FC<TaskSettingsSheetProps> = ({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-[420px] max-w-full sm:max-w-[420px] p-0"
+        className="w-[420px] max-w-full sm:max-w-[420px] p-0 focus:outline-none"
+        // Radix would focus the first tabbable element. On a page without tabs that can be
+        // the ⓘ next to a label, and focusing an ⓘ opens its tooltip: the panel opens with a
+        // hint over the first row, and that tooltip swallows the first Escape. Park focus
+        // on the panel instead; Tab still starts at the first control. The panel is not a
+        // control, so it draws no focus ring of its own (opened from the keyboard, the
+        // browser would outline the whole sheet); the controls inside keep theirs.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          (event.currentTarget as HTMLElement | null)?.focus();
+        }}
       >
         <Tabs
           value={activeTab}
