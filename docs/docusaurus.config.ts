@@ -160,6 +160,10 @@ const config: Config = {
               label: '常见问题',
               to: '/faq',
             },
+            {
+              label: '代码签名策略（Code signing policy）',
+              to: '/code-signing-policy',
+            },
           ],
         },
         {

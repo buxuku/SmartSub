@@ -22,6 +22,12 @@ v3 起每个平台只有一个安装包。GPU 加速包（CUDA / Vulkan）安装
 - **夸克网盘**（国内推荐）：https://pan.quark.cn/s/0b16479b40ca
 - **GitHub Releases**（全部历史版本）：https://github.com/buxuku/SmartSub/releases
 
+## 代码签名策略（Code signing policy）
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+
+Windows 安装包的签名范围、团队角色和隐私政策，见[代码签名策略](/code-signing-policy)。签名从证书签发后的首个版本开始生效，此前发布的版本未签名。
+
 ## 安装遇到问题？
 
 - macOS 提示「应用程序已损坏」、Windows SmartScreen 拦截等安装问题，见[下载与安装](/intro/installation)

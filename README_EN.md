@@ -192,6 +192,16 @@ brew upgrade --cask smartsub # upgrade
 2. Pick a task from the launchpad, drop in media or subtitle files (or paste a link to download an online video), and set source language, target language, and other options
 3. Start processing — then proofread, dub, or burn in the results
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+
+- **Scope**: the Windows installer (`SmartSub_Windows_<version>_x64.exe`). Signing runs automatically in GitHub Actions, and every release needs a manual approval before it is signed. Signing applies from the first release after the certificate was issued; earlier releases are unsigned.
+- **Team roles**:
+  - Authors (may change the source directly) and Reviewers (review pull requests from external contributors): [@buxuku](https://github.com/buxuku)
+  - Approvers (approve every release for signing): [@buxuku](https://github.com/buxuku)
+- **Privacy policy**: SmartSub does not collect or upload any usage data and contains no analytics SDK. The only thing it contacts automatically on startup is the update check (a request to GitHub Releases; turn it off with "Check for updates on startup" in Settings). Downloading models, acceleration packs and video download engines, downloading online videos, and cloud translation, Cloud ASR and cloud dubbing connect to the network only when you use those features, and send content only to the services you choose or configure — each of which applies its own privacy policy. Crash diagnostics and logs stay on your machine and are never uploaded automatically.
+
 ## Going deeper
 
 <details>

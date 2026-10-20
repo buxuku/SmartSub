@@ -192,6 +192,16 @@ brew upgrade --cask smartsub # アップグレード
 2. ランチパッドからタスクを選び、音声・動画または字幕ファイルをドロップ（リンクを貼り付けてオンライン動画をダウンロードすることも可能）して、ソース言語・ターゲット言語などを設定
 3. 処理を開始——完了後は校正・吹き替え・焼き込みへ続けられます
 
+## コード署名ポリシー（Code signing policy）
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+
+- **署名の対象**：Windows インストーラー（`SmartSub_Windows_<バージョン>_x64.exe`）。署名は GitHub Actions で自動的に行われ、リリースごとに署名前の手動承認が必要です。署名は証明書の発行後に最初にリリースされるバージョンから適用され、それ以前のバージョンは未署名です。
+- **チームの役割**：
+  - Authors（ソースコードを直接変更できる）と Reviewers（外部コントリビューターの Pull Request をレビューする）：[@buxuku](https://github.com/buxuku)
+  - Approvers（リリースごとの署名を承認する）：[@buxuku](https://github.com/buxuku)
+- **プライバシーポリシー**：SmartSub は利用データを収集・送信せず、解析用 SDK も含みません。起動時に自動で通信するのは更新確認のみです（GitHub Releases へのリクエスト。設定の「Check for updates on startup」で無効にできます）。モデル・アクセラレーションパック・動画ダウンロードエンジンの取得、オンライン動画のダウンロード、クラウドの翻訳・文字起こし・吹き替えは、該当機能を使うときだけ通信し、内容はあなたが選択・設定したサービスにのみ送信されます。それらのサービスにはそれぞれのプライバシーポリシーが適用されます。クラッシュ診断とログは端末内にのみ保存され、自動的にアップロードされることはありません。
+
 ## さらに詳しく
 
 <details>
