@@ -24,6 +24,7 @@
 - **入口统一。** 任务页头按钮与新建任务向导的配置面板头（新增）都叫「更多设置」；场景弹层脚注直达「更多设置」与「专家设置」（后者直接打开专家页）。入口回调由 `onOpenAdvanced` 改为 `onOpenSettings(tab?)`。
 - **命名与引用修正。** 「字幕效果」→「识别策略」，档位里的「自定义」→「手动调节」，场景的「专家自定义」→「自定义」；就绪提示、内封字幕对话框与首页提示里的入口路径改指「更多设置 › 常用」；设置页里对「字幕效果」档位的引用同步更名；文档站里已经过时的描述（不存在的「快速草稿 / 均衡 / 精细」档位名、断句与输出格式仍指向高级设置）一并改写。
 - **组件整理。** `AdvancedSheet.tsx` 改名 `TaskSettingsSheet.tsx`，按外壳 / 常用 / 专家拆分，共用 `SettingsGroup`、`SettingRow` 行式布局原语；删除不再使用的 `SubtitleFormatSelect.tsx`；`SavePathNotice` 的 600px 弹层改为不超出窗口的宽度。
+- **向导提交时，「仅生成字幕」任务的「不保存源字幕」按「文件名」处理。**（评审后补充）任务页一直这样做，向导没有：面板显示「文件名」，提交的却是出厂的 `noSave`，字幕落成 `<视频名>_temp.srt`。规则收成 `renderer/lib/taskTypes.ts` 的 `correctedSourceSrtSaveOption`，任务页、设置面板、向导共用；向导只改提交的配置，不改表单（见 `design.md` 决策 15）。
 - 不做：合并「词库 + 生成摘要」、并发数挪到列表底部、语气词策略挪进「断句与精修」弹层（第二期）；任何任务字段、预设取值、`convertToCustomOutcome` 与引擎逻辑的改动；版本号与 `Changelog/`（发版时写）。
 
 ## Capabilities
@@ -39,14 +40,15 @@
 ## Impact
 
 - 渲染进程：
-  - 逻辑：`renderer/lib/scenarioPresets.ts`（`getPresetDeviations`、偏离分组、`detectCurrentPreset` 改为基于它）、`types/scenarioPresets.ts`、`types/subtitleOutcome.ts`（引擎是否使用识别策略的判断）。
+  - 逻辑：`renderer/lib/scenarioPresets.ts`（`getPresetDeviations`、偏离分组、`detectCurrentPreset` 改为基于它）、`types/scenarioPresets.ts`、`types/subtitleOutcome.ts`（引擎是否使用识别策略的判断）、`renderer/lib/taskTypes.ts`（`correctedSourceSrtSaveOption`）。
   - 组件：`renderer/components/tasks/AdvancedSheet.tsx` → `TaskSettingsSheet.tsx`（外壳）与新增 `renderer/components/tasks/settings/`（`SettingsGroup`、`SettingRow`、常用、专家）；`ScenarioPresetControl.tsx`、`InlineConfigBar.tsx`、`AiRefineControl.tsx`（注释）、`renderer/components/SavePathNotice.tsx`；删除 `SubtitleFormatSelect.tsx`。
   - 页面：`renderer/pages/[locale]/tasks/[type].tsx`（页头按钮、`settingsTab` 状态）、`renderer/components/tasks/wizard/TaskWizard.tsx`（配置面板头新增按钮）。
   - 文案：`renderer/public/locales/{zh,en}/{tasks,home,settings}.json`。
 - 文档与规格：`docs/docs/features/subtitle-generation.md`、`docs/docs/faq.md`、`docs/docs/scenarios/podcast-to-text.md`、`docs/docs/guides/engines/whisper-cpp.md`、`docs/docs/features/subtitle-translation.md`；本变更的 `task-settings` 规格与对 `transcription-outcome-presets` 的修改。
 - 测试与脚本：`scripts/test-scenario-presets.ts`；`renderer/components/__tests__/AdvancedSheetEmbeddedSubtitles.test.tsx`（改名）、新增 `TaskSettingsSheet.test.tsx` 与 `ScenarioPresetControl.test.tsx`；e2e 选择器：`task-defaults`、`embedded-subtitle-prompt`、`scenario-presets`、`scenario-language`、`speaker-pipeline`、`wizard-recovery`、`task-project-persistence`（不动 `dubbing-*`：它们点的「高级选项」是配音面板自己的分组）。
-- 对外行为：全新用户的场景按钮显示「通用均衡」且无圆点；面板与入口改名；专家项集中到「专家」页；新建任务向导第一次有了显式入口；工具栏顺序与一个标签改变。任务字段、快照、配方、草稿与自动化的 schema 不变；`scenarioPreset` 只在渲染进程使用（`main/`、`types/` 里没有引用），无数据迁移。
+- 对外行为：全新用户的场景按钮显示「通用均衡」且无圆点；面板与入口改名；专家项集中到「专家」页；新建任务向导第一次有了显式入口；工具栏顺序与一个标签改变；向导里只生成字幕的任务，字幕按视频名保存（`<视频名>.srt`），不再是 `<视频名>_temp.srt`。任务字段、快照、配方、草稿与自动化的 schema 不变；`scenarioPreset` 只在渲染进程使用（`main/`、`types/` 里没有引用），无数据迁移。
 - 已知限制：
-  - `convertToCustomOutcome` 保持原样：选「手动调节」会把场景置为「自定义」，不再对应任何场景；再选一个场景才会重置。
+  - `convertToCustomOutcome` 保持原样：选「手动调节」会把场景置为「自定义」，不再对应任何场景；再选一个场景才会重置。由此，从「手动调节」切回内置识别策略时，任务级 VAD 值不会被清掉，仍叠在内置档位上（见 `design.md` 待办）。
+  - 下载流水线生成的「仅生成字幕」任务可能仍落成 `<视频名>_temp.srt`（见 `design.md` 决策 15 的「范围之外」）。
   - 工具栏 1024px 最小宽度下已很紧，分隔线是否保留取决于零换行测试；不通过时只保留顺序调整。
   - e2e 脚本依赖本机素材路径与已构建的应用，需在本机运行。
