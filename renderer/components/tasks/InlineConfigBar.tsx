@@ -96,6 +96,12 @@ function ConfigItem({
   );
 }
 
+/**
+ * 听 | 译 | 出：阶段之间的 1px 分隔线，做成阶段首项上的左边框（而不是多一个元素），
+ * 不改变 DOM 结构；与前一项的 gap 一起，两侧各留约 10px。
+ */
+const STAGE_START = 'border-l border-border/70 pl-2.5';
+
 const triggerClass = 'h-8 w-full min-w-0 text-xs gap-1';
 const modelTriggerClass = triggerClass;
 
@@ -324,9 +330,34 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
             </Select>
           </ConfigItem>
 
+          {typeDef.needsModel && (
+            <>
+              <ConfigItem label={t('configBar.scenario')}>
+                <ScenarioPresetControl
+                  form={form}
+                  formData={formData}
+                  onOpenSettings={onOpenSettings}
+                />
+              </ConfigItem>
+              <ConfigItem label={t('refine.control.label')}>
+                <AiRefineControl
+                  form={form}
+                  formData={formData}
+                  providers={providers}
+                  typeDef={typeDef}
+                  open={refineOpen}
+                  onOpenChange={onRefineOpenChange}
+                />
+              </ConfigItem>
+            </>
+          )}
+
           {typeDef.hasTranslate && (
             <>
-              <ConfigItem label={t('configBar.targetLanguage')}>
+              <ConfigItem
+                label={t('configBar.targetLanguage')}
+                className={typeDef.needsModel ? STAGE_START : undefined}
+              >
                 <Select
                   value={formData.targetLanguage}
                   onValueChange={(v) => setValue('targetLanguage', v)}
@@ -428,29 +459,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
             </>
           )}
 
-          {typeDef.needsModel && (
-            <>
-              <ConfigItem label={t('configBar.scenario')}>
-                <ScenarioPresetControl
-                  form={form}
-                  formData={formData}
-                  onOpenSettings={onOpenSettings}
-                />
-              </ConfigItem>
-              <ConfigItem label={t('refine.control.label')}>
-                <AiRefineControl
-                  form={form}
-                  formData={formData}
-                  providers={providers}
-                  typeDef={typeDef}
-                  open={refineOpen}
-                  onOpenChange={onRefineOpenChange}
-                />
-              </ConfigItem>
-            </>
-          )}
-
-          <ConfigItem label={t('configBar.format')}>
+          <ConfigItem label={t('configBar.output')} className={STAGE_START}>
             <OutputFormatControl
               form={form}
               formData={formData}

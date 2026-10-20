@@ -165,6 +165,7 @@
     "tagAi": "AI / LLM",
     "tagTraditional": "Traditional MT",
     "toastTraditionalRefineConflict": "Switched to \"{{provider}}\". Since \"{{feature}}\" is enabled, traditional MT cannot be used for AI refine — please select an AI provider in \"Line break & refine\" or disable it.",
+    "output": "Output",
     "style": "Output content",
     "format": "Subtitle format",
     "embeddedSubtitles": "Prefer embedded subtitles",

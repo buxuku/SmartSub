@@ -38,10 +38,10 @@
 
 ## 5. 工具栏
 
-- [ ] 5.1 `renderer/components/tasks/InlineConfigBar.tsx`：按 听（语音模型、视频语言、场景、断句与精修）｜ 译（翻译成、翻译服务、词库、生成摘要）｜ 出（输出）重排；组间 1px 分隔线实现为现有项上的边框，不增加元素与宽度
-- [ ] 5.2 输出控件的标签改用新增的 `configBar.output`（zh「输出」/ en），弹层内部小节标题保持 `configBar.format` / `configBar.style`
-- [ ] 5.3 工具栏零换行由 `scripts/e2e/task-project-persistence.mjs`（英文长标签下 1024 / 1440 核心控件同一行、都在窗口内且可点击）与 `scripts/e2e/wizard-recovery.mjs`（向导里每个控件都在 inspector 内且可点击）把关；不通过则去掉分隔线只保留顺序，并在本文件与设计里记录
-- [ ] 5.4 提交 `feat(tasks)`：工具栏按听 / 译 / 出排序
+- [x] 5.1 `renderer/components/tasks/InlineConfigBar.tsx`：按 听（语音模型、视频语言、场景、断句与精修）｜ 译（翻译成、翻译服务、词库、生成摘要）｜ 出（输出）重排；组间 1px 分隔线实现为阶段首项上的左边框（`border-l pl-2.5`），不增加元素；只画在前面确实还有另一个阶段的地方——纯翻译任务没有「听」，源语言与翻译成之间不画线
+- [x] 5.2 输出控件的标签改用新增的 `configBar.output`（zh「输出」/ en），弹层内部小节标题保持 `configBar.format` / `configBar.style`
+- [x] 5.3 工具栏零换行由 `scripts/e2e/task-project-persistence.mjs`（英文长标签下 1024 / 1440 核心控件同一行、都在窗口内且可点击）与 `scripts/e2e/wizard-recovery.mjs`（向导里每个控件都在 inspector 内且可点击）把关；不通过则去掉分隔线只保留顺序，并在本文件与设计里记录。结果：两个 e2e 在 1024 / 1440 下都通过，分隔线保留（`wizard-recovery` 在 6.1 修正「专家参数」选择器之前，用只改了这一个选择器的临时副本跑过）；`scripts/test-subtitle-output-ui.cjs` 新增三种任务类型的标签顺序、分隔线位置与「输出」标签断言
+- [x] 5.4 提交 `feat(tasks)`：工具栏按听 / 译 / 出排序
 
 ## 6. e2e 与文档
 
