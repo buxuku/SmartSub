@@ -6,11 +6,24 @@ on:
       - 'v*'
   # 手动触发：Actions 页面点 "Run workflow"，并在 "Use workflow from" 选择要发布的 tag（如 v2.16.0）
   workflow_dispatch:
+    inputs:
+      signing_policy:
+        description: '仅在分支上手动运行时生效：选 test-signing 用 SignPath 测试证书演练 Windows 签名流程（产物不会发布）。在 tag 上运行时忽略此项，是否签名由仓库变量 SIGNPATH_RELEASE_SIGNING 决定'
+        type: choice
+        options:
+          - none
+          - test-signing
+        default: none
 
 jobs:
   build_artifacts:
     name: Build ${{ matrix.os }} ${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
+    # SignPath 的 GitHub Action 要读取本次运行的 job 信息（actions: read）并校验源码来源（contents: read）。
+    # 仓库默认的 GITHUB_TOKEN 是只读且不含 actions，所以这里显式声明。
+    permissions:
+      contents: read
+      actions: read
     env:
       ELECTRON_BUILDER_HTTP_TIMEOUT: 6000000
       ELECTRON_MIRROR: 'https://npmmirror.com/mirrors/electron/'
@@ -99,6 +112,158 @@ jobs:
         shell: bash
         run: yarn size:check
 
+      # ---------------------------------------------------------------------------
+      # Windows 安装包代码签名（SignPath Foundation 为开源项目免费提供证书）
+      #
+      # 默认关闭：不满足下面任一条件时，这一组步骤全部跳过，发布流程与之前完全一致。
+      #   1. tag（v*）上运行，且仓库变量 SIGNPATH_RELEASE_SIGNING 为 true
+      #      → 用 release-signing 策略。SignPath 会邮件通知审批人，批准后才继续，
+      #        所以这里会一直等待；2 小时内没批准则本次失败，批准后重新运行即可。
+      #   2. 分支上手动触发，且 signing_policy 选了 test-signing
+      #      → 用 test-signing 策略（测试证书）演练整条链路。分支运行不会发布。
+      # tag 上永远不会用 test-signing，所以测试证书签的包不可能被发布出去。
+      #
+      # 需要的配置：
+      #   secrets.SIGNPATH_API_TOKEN     SignPath 的 CI 用户令牌
+      #   vars.SIGNPATH_ORGANIZATION_ID  SignPath 组织 ID。它不是密钥，必须放 variables，
+      #                                  放进 secrets 会被日志脱敏，SignPath 的链接会损坏
+      #   vars.SIGNPATH_RELEASE_SIGNING  true 才对 tag 构建启用签名。
+      #                                  必须等 release-signing 策略显示 VALID 之后再设置
+      # SignPath 侧：项目 SmartSub，签名配置 installer（根是 zip-file，里面一个 pe-file）。
+      #
+      # 签名会改写安装包，所以签完要重算 latest.yml 里的 sha512，
+      # 否则 electron-updater 校验失败，所有 Windows 用户都无法自动更新。
+      # ---------------------------------------------------------------------------
+      - name: Decide Windows signing policy
+        id: signing
+        if: matrix.os_build_arg == 'win'
+        shell: bash
+        env:
+          REF: ${{ github.ref }}
+          EVENT: ${{ github.event_name }}
+          RELEASE_SIGNING: ${{ vars.SIGNPATH_RELEASE_SIGNING }}
+          DISPATCH_POLICY: ${{ inputs.signing_policy }}
+        run: |
+          policy=""
+          case "$REF" in
+            refs/tags/v*)
+              # 发布构建：只会用正式证书，并且要仓库变量显式打开
+              if [[ "$RELEASE_SIGNING" == "true" ]]; then
+                policy="release-signing"
+              fi
+              ;;
+            refs/tags/*)
+              # 其它 tag 不会发布，也不签名
+              ;;
+            *)
+              # 分支：只有手动触发并选了 test-signing 才演练
+              if [[ "$EVENT" == "workflow_dispatch" && "$DISPATCH_POLICY" == "test-signing" ]]; then
+                policy="test-signing"
+              fi
+              ;;
+          esac
+
+          version=$(node -p "require('./package.json').version")
+          # 文件名由 electron-builder.yml 的 artifactName 决定，SignPath 签名配置里也按这个名字匹配
+          installer="SmartSub_Windows_${version}_x64.exe"
+
+          if [[ -n "$policy" ]]; then
+            if [[ ! -f "dist/$installer" ]]; then
+              echo "::error::Expected installer dist/$installer was not found"
+              ls -la dist
+              exit 1
+            fi
+            if [[ "$policy" == "release-signing" ]]; then
+              wait_seconds=7200
+            else
+              wait_seconds=900
+            fi
+            echo "Signing the Windows installer with SignPath policy: $policy"
+          else
+            echo "SignPath signing is off for this run; the Windows installer stays unsigned."
+          fi
+
+          {
+            echo "policy=$policy"
+            echo "version=$version"
+            echo "installer=$installer"
+            echo "wait_seconds=${wait_seconds:-0}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload unsigned installer (for SignPath)
+        id: unsigned
+        if: matrix.os_build_arg == 'win' && steps.signing.outputs.policy != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-windows-installer
+          path: dist/${{ steps.signing.outputs.installer }}
+          retention-days: 1
+          overwrite: true # 签名失败后重新运行时，上一次的同名产物会冲突
+          if-no-files-found: error
+
+      - name: Sign Windows installer (SignPath)
+        id: signpath
+        if: matrix.os_build_arg == 'win' && steps.signing.outputs.policy != ''
+        # 固定到提交而不是浮动标签：这个 action 能拿到签名令牌，升级要有意为之
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: SmartSub
+          signing-policy-slug: ${{ steps.signing.outputs.policy }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion-timeout-in-seconds: ${{ steps.signing.outputs.wait_seconds }}
+          output-artifact-directory: ${{ github.workspace }}/signed
+          parameters: |
+            version: "${{ steps.signing.outputs.version }}"
+
+      - name: Link the SignPath signing request
+        if: always() && matrix.os_build_arg == 'win' && steps.signpath.outputs.signing-request-web-url != ''
+        shell: bash
+        env:
+          REQUEST_URL: ${{ steps.signpath.outputs.signing-request-web-url }}
+          POLICY: ${{ steps.signing.outputs.policy }}
+        run: |
+          echo "SignPath signing request ($POLICY): $REQUEST_URL" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Swap in the signed installer and refresh latest.yml
+        if: matrix.os_build_arg == 'win' && steps.signing.outputs.policy != ''
+        shell: bash
+        env:
+          INSTALLER: ${{ steps.signing.outputs.installer }}
+        run: |
+          if [[ ! -f "signed/$INSTALLER" ]]; then
+            echo "::error::SignPath did not return $INSTALLER"
+            ls -la signed || true
+            exit 1
+          fi
+          # 必须先用未签名的文件算出旧校验值，再覆盖
+          node scripts/refresh-update-checksum.mjs \
+            --yml dist/latest.yml \
+            --unsigned "dist/$INSTALLER" \
+            --signed "signed/$INSTALLER"
+          cp "signed/$INSTALLER" "dist/$INSTALLER"
+
+      - name: Verify Authenticode signature
+        if: matrix.os_build_arg == 'win' && steps.signing.outputs.policy != ''
+        shell: pwsh
+        env:
+          INSTALLER: ${{ steps.signing.outputs.installer }}
+          POLICY: ${{ steps.signing.outputs.policy }}
+        run: |
+          $sig = Get-AuthenticodeSignature -FilePath "dist/$env:INSTALLER"
+          Write-Host "Status: $($sig.Status)"
+          Write-Host "Signer: $($sig.SignerCertificate.Subject)"
+          Write-Host "Issuer: $($sig.SignerCertificate.Issuer)"
+          if ($null -eq $sig.SignerCertificate) {
+            throw "The installer carries no Authenticode signature."
+          }
+          # 测试证书不在受信任根里，Status 不会是 Valid；正式证书必须是 Valid
+          if ($env:POLICY -eq 'release-signing' -and $sig.Status -ne 'Valid') {
+            throw "Release signature is not valid: $($sig.Status) - $($sig.StatusMessage)"
+          }
+
       - name: Stage Artifacts
         shell: bash
         run: |
@@ -146,10 +311,21 @@ jobs:
         with:
           node-version: 22.14.0
 
-      - name: Download all build artifacts
+      # 只下载发布需要的产物，不能「全部下载」：
+      # Windows 签名时上传过一份未签名安装包（unsigned-windows-installer），它和已签名的安装包同名，
+      # 一起下载会覆盖已签名的文件，Release 里就成了未签名的包，
+      # 而 latest.yml 里是已签名文件的 sha512，所有 Windows 用户的自动更新都会校验失败。
+      - name: Download package artifacts
         uses: actions/download-artifact@v4
         with:
-          path: all_build_artifacts # This will download each artifact into its own subdirectory
+          pattern: app-pkg-*
+          path: all_build_artifacts # 每个产物下载到各自的子目录
+
+      - name: Download update YAML artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: update-yaml-*
+          path: all_build_artifacts
 
       - name: List downloaded artifacts for debugging
         run: ls -R all_build_artifacts
