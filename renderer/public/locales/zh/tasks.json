@@ -165,6 +165,7 @@
     "tagAi": "AI 大模型",
     "tagTraditional": "传统机翻",
     "toastTraditionalRefineConflict": "已切换为「{{provider}}」。因开启了「{{feature}}」，传统接口无法执行精修，建议在「断句与精修」中单独选择 AI 模型或关闭该功能。",
+    "output": "输出",
     "style": "输出内容",
     "format": "字幕格式",
     "embeddedSubtitles": "优先使用内封字幕",
