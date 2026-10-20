@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FileText, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import ConfigItemHint from '@/components/tasks/ConfigItemHint';
 import { cn } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
 
@@ -77,30 +78,52 @@ const ManuscriptControl: React.FC<ManuscriptControlProps> = ({
   };
 
   return (
-    <div className={cn('space-y-2', className)}>
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-          {t('manuscript.globalLabel')}
-        </label>
-        {manuscriptPath && (
+    <div
+      className={cn('space-y-2', className)}
+      data-testid="setting-manuscript"
+    >
+      {/* 一行：标签（长说明收进 ⓘ）+ 选择按钮；选定后按钮换成「清除」，文件卡片在下方 */}
+      <div className="flex min-h-8 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="min-w-0 text-[13px] leading-snug">
+            {t('manuscript.globalLabel')}
+          </span>
+          <ConfigItemHint
+            text={t('manuscript.globalAdvancedHint')}
+            testId="setting-hint"
+          />
+        </div>
+        {manuscriptPath ? (
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={clearManuscript}
-            className="h-6 px-1.5 text-xs text-muted-foreground hover:text-destructive"
+            className="h-6 flex-none px-1.5 text-xs text-muted-foreground hover:text-destructive"
           >
             <X className="h-3.5 w-3.5 mr-1" />
             {t('manuscript.clear')}
           </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={selectManuscript}
+            disabled={selecting}
+            className="h-8 flex-none gap-1.5 text-xs"
+          >
+            {selecting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileText className="h-3.5 w-3.5" />
+            )}
+            <span>{t('manuscript.select')}</span>
+          </Button>
         )}
       </div>
 
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
-        {t('manuscript.globalAdvancedHint')}
-      </p>
-
-      {manuscriptPath ? (
+      {manuscriptPath && (
         <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/40 p-2.5 text-xs">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <FileText className="h-4 w-4 flex-none text-primary" />
@@ -134,22 +157,6 @@ const ManuscriptControl: React.FC<ManuscriptControlProps> = ({
             )}
           </Button>
         </div>
-      ) : (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={selectManuscript}
-          disabled={selecting}
-          className="w-full justify-center text-xs h-9 gap-1.5 border-dashed"
-        >
-          {selecting ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <FileText className="h-3.5 w-3.5" />
-          )}
-          <span>{t('manuscript.select')}</span>
-        </Button>
       )}
     </div>
   );
