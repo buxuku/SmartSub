@@ -478,7 +478,8 @@ try {
           asrProviderId: 'download-asr',
           model: 'fixture',
           sourceLanguage: 'en',
-          sourceSrtSaveOption: 'fileName',
+          // 「保存源字幕文件」 is deliberately not set: the factory 「不保存」 applies, and for
+          // a recipe that only generates subtitles the source is the deliverable (asserted below).
           aiCorrection: false,
           aiSegmentation: false,
           speakerDiarization: false,
@@ -532,6 +533,28 @@ try {
   assert.equal(fallback.configSnapshot.autoChain.cloudUploadConsent, true);
   checks.push(
     `Missing official subtitles used cloud ASR only after one-time consent (${consentButtons.join(', ')})`,
+  );
+  const fallbackTask = await readItem(fallbackChild);
+  const fallbackFile = fallbackTask.pipelineFiles[0];
+  const fallbackStem = path.basename(
+    fallbackFile.filePath,
+    path.extname(fallbackFile.filePath),
+  );
+  assert.equal(
+    fallbackTask.configSnapshot.sourceSrtSaveOption,
+    'fileName',
+    'the task was created with 文件名, not the factory 不保存',
+  );
+  assert.equal(path.basename(fallbackFile.srtFile), `${fallbackStem}.srt`);
+  assert.deepEqual(
+    (await fs.readdir(path.dirname(fallbackFile.filePath))).filter((name) =>
+      name.endsWith('_temp.srt'),
+    ),
+    [],
+    'no <video>_temp.srt next to the downloaded video',
+  );
+  checks.push(
+    'A recipe that only generates subtitles left <video>.srt next to the video, not <video>_temp.srt',
   );
   const beforeRestart = requests.length;
   const downloadCount = requests.filter((r) => r.path.endsWith('.mp4')).length;

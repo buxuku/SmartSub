@@ -19,6 +19,7 @@ import type { TaskSubmission } from '../../../types/taskSubmission';
 import type { WorkItem } from '../../../types/workItem';
 import { taskSubmissionKey } from '../../../types/taskSubmission';
 import { normalizeTranslateContent } from '../../../types/translateContent';
+import { correctedSourceSrtSaveOption } from '../../../types/sourceSrtSave';
 import { defaultUserConfig } from '../utils';
 import { validateDownloadDependencies } from './pipelineReadiness';
 import { resolveComposeRunOptions } from '../pipeline/deriveComposeConfig';
@@ -142,6 +143,17 @@ function buildSubmission(
   const paths =
     entry.outputPaths || (entry.outputPath ? [entry.outputPath] : []);
   if (!paths.length) throw new Error('DOWNLOAD_PIPELINE_MEDIA_MISSING');
+  const taskType =
+    config.formData.taskType === 'generateAndTranslate'
+      ? 'generateAndTranslate'
+      : 'generateOnly';
+  // 出厂的「不保存源字幕」对只生成字幕的任务意味着字幕落成 `<视频名>_temp.srt`，
+  // 与任务页、向导用同一条规则；放在这里（而不是组配置时）是为了连批次创建时就已存下
+  // 的配置也一并修正，且不改变用户确认过的配置指纹。
+  const sourceSave = correctedSourceSrtSaveOption(
+    taskType,
+    config.formData.sourceSrtSaveOption,
+  );
   const files = paths.map((filePath) => {
     if (!fs.statSync(filePath).isFile())
       throw new Error('DOWNLOAD_PIPELINE_MEDIA_MISSING');
@@ -179,10 +191,8 @@ function buildSubmission(
     files,
     formData: {
       ...config.formData,
-      taskType:
-        config.formData.taskType === 'generateAndTranslate'
-          ? 'generateAndTranslate'
-          : 'generateOnly',
+      taskType,
+      ...(sourceSave ? { sourceSrtSaveOption: sourceSave } : {}),
       sourceDownloadWorkItemId: item.id,
     },
   };

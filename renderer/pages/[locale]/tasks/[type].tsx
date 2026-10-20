@@ -50,7 +50,6 @@ import { resolveDefaultTranslateProviderId } from 'lib/providerPanelUtils';
 import { releasePipelineGate } from 'lib/pipelineGate';
 import {
   TASK_TYPES,
-  correctedSourceSrtSaveOption,
   getPipelineTitleKey,
   getTaskTypeBySlug,
 } from 'lib/taskTypes';
@@ -103,6 +102,7 @@ import {
 import { validateTaskConfigReady } from 'lib/taskReadiness';
 import { isTaskRouteHydrated, taskRouteKey } from 'lib/taskRoute';
 import { getProofreadSourcePath } from '../../../../types/subtitleOutput';
+import { correctedSourceSrtSaveOption } from '../../../../types/sourceSrtSave';
 import { useTranslation } from 'next-i18next';
 import { toast } from 'sonner';
 
@@ -722,7 +722,7 @@ export default function TaskPage() {
   ]);
 
   // 「仅生成字幕」任务的源字幕就是最终交付物，不能停在 noSave（否则落盘成 `<视频名>_temp.srt`）。
-  // 修正默认/历史残留的 noSave 或空值，下拉框也不再显示为空。规则与向导、设置面板共用。
+  // 修正默认/历史残留的 noSave 或空值，下拉框也不再显示为空。规则与向导、设置面板、下载流水线共用。
   useEffect(() => {
     if (!projectReady || configSnapshot) return;
     if (!formData || Object.keys(formData).length === 0) return;

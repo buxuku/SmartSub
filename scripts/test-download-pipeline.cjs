@@ -79,6 +79,8 @@ function harness(initial) {
         targetLanguage: 'zh',
         model: 'base',
         transcriptionEngine: 'builtin',
+        // The factory default (main/helpers/utils.ts), which a recipe or a saved choice overrides.
+        sourceSrtSaveOption: 'noSave',
       },
     },
     '../whisper': { getModelsInstalled: () => readiness.models },
@@ -316,6 +318,65 @@ check(
       ),
       'onlyTranslate',
       'a recipe that states its own style',
+    );
+  },
+);
+check(
+  'a recipe that only generates subtitles delivers the source as <name>.srt, not <name>_temp.srt',
+  () => {
+    // The factory default of 「保存源字幕文件」 is 不保存; for a task that only generates
+    // subtitles the source is the deliverable, so the task has to be created with 文件名.
+    // Everything below is read from the child task the batch actually created.
+    const dispatched = (
+      patch,
+      { entry = { subtitlePaths: [] }, setup } = {},
+    ) => {
+      const h = harness();
+      h.readiness.models = ['base'];
+      setup?.(h);
+      h.seed(patch, entry);
+      h.handoff();
+      assert.equal(h.state().status, 'submitted', h.state().error);
+      return h.items.getWorkItemById(h.state().projectId).configSnapshot
+        .sourceSrtSaveOption;
+    };
+    assert.equal(dispatched({}), 'fileName', 'the factory default');
+    assert.equal(dispatched({ sourceSrtSaveOption: 'noSave' }), 'fileName');
+    assert.equal(dispatched({ sourceSrtSaveOption: '' }), 'fileName', 'empty');
+    assert.equal(
+      dispatched({ sourceSrtSaveOption: undefined }),
+      'fileName',
+      'nothing stored',
+    );
+    for (const choice of ['fileName', 'fileNameWithLang', 'custom'])
+      assert.equal(
+        dispatched({ sourceSrtSaveOption: choice }),
+        choice,
+        `an explicit choice (${choice}) is the user's`,
+      );
+    // A task that translates keeps the source out of the way by default.
+    const translating = {
+      taskType: 'generateAndTranslate',
+      translateProvider: 'translate',
+      sourceSrtSaveOption: 'noSave',
+    };
+    const withProvider = (h) =>
+      h.store.set('translationProviders', [
+        {
+          id: 'translate',
+          name: 'AI',
+          type: 'openai',
+          isAi: true,
+          apiUrl: 'https://example.com/v1',
+          apiKey: 'test',
+          modelName: 'model',
+          prompt: '${content}',
+        },
+      ]);
+    assert.equal(
+      dispatched(translating, { setup: withProvider }),
+      'noSave',
+      'a task that also translates',
     );
   },
 );

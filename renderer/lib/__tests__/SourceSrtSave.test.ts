@@ -1,4 +1,4 @@
-import { correctedSourceSrtSaveOption } from '../taskTypes';
+import { correctedSourceSrtSaveOption } from '../../../types/sourceSrtSave';
 
 describe('correctedSourceSrtSaveOption', () => {
   // The factory default is 「不保存」. For a task that only generates subtitles the source
