@@ -18,8 +18,9 @@ import ManuscriptControl from '@/components/tasks/ManuscriptControl';
 import EmbeddedSubtitleControl from '@/components/tasks/EmbeddedSubtitleControl';
 import SettingsGroup from '@/components/tasks/settings/SettingsGroup';
 import SettingRow from '@/components/tasks/settings/SettingRow';
-import { correctedSourceSrtSaveOption, type TaskTypeDef } from 'lib/taskTypes';
+import type { TaskTypeDef } from 'lib/taskTypes';
 import { isSherpaEngine } from 'lib/subtitleOutcome';
+import { correctedSourceSrtSaveOption } from '../../../../types/sourceSrtSave';
 
 /** A select that sits at the right of a row. */
 const SELECT_CLASS = 'h-8 w-[184px] text-xs';
@@ -309,7 +310,7 @@ export default function CommonSettings({
                 // generateOnly 任务的源字幕即交付物，noSave 选项被隐藏；残留的 noSave / 空值在这里
                 // 读成 fileName（下拉框不会显示为空）。这只是显示：表单里的值不动，因为向导里
                 // 同一份表单还会被切到「翻译」，那时不保存才是对的；提交时由各入口按同一规则修正
-                // （任务页改表单，向导改提交的配置，见 correctedSourceSrtSaveOption）。
+                // （任务页改表单，向导与下载流水线改提交的配置，见 correctedSourceSrtSaveOption）。
                 const sourceSaveValue =
                   correctedSourceSrtSaveOption(typeDef.taskType, field.value) ??
                   (field.value || 'fileName');

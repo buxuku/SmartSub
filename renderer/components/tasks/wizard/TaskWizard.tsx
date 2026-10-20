@@ -61,10 +61,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn, isSubtitleFile } from 'lib/utils';
-import {
-  correctedSourceSrtSaveOption,
-  getTaskTypeByValue,
-} from 'lib/taskTypes';
+import { getTaskTypeByValue } from 'lib/taskTypes';
 import { isProviderConfigured } from 'lib/providerUtils';
 import { validateSummaryProvider } from '../../../../types/summaryProvider';
 import { resolveDefaultTranslateProviderId } from 'lib/providerPanelUtils';
@@ -129,6 +126,7 @@ import type {
   VideoQuality,
 } from '../../../../types/subtitleMerge';
 import { enforceSpeakerDiarizationTaskBoundary } from '../../../../types/speakerDiarization';
+import { correctedSourceSrtSaveOption } from '../../../../types/sourceSrtSave';
 import DubbingLanguageSelect from '../../dubbing/DubbingLanguageSelect';
 import ComposeContentHint from './ComposeContentHint';
 import {
