@@ -1,14 +1,22 @@
 import assert from 'assert';
 import {
+  ALL_PRESET_FIELD_KEYS,
   SCENARIO_PRESETS,
   applyScenarioPreset,
   detectCurrentPreset,
+  getBaseScenarioPreset,
+  getPresetDeviations,
   getScenarioPresetDef,
+  getScenarioState,
+  groupPresetDeviations,
+  isExpertPageGroup,
   convertToCustomOutcome,
   type ScenarioPresetId,
 } from '../renderer/lib/scenarioPresets';
 import {
   resolveEffectiveSettings,
+  supportsOutcomeStrategy,
+  supportsTaskVadField,
   TASK_VAD_FIELDS,
 } from '../types/subtitleOutcome';
 import { getVadSettings } from '../main/helpers/engines/transcribeShared';
@@ -194,6 +202,206 @@ assert.strictEqual(
   detectCurrentPreset({ ...interviewValues, fasterWhisperBeamSize: 10 }),
   'custom',
 );
+
+// 3b. What counts as "changed". A fresh install carries maxSubtitleChars: 0 and
+// speakerDiarizationCount: 0 (both mean "let SmartSub decide"); reading those zeros as
+// changes made every new user start on "专家自定义".
+{
+  const fresh: Record<string, any> = {
+    subtitleOutcome: 'balanced',
+    maxSubtitleChars: 0,
+    removeChinesePunctuation: false,
+    speakerDiarization: false,
+    speakerDiarizationCount: 0,
+    speakerDiarizationEmbedInSubtitle: false,
+  };
+  assert.deepEqual(getPresetDeviations(fresh), []);
+  assert.strictEqual(detectCurrentPreset(fresh), 'balanced');
+  const freshState = getScenarioState(fresh);
+  assert.strictEqual(freshState.presetId, 'balanced');
+  assert.strictEqual(freshState.adjusted, false);
+  assert.strictEqual(freshState.expertAdjusted, false);
+  assert.strictEqual(getBaseScenarioPreset(undefined), 'balanced');
+  assert.strictEqual(getBaseScenarioPreset({}), 'balanced');
+  assert.deepEqual(getPresetDeviations(undefined), []);
+
+  // The zero is only "untouched" for those two fields; a real value, or a zero anywhere
+  // else, is a change.
+  for (const maxSubtitleChars of [28, 40, -1]) {
+    assert.deepEqual(
+      getPresetDeviations({ ...fresh, maxSubtitleChars }),
+      ['maxSubtitleChars'],
+      `maxSubtitleChars: ${maxSubtitleChars} is a real value`,
+    );
+  }
+  assert.deepEqual(
+    getPresetDeviations({ ...fresh, speakerDiarizationCount: 2 }),
+    ['speakerDiarizationCount'],
+  );
+  for (const key of [
+    'fasterWhisperTemperature',
+    'subtitleMaxGap',
+    'subtitleMaxDuration',
+    'subtitleLineWidth',
+    'vadMaxSpeechDuration',
+  ]) {
+    assert.deepEqual(
+      getPresetDeviations({ ...fresh, [key]: 0 }),
+      [key],
+      `${key}: 0 is a real value`,
+    );
+  }
+  for (const untouched of [undefined, null, '', false]) {
+    assert.deepEqual(
+      getPresetDeviations({ ...fresh, subtitleMaxGap: untouched }),
+      [],
+      `${String(untouched)} is untouched`,
+    );
+  }
+
+  // A snapshot saved before the tiers existed has no subtitleOutcome; it reads as the
+  // tier its knobs add up to instead of being compared as `undefined`.
+  const legacy: Record<string, any> = { ...fresh };
+  delete legacy.subtitleOutcome;
+  assert.deepEqual(getPresetDeviations(legacy), []);
+  assert.deepEqual(
+    getPresetDeviations({ ...legacy, useVAD: false }),
+    ['subtitleOutcome'],
+    'VAD switched off is a hand-tuned snapshot, which reads as the 手动调节 tier',
+  );
+  assert.deepEqual(
+    getPresetDeviations({ ...legacy, maxContext: 0, reduceRepetition: true }),
+    ['subtitleOutcome', 'maxContext', 'reduceRepetition'],
+    'context 0 + anti-repetition reads as the 最干净最稳 tier, which is not 通用均衡',
+  );
+  assert.strictEqual(getScenarioState(legacy).adjusted, false);
+
+  // Every scenario applied on top of the fresh defaults is exactly that scenario.
+  for (const preset of SCENARIO_PRESETS.filter((p) => p.id !== 'custom')) {
+    const values: Record<string, any> = { ...fresh };
+    applyScenarioPreset(
+      {
+        setValue: (key, value) => {
+          values[key] = value;
+        },
+        resetField: (key) => {
+          delete values[key];
+        },
+      },
+      preset.id,
+    );
+    assert.deepEqual(getPresetDeviations(values), [], preset.id);
+    assert.strictEqual(detectCurrentPreset(values), preset.id, preset.id);
+    assert.strictEqual(getScenarioState(values).adjusted, false, preset.id);
+  }
+
+  // The button keeps the scenario's name and reports what moved, in the groups a person
+  // recognises and where each lives.
+  const lectureValues: Record<string, any> = {
+    scenarioPreset: 'lecture',
+    ...lecture.fields,
+  };
+  assert.strictEqual(getScenarioState(lectureValues).adjusted, false);
+  const tweakedBeam = getScenarioState({
+    ...lectureValues,
+    fasterWhisperBeamSize: 1,
+    fasterWhisperTemperature: 0.4,
+  });
+  assert.strictEqual(tweakedBeam.presetId, 'lecture');
+  assert.deepEqual(tweakedBeam.deviations, [
+    'fasterWhisperBeamSize',
+    'fasterWhisperTemperature',
+  ]);
+  assert.deepEqual(tweakedBeam.groups, ['decoding'], 'two keys, one group');
+  assert.strictEqual(tweakedBeam.expertAdjusted, true);
+  const noCorrection = getScenarioState({
+    ...lectureValues,
+    aiCorrection: false,
+    subtitleFillerPolicy: 'preserve',
+    maxSubtitleChars: 20,
+  });
+  assert.deepEqual(noCorrection.groups, [
+    'segmentLength',
+    'aiCorrection',
+    'fillerPolicy',
+  ]);
+  assert.strictEqual(
+    noCorrection.expertAdjusted,
+    false,
+    'none of these live on the 专家 page',
+  );
+  assert.deepEqual(
+    groupPresetDeviations(['subtitleOutcome', 'vadThreshold', 'maxContext']),
+    ['recognitionStrategy', 'vadRepetition'],
+  );
+  assert.deepEqual(groupPresetDeviations(['unknownKey']), []);
+  // A different scenario to compare against: the interview values are far from 通用均衡.
+  assert.ok(
+    getPresetDeviations(interviewValues, 'balanced').includes(
+      'speakerDiarization',
+    ),
+  );
+  // 自定义 has nothing to compare against, and an id this version dropped reads as 自定义.
+  for (const scenarioPreset of ['custom', 'retired-scenario']) {
+    const state = getScenarioState({ ...fresh, scenarioPreset });
+    assert.strictEqual(state.presetId, 'custom', scenarioPreset);
+    assert.deepEqual(state.deviations, [], scenarioPreset);
+    assert.strictEqual(state.adjusted, false, scenarioPreset);
+    assert.strictEqual(
+      detectCurrentPreset({ ...fresh, scenarioPreset }),
+      'custom',
+      scenarioPreset,
+    );
+  }
+  // Every key a preset can touch is owned by exactly one group.
+  assert.strictEqual(
+    groupPresetDeviations(ALL_PRESET_FIELD_KEYS as string[]).length,
+    10,
+    'ten groups cover every preset field',
+  );
+  assert.strictEqual(
+    (ALL_PRESET_FIELD_KEYS as string[]).every(
+      (key) => groupPresetDeviations([key]).length === 1,
+    ),
+    true,
+    'no preset field is left out of the groups',
+  );
+  // Only the expert-page groups light the 专家 tab.
+  assert.deepEqual(
+    (
+      [
+        'recognitionStrategy',
+        'decoding',
+        'vadRepetition',
+        'segmentLength',
+        'segmentTuning',
+        'speakerDiarization',
+        'aiCorrection',
+        'fillerPolicy',
+        'translationStyle',
+        'subtitleLayout',
+      ] as const
+    ).filter(isExpertPageGroup),
+    ['recognitionStrategy', 'decoding', 'vadRepetition', 'segmentTuning'],
+  );
+
+  // Which engines read the recognition strategy at all.
+  for (const engine of [
+    undefined,
+    'builtin',
+    'fasterWhisper',
+    'funasr',
+    'qwen',
+    'fireRedAsr',
+    'parakeet',
+  ]) {
+    assert.strictEqual(supportsOutcomeStrategy(engine), true, String(engine));
+  }
+  for (const engine of ['cloud', 'localCli']) {
+    assert.strictEqual(supportsOutcomeStrategy(engine), false, engine);
+    assert.strictEqual(supportsTaskVadField(engine, 'vadThreshold'), false);
+  }
+}
 
 // Verify effective values, not only labels or serialized form fields.
 // The faster-whisper accurate preset must survive conversion to custom without

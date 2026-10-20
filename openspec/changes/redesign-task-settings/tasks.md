@@ -2,11 +2,11 @@
 
 ## 1. 偏离判定（先单独修，随后各步都依赖它）
 
-- [ ] 1.1 `renderer/lib/scenarioPresets.ts`：新增 `getPresetDeviations(formData, presetId?)`（返回偏离的键）；中性值规则为 `undefined / null / 空串 / false`，另加 `0` 仅对 `maxSubtitleChars`、`speakerDiarizationCount`；`subtitleOutcome` 缺省时按 `inferDisplayOutcome` 推断；`detectCurrentPreset` 改为基于它（显式 `custom` 与未知预设仍返回 `custom`）
-- [ ] 1.2 同文件新增键 → 人话分组的映射与 `groupPresetDeviations`（断句长度、断句精调、AI 校正、语气词处理、角色分离、识别策略、VAD 与抗重复、解码参数、翻译风格、字幕排版），并导出哪些分组属于专家页，供脚注、摘要条与专家 tab 圆点使用
-- [ ] 1.3 `types/subtitleOutcome.ts`：新增 `supportsOutcomeStrategy(engine)`（`cloud` / `localCli` 为 `false`，其余为 `true`），与 `supportsTaskVadField` 对这两个引擎的做法一致
-- [ ] 1.4 `scripts/test-scenario-presets.ts`：出厂默认配置（含两个 `0`）→ `balanced` 且无偏离；`maxSubtitleChars` 为 `40` / `-1` → 偏离；`subtitleMaxGap: 0` 仍是偏离；老快照缺 `subtitleOutcome` → 不偏离；分组与专家归属；显式 `custom` 行为不变；`supportsOutcomeStrategy`
-- [ ] 1.5 提交 `fix(tasks)`：全新用户默认显示「专家自定义」的判定 bug
+- [x] 1.1 `renderer/lib/scenarioPresets.ts`：新增 `getPresetDeviations(formData, presetId?)`（返回偏离的键）；中性值规则为 `undefined / null / 空串 / false`，另加 `0` 仅对 `maxSubtitleChars`、`speakerDiarizationCount`；`subtitleOutcome` 缺省时按 `inferDisplayOutcome` 推断；`detectCurrentPreset` 改为基于它（显式 `custom` 与未知预设仍返回 `custom`）
+- [x] 1.2 同文件新增键 → 人话分组的映射与 `groupPresetDeviations`（断句长度、断句精调、AI 校正、语气词处理、角色分离、识别策略、VAD 与抗重复、解码参数、翻译风格、字幕排版），并导出哪些分组属于专家页，供脚注、摘要条与专家 tab 圆点使用
+- [x] 1.3 `types/subtitleOutcome.ts`：新增 `supportsOutcomeStrategy(engine)`（`cloud` / `localCli` 为 `false`，其余为 `true`），与 `supportsTaskVadField` 对这两个引擎的做法一致
+- [x] 1.4 `scripts/test-scenario-presets.ts`：出厂默认配置（含两个 `0`）→ `balanced` 且无偏离；`maxSubtitleChars` 为 `40` / `-1` → 偏离；`subtitleMaxGap: 0` 仍是偏离；老快照缺 `subtitleOutcome` → 不偏离；分组与专家归属；显式 `custom` 行为不变；`supportsOutcomeStrategy`
+- [x] 1.5 提交 `fix(tasks)`：全新用户默认显示「专家自定义」的判定 bug
 
 ## 2. 场景控件
 
