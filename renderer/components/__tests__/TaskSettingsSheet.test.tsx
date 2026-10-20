@@ -3,7 +3,14 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { useForm } from 'react-hook-form';
 import TaskSettingsSheet from '../tasks/TaskSettingsSheet';
 import { getTaskTypeBySlug } from '../../lib/taskTypes';
-import { getScenarioState } from '../../lib/scenarioPresets';
+import {
+  applyScenarioPreset,
+  getScenarioState,
+} from '../../lib/scenarioPresets';
+import {
+  resolveEffectiveSettings,
+  TASK_VAD_FIELDS,
+} from '../../../types/subtitleOutcome';
 import { defaultUserConfig } from '../../../main/helpers/utils';
 
 /**
@@ -694,5 +701,102 @@ describe('识别策略 follows the engine', () => {
       '自定义',
     );
     expect(screen.queryByTestId('settings-summary-restore')).toBeNull();
+  });
+});
+
+describe('leaving 手动调节 for a tier', () => {
+  const pick = async (name: string) => {
+    await act(async () => {
+      fireEvent.click(
+        within(screen.getByTestId('setting-outcome')).getByRole('option', {
+          name,
+        }),
+      );
+    });
+  };
+  /** The values 手动调节 writes into the task. */
+  const manualKnobs = [
+    'maxContext',
+    'useVAD',
+    'reduceRepetition',
+    ...TASK_VAD_FIELDS,
+  ];
+  /** What the recognizer is handed for the task in the form (no global overrides). */
+  const effective = () => resolveEffectiveSettings(form.getValues(), {});
+
+  test('opening 手动调节 and changing nothing does not freeze the VAD of the tier it replaced', async () => {
+    await mount({
+      typeDef: GENERATE,
+      tab: 'expert',
+      defaults: { ...FRESH, transcriptionEngine: 'funasr' },
+    });
+    await pick('手动调节');
+    await pick('最干净最稳');
+    expect(form.getValues('subtitleOutcome')).toBe('clean');
+    // 最干净最稳 on a sherpa engine is the noisy-room VAD, not the 均衡 one the task came from.
+    expect(effective()).toMatchObject({
+      vadThreshold: 0.65,
+      vadMinSpeechDuration: 400,
+      vadMinSilenceDuration: 150,
+    });
+    for (const key of manualKnobs) expect(form.getValues(key)).toBeUndefined();
+    // The scenario label stays 自定义 on purpose: it only goes one way.
+    expect(form.getValues('scenarioPreset')).toBe('custom');
+  });
+
+  test('a slider moved on 手动调节 does not outlive it', async () => {
+    await mount({
+      typeDef: GENERATE,
+      tab: 'expert',
+      defaults: { ...FRESH, transcriptionEngine: 'fasterWhisper' },
+    });
+    await pick('手动调节');
+    await change('vadThreshold', 0.2);
+    await change('vadMinSpeechDuration', 600);
+    await pick('文字最准');
+    expect(form.getValues('subtitleOutcome')).toBe('accurate');
+    // 文字最准 on faster-whisper keeps brief and quiet speech.
+    expect(effective()).toMatchObject({
+      vadThreshold: 0.35,
+      vadMinSpeechDuration: 100,
+    });
+    for (const key of manualKnobs) expect(form.getValues(key)).toBeUndefined();
+  });
+
+  test('an old task that only reads as 手动调节 from its knobs goes back to the tier too', async () => {
+    // Saved before the tiers existed: no `subtitleOutcome`, a tuned context and VAD.
+    await mount({
+      typeDef: GENERATE,
+      tab: 'expert',
+      defaults: {
+        ...FRESH,
+        subtitleOutcome: undefined,
+        transcriptionEngine: 'fasterWhisper',
+        maxContext: 0,
+        vadThreshold: 0.2,
+      },
+    });
+    expect(
+      selectedOption(screen.getByTestId('setting-outcome')),
+    ).toHaveTextContent('手动调节');
+    await pick('最干净最稳');
+    expect(form.getValues('subtitleOutcome')).toBe('clean');
+    for (const key of manualKnobs) expect(form.getValues(key)).toBeUndefined();
+  });
+
+  test('picking between the tiers leaves what the scenario set alone', async () => {
+    await mount({
+      typeDef: GENERATE,
+      tab: 'expert',
+      defaults: { ...FRESH, transcriptionEngine: 'funasr' },
+    });
+    await act(async () => {
+      applyScenarioPreset(form, 'interview');
+    });
+    await pick('文字最准');
+    expect(form.getValues('subtitleOutcome')).toBe('accurate');
+    expect(form.getValues('vadThreshold')).toBe(0.35);
+    expect(form.getValues('useVAD')).toBe(true);
+    expect(form.getValues('scenarioPreset')).toBe('interview');
   });
 });
