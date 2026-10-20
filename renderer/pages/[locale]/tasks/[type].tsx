@@ -50,6 +50,7 @@ import { resolveDefaultTranslateProviderId } from 'lib/providerPanelUtils';
 import { releasePipelineGate } from 'lib/pipelineGate';
 import {
   TASK_TYPES,
+  correctedSourceSrtSaveOption,
   getPipelineTitleKey,
   getTaskTypeBySlug,
 } from 'lib/taskTypes';
@@ -720,16 +721,18 @@ export default function TaskPage() {
     configSnapshot,
   ]);
 
-  // 「仅生成字幕」任务的源字幕就是最终交付物，不能用 noSave（任务结束会被清理删除）。
-  // 修正默认/历史残留的 noSave 或空值，避免视频目录最终没有字幕文件，且下拉框不再显示为空。
+  // 「仅生成字幕」任务的源字幕就是最终交付物，不能停在 noSave（否则落盘成 `<视频名>_temp.srt`）。
+  // 修正默认/历史残留的 noSave 或空值，下拉框也不再显示为空。规则与向导、设置面板共用。
   useEffect(() => {
-    if (!projectReady || configSnapshot || typeDef?.taskType !== 'generateOnly')
-      return;
+    if (!projectReady || configSnapshot) return;
     if (!formData || Object.keys(formData).length === 0) return;
-    const opt = formData.sourceSrtSaveOption;
-    if (!opt || opt === 'noSave') {
+    const corrected = correctedSourceSrtSaveOption(
+      typeDef?.taskType,
+      formData.sourceSrtSaveOption,
+    );
+    if (corrected) {
       // 只对本页生效的修正：不能把 'fileName' 记进翻译类任务的默认值。
-      correctValue('sourceSrtSaveOption', 'fileName');
+      correctValue('sourceSrtSaveOption', corrected);
     }
   }, [
     typeDef,
