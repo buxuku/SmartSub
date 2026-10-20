@@ -15,7 +15,7 @@ import { _electron, expect } from '@playwright/test';
  * - no embedded subtitles: no dialog, the start goes on as before;
  * - the answer only applies to the task being started (and "cancel" starts nothing);
  * - "use" extracts the track without any speech recognition, "transcribe" ignores it;
- * - "remember" stores the default and stops asking, and Advanced options takes it back.
+ * - "remember" stores the default and stops asking, and More settings takes it back.
  *
  * Speech recognition is a local fixture service, so "was audio uploaded" is observable.
  */
@@ -211,8 +211,8 @@ async function openWizard(mediaFile) {
   await expect(startButton).toBeEnabled();
 }
 
-// The task page of a media task holding `mediaFile`, with its Advanced options open.
-async function openAdvancedOptions(mediaFile) {
+// The task page of a media task holding `mediaFile`, with 更多设置 open on its 常用 page.
+async function openMoreSettings(mediaFile) {
   await app.evaluate(({ dialog }, file) => {
     dialog.showOpenDialog = async () => ({
       canceled: false,
@@ -222,14 +222,14 @@ async function openAdvancedOptions(mediaFile) {
   await page.goto(`${origin}/zh/tasks/generate/`);
   await page.getByRole('button', { name: '导入', exact: true }).first().click();
   await expect(page).toHaveURL(/project=/);
-  await page.getByRole('button', { name: '高级选项' }).click();
-  const advanced = page.getByRole('dialog');
+  await page.getByRole('button', { name: '更多设置' }).click();
+  const sheet = page.getByRole('dialog');
   return {
-    advanced,
-    preferEmbedded: advanced.getByRole('switch', {
+    sheet,
+    preferEmbedded: sheet.getByRole('switch', {
       name: '优先使用内封字幕',
     }),
-    ask: advanced.getByRole('checkbox', { name: '开始前提示我选择' }),
+    ask: sheet.getByRole('checkbox', { name: '开始前提示我选择' }),
   };
 }
 
@@ -263,20 +263,20 @@ try {
     .poll(() => page.evaluate(() => window.ipc.invoke('getAsrProviders')))
     .toEqual([provider]);
 
-  // 0. A fresh install prefers the embedded subtitles and has remembered nothing: Advanced
-  // options shows the switch on and the question on, and merely looking writes nothing.
+  // 0. A fresh install prefers the embedded subtitles and has remembered nothing: More
+  // settings shows the switch on and the question on, and merely looking writes nothing.
   assert.equal((await userConfig()).useEmbeddedSubtitles, true);
   assert.equal((await settings()).embeddedSubtitlePrompt, undefined);
-  const fresh = await openAdvancedOptions(withSubtitles);
+  const fresh = await openMoreSettings(withSubtitles);
   await expect(fresh.preferEmbedded).toBeChecked();
   await expect(fresh.ask).toBeEnabled();
   await expect(fresh.ask).toBeChecked();
   await settle();
   await page.screenshot({
-    path: path.join(output, 'fresh-install-advanced-options.png'),
+    path: path.join(output, 'fresh-install-more-settings.png'),
   });
   await page.keyboard.press('Escape');
-  await expect(fresh.advanced).toHaveCount(0);
+  await expect(fresh.sheet).toHaveCount(0);
   // Longer than the debounce of the defaults sync, so a stray write would have landed.
   await page.waitForTimeout(1000);
   assert.equal(
@@ -312,7 +312,7 @@ try {
   assert.deepEqual(found.hit.tracks, [{ language: 'eng', codec: 'mov_text' }]);
   await expect(embeddedDialog).toContainText('with-subtitles.mp4');
   await expect(embeddedDialog).toContainText('MOV Text');
-  await expect(embeddedDialog).toContainText('高级选项 › 转写');
+  await expect(embeddedDialog).toContainText('更多设置 › 常用');
   await expect(
     embeddedDialog.getByRole('checkbox', { name: '记住我的选择，不再提示' }),
     'nothing is remembered unless the user says so',
@@ -440,18 +440,17 @@ try {
   await page.getByRole('button', { name: '取消', exact: true }).click();
   assert.equal((await dispatched()).length, 3);
 
-  // 6. Advanced options shows what was remembered and takes the question back.
-  const { advanced, preferEmbedded, ask } =
-    await openAdvancedOptions(withSubtitles);
+  // 6. More settings shows what was remembered and takes the question back.
+  const { sheet, preferEmbedded, ask } = await openMoreSettings(withSubtitles);
   await expect(preferEmbedded).not.toBeChecked();
   await expect(ask).toBeDisabled();
   await settle();
-  await page.screenshot({ path: path.join(output, 'advanced-options.png') });
+  await page.screenshot({ path: path.join(output, 'more-settings.png') });
   await preferEmbedded.click();
   await expect(preferEmbedded).toBeChecked();
   await expect(ask).toBeEnabled();
   await expect(ask).not.toBeChecked();
-  await advanced.getByText('开始前提示我选择').click();
+  await sheet.getByText('开始前提示我选择').click();
   await expect(ask).toBeChecked();
   await expect
     .poll(async () => (await settings()).embeddedSubtitlePrompt)
@@ -471,7 +470,7 @@ try {
         'transcribing instead is applied to that task and uses the engine',
         'a task whose configuration is pinned is not asked again',
         'remembering stores the default, stops asking and stops probing',
-        'Advanced options turns the question back on',
+        'More settings turns the question back on',
       ],
     }),
   );

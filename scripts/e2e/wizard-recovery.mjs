@@ -93,7 +93,7 @@ try {
       ),
     )
     .toEqual(expected.pipeline);
-  await page.getByRole('button', { name: '专家参数', exact: true }).click();
+  await page.getByRole('button', { name: '更多设置', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
