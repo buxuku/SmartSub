@@ -168,14 +168,14 @@ try {
   await page.getByRole('button', { name: '恢复草稿', exact: true }).click();
   await expect(
     page.getByText(
-      '角色分离模型或运行库未就绪。请在引擎页安装，或在专家参数中关闭角色分离。',
+      '角色分离模型或运行库未就绪。请在引擎页安装，或在「更多设置 › 常用」中关闭角色分离。',
       { exact: true },
     ),
   ).toBeVisible();
   await expect(
     page.getByRole('button', { name: '开始', exact: true }),
   ).toBeDisabled();
-  await page.getByRole('button', { name: '专家参数', exact: true }).click();
+  await page.getByRole('button', { name: '更多设置', exact: true }).click();
   const advanced = page.getByRole('dialog');
   await expect(advanced.getByText('识别设置', { exact: true })).toHaveCount(0);
   const roleSwitch = advanced.getByRole('switch', { name: /^角色分离/ });
@@ -185,7 +185,7 @@ try {
   await expect(
     page.getByRole('button', { name: '开始', exact: true }),
   ).toBeEnabled();
-  await page.getByRole('button', { name: '专家参数', exact: true }).click();
+  await page.getByRole('button', { name: '更多设置', exact: true }).click();
   await roleSwitch.click();
   await page.keyboard.press('Escape');
   await expect(

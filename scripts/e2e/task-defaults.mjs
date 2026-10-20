@@ -62,12 +62,12 @@ try {
   assert.equal(initial.translateRetryTimes, undefined);
   assert.equal(initial.maxConcurrentTasks, 1);
 
-  // Open a translation task and change an advanced setting in the real UI.
+  // Open a translation task and change a setting in More settings in the real UI.
   await page.evaluate(() => window.next.router.push('/zh/tasks/translate/'));
   await page.getByRole('button', { name: '导入', exact: true }).first().click();
   await expect(page).toHaveURL(/project=/);
   const projectId = new URL(page.url()).searchParams.get('project');
-  await page.getByRole('button', { name: '高级选项' }).click();
+  await page.getByRole('button', { name: '更多设置' }).click();
   await page.getByLabel('翻译重试次数').fill('7');
   // The task is never started: the edit alone updates the defaults of the next new task.
   await expect
@@ -128,7 +128,7 @@ try {
   );
 
   // A brand new task starts from what the last one used.
-  await page.getByRole('button', { name: '高级选项' }).click();
+  await page.getByRole('button', { name: '更多设置' }).click();
   await expect(page.getByLabel('翻译重试次数')).toHaveValue('7');
   await expect(page.getByLabel('最大并发任务数')).toHaveValue('3');
   // Evidence only: an occluded test window throttles the sheet's slide-in, so settle it.
@@ -136,7 +136,9 @@ try {
     content:
       '*,*::before,*::after{animation:none!important;transition:none!important}',
   });
-  await page.screenshot({ path: path.join(evidence, 'new-task-advanced.png') });
+  await page.screenshot({
+    path: path.join(evidence, 'new-task-more-settings.png'),
+  });
 
   console.log(
     JSON.stringify({
@@ -145,7 +147,7 @@ try {
         'an edit updates the defaults without starting the task',
         'leaving the page right after an edit keeps the edit',
         'per-task inputs are not remembered',
-        'a new task inherits the advanced settings',
+        'a new task inherits the settings from More settings',
       ],
     }),
   );

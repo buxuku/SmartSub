@@ -105,7 +105,56 @@ try {
   );
   await page.goto(`${origin}/zh/tasks/new/`);
   await page.getByRole('button', { name: '恢复草稿', exact: true }).click();
-  await page.getByRole('button', { name: /^(通用均衡|专家自定义)$/ }).click();
+  // A fresh install is the 通用均衡 scenario, untouched: the name alone (no 已调整 dot, so
+  // nothing to restore) and no "专家自定义" row anywhere.
+  const scenarioButton = page.getByTestId('scenario-preset-trigger');
+  await expect(scenarioButton).toHaveAccessibleName('通用均衡');
+  await expect(page.getByTestId('scenario-adjusted-dot')).toHaveCount(0);
+  await scenarioButton.click();
+  await expect(page.getByTestId('scenario-footer-adjusted')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /专家自定义/ })).toHaveCount(0);
+  await expect(page.locator('[data-testid^="scenario-option-"]')).toHaveCount(
+    5,
+  );
+  await page.keyboard.press('Escape');
+  // The popover's own footer also has a 「更多设置」 button; wait for it to be gone.
+  await expect(page.locator('[data-testid^="scenario-option-"]')).toHaveCount(
+    0,
+  );
+  // 常用 opens on the groups an ordinary user reaches for: in the smallest window the first
+  // three of them are on the first screen of a fresh task, with no scrolling.
+  const sheet = page.getByRole('dialog');
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].setContentSize(1024, 700),
+  );
+  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(1024);
+  // Opened from the keyboard: the panel itself takes focus (not whatever happens to be first
+  // inside it) and, not being a control, draws no ring of its own around the whole sheet.
+  await page.keyboard.press('Tab');
+  await page.getByRole('button', { name: '更多设置', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(sheet).toBeFocused();
+  await expect(sheet).not.toHaveCSS('outline-style', 'auto');
+  await expect(sheet.getByTestId('settings-tab-common')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  // The first two groups are fully on screen (ratio 1, so polling also waits out the sheet's
+  // slide-in); the third starts there, its remaining rows are one short scroll away.
+  for (const [group, ratio] of [
+    ['source', 1],
+    ['assist', 1],
+    ['output', 0.5],
+  ]) {
+    await expect(
+      sheet.getByTestId(`settings-group-${group}`),
+      `the ${group} group is on the first screen of 常用 at 1024x700`,
+    ).toBeInViewport({ ratio });
+  }
+  await page.screenshot({ path: path.join(output, 'common-1024.png') });
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  await scenarioButton.click();
   await page.getByRole('button', { name: /^会议访谈 \/ 播客/ }).click();
   const draftConfig = () =>
     page.evaluate((key) => JSON.parse(localStorage.getItem(key)).config, key);
@@ -119,12 +168,22 @@ try {
   assert.equal(selected.vadThreshold, 0.35);
   assert.equal(selected.speakerDiarization, true);
 
-  await page
-    .getByRole('button', { name: '会议访谈 / 播客', exact: true })
-    .click();
-  await page.getByRole('button', { name: /^专家自定义/ }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
+  // The scenario names itself, with no dot, once it is applied.
+  await expect(scenarioButton).toHaveAccessibleName('会议访谈 / 播客');
+  await expect(page.getByTestId('scenario-adjusted-dot')).toHaveCount(0);
+  // The scenario's footer goes straight to the 专家 page; the recognition strategy is chosen
+  // there, and 手动调节 lays the strategy's low-level parameters out.
+  await scenarioButton.click();
+  await page.getByTestId('scenario-open-expert').click();
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByTestId('settings-tab-expert')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
   const vad = page.getByRole('slider', { name: 'VAD 语音阈值', exact: true });
+  await expect(vad).toHaveCount(0);
+  await sheet.getByTestId('outcome-select').click();
+  await page.getByRole('option', { name: /^手动调节/ }).click();
   await expect(vad).toHaveAttribute('aria-valuenow', '0.35');
   await vad.focus();
   await page.keyboard.press('ArrowRight');
@@ -154,11 +213,25 @@ try {
       true,
     );
     await page.screenshot({ path: path.join(output, `expert-${width}.png`) });
+    // The two pages share one scroll area: 常用 starts from its top even though 专家 was
+    // scrolled to reach the slider.
+    await sheet.getByTestId('settings-tab-common').click();
+    await expect(
+      sheet.getByTestId('settings-group-source'),
+      `${width}: 常用 opens at its first group, not where 专家 was scrolled to`,
+    ).toBeInViewport();
+    await sheet.getByTestId('settings-tab-expert').click();
   }
   await page.keyboard.press('Escape');
   await page.reload();
   await page.getByRole('button', { name: '恢复草稿', exact: true }).click();
-  await page.getByRole('button', { name: '专家参数', exact: true }).click();
+  await page.getByRole('button', { name: '更多设置', exact: true }).click();
+  // The panel opens on 常用; the tuned value is one tab away.
+  await expect(sheet.getByTestId('settings-tab-common')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await sheet.getByTestId('settings-tab-expert').click();
   await expect(vad).toHaveAttribute('aria-valuenow', '0.36');
   await page.keyboard.press('Escape');
   assert.deepEqual(
@@ -225,10 +298,12 @@ try {
       requests,
       subtitle: task.pipelineFiles[0].srtFile,
       checks: [
+        'fresh install: 通用均衡, no 已调整 dot, five scenarios only',
+        'keyboard open: panel focused, no ring, 常用 first three groups on the first screen at 1024x700',
         'preset application',
         'expert materialization',
         'keyboard VAD tuning',
-        '1024/1440 layout',
+        '1024/1440 layout and 常用 starting at its top after 专家',
         'refresh recovery',
         'global isolation',
         'real local ASR pipeline',

@@ -202,7 +202,7 @@ try {
     );
     await page.goto(`${origin}/zh/tasks/new/`);
     await page.getByRole('button', { name: '恢复草稿', exact: true }).click();
-    await page.getByRole('button', { name: /^(通用均衡|专家自定义)$/ }).click();
+    await page.getByTestId('scenario-preset-trigger').click();
   };
   const start = async () => {
     await page.getByRole('button', { name: '开始', exact: true }).click();
@@ -263,7 +263,7 @@ try {
   await page.getByRole('button', { name: /^短剧 \/ 短视频/ }).click();
   await expect(
     page.getByText(
-      '情感口语化翻译需要 AI 翻译服务。请选择 AI 服务，或在专家参数中切换为常规翻译。',
+      '情感口语化翻译需要 AI 翻译服务。请选择 AI 服务，或在「更多设置 › 常用」中切换为常规翻译。',
       { exact: true },
     ),
   ).toBeVisible();
@@ -274,8 +274,14 @@ try {
   await expect(
     page.getByRole('button', { name: '开始', exact: true }),
   ).toBeEnabled();
-  await page.getByRole('button', { name: '专家自定义', exact: true }).click();
-  await page.getByRole('button', { name: /^短剧 \/ 短视频/ }).click();
+  // The quick fix moved the task off its scenario: the button keeps the scenario's name and
+  // marks it 已调整 (it no longer says "专家自定义"), and the popover offers the way back.
+  const scenarioButton = page.getByTestId('scenario-preset-trigger');
+  await expect(scenarioButton).toHaveAccessibleName('短剧 / 短视频 已调整');
+  await scenarioButton.click();
+  await expect(page.getByTestId('scenario-footer-adjusted')).toBeVisible();
+  await page.getByTestId('scenario-restore').click();
+  await expect(scenarioButton).toHaveAccessibleName('短剧 / 短视频');
   await page.getByRole('combobox', { name: '翻译服务', exact: true }).click();
   await page.getByRole('option', { name: /Local language AI/ }).click();
   await expect(
