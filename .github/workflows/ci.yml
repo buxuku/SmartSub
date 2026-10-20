@@ -109,6 +109,11 @@ jobs:
       - name: Unit tests (crash diagnostics)
         run: yarn test:crash
 
+      # Windows 安装包签名后要重算 latest.yml 的 sha512（见 release.yml）；
+      # 算错会让所有 Windows 用户的自动更新校验失败，所以单独守住这段逻辑
+      - name: Unit tests (release checksum refresh)
+        run: yarn test:release-checksum
+
       - name: Compile application (renderer + main)
         run: yarn build
 

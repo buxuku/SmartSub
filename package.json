@@ -62,6 +62,7 @@
     "addon:fetch": "node scripts/fetch-whisper-addon.mjs",
     "native:fetch": "node scripts/fetch-sherpa-native.mjs && node scripts/fetch-whisper-addon.mjs",
     "size:check": "node scripts/check-bundle-size.mjs",
+    "test:release-checksum": "node --test scripts/test-refresh-update-checksum.mjs",
     "test:task-activity": "node scripts/test-task-activity.cjs && node scripts/test-translation-activity.cjs && jest --runInBand renderer/components/__tests__/TaskActivity.test.tsx",
     "test:e2e:task-activity": "node scripts/e2e/task-activity.mjs",
     "test:e2e:task-list-layout": "node scripts/e2e/task-list-layout.mjs",
