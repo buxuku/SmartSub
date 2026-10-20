@@ -2395,7 +2395,7 @@ export default function TaskWizard() {
               onRefineOpenChange={setRefinePopoverOpen}
               summaryOpen={summaryPopoverOpen}
               onSummaryOpenChange={setSummaryPopoverOpen}
-              onOpenAdvanced={() => setAdvancedOpen(true)}
+              onOpenSettings={() => setAdvancedOpen(true)}
             />
           </div>
         </Panel>

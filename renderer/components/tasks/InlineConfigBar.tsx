@@ -25,6 +25,7 @@ import GlossarySelectControl from '@/components/tasks/GlossarySelectControl';
 import SummaryGenerateControl from '@/components/tasks/SummaryGenerateControl';
 import ScenarioPresetControl from '@/components/tasks/ScenarioPresetControl';
 import OutputFormatControl from '@/components/tasks/OutputFormatControl';
+import type { TaskSettingsTab } from '@/components/tasks/settings/types';
 import { cn, supportedLanguage } from 'lib/utils';
 import { isProviderConfigured } from 'lib/providerUtils';
 import {
@@ -58,7 +59,8 @@ interface InlineConfigBarProps {
   /** 受控展开「生成摘要」弹层：被摘要配置阻断时由外部唤起。 */
   summaryOpen?: boolean;
   onSummaryOpenChange?: (open: boolean) => void;
-  onOpenAdvanced?: () => void;
+  /** Opens 更多设置 (the scenario popover's footer links ask for a page). */
+  onOpenSettings?: (tab?: TaskSettingsTab) => void;
 }
 
 /**
@@ -145,7 +147,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
   onRefineOpenChange,
   summaryOpen,
   onSummaryOpenChange,
-  onOpenAdvanced,
+  onOpenSettings,
 }) => {
   const { t } = useTranslation('tasks');
   const { t: tHome } = useTranslation('home');
@@ -468,7 +470,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                 <ScenarioPresetControl
                   form={form}
                   formData={formData}
-                  onOpenAdvanced={onOpenAdvanced}
+                  onOpenSettings={onOpenSettings}
                 />
               </ConfigItem>
               <ConfigItem label={t('refine.control.label')}>

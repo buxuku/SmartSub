@@ -571,29 +571,55 @@
     },
     "title": "场景预设",
     "customHint": "微调以下参数将自动切换为自定义",
+    "adjusted": "已调整",
+    "footer": {
+      "adjusted": "已调整：{{groups}}。切换场景会重置这些调整。",
+      "restore": "恢复为「{{name}}」",
+      "custom": "当前不再对应任何场景，选一个场景可重置。",
+      "groupSeparator": "、",
+      "moreSettings": "更多设置",
+      "expertSettings": "专家设置"
+    },
+    "groups": {
+      "recognitionStrategy": "识别策略",
+      "decoding": "解码参数",
+      "vadRepetition": "VAD 与抗重复",
+      "segmentLength": "断句长度",
+      "segmentTuning": "断句精调",
+      "speakerDiarization": "角色分离",
+      "aiCorrection": "AI 校正",
+      "fillerPolicy": "语气词处理",
+      "translationStyle": "翻译风格",
+      "subtitleLayout": "字幕排版"
+    },
     "interview": {
       "name": "会议访谈 / 播客",
+      "scene": "多人轮流说话：会议、访谈、播客、对谈",
       "desc": "短句切分、本地说话人聚类、保留原声停顿；需角色分离模型"
     },
     "lecture": {
       "name": "网课演讲 / 教程",
+      "scene": "一个人讲、信息密度高：网课、演讲、教程、讲座",
       "desc": "VAD 与抗重复、AI 术语校正、智能去停顿词；需 AI 精修服务"
     },
     "movie": {
       "name": "影视 / Vlog",
+      "scene": "有情绪的对白：电影、电视剧、Vlog",
       "desc": "紧凑双行、自然切句、保留情绪；翻译时需 AI 口语化服务"
     },
     "shortDrama": {
       "name": "短剧 / 短视频",
+      "scene": "节奏快、句子短：短剧、短视频、口播切片",
       "desc": "紧凑双行短句、保留情绪和停顿；翻译时需 AI 口语化服务"
     },
     "balanced": {
       "name": "通用均衡",
-      "desc": "兼顾转写速度与断句稳定性，适合绝大多数常规场景"
+      "scene": "拿不准就选它：大多数常规视频",
+      "desc": "兼顾转写速度与断句稳定性，不额外调整任何参数"
     },
     "custom": {
-      "name": "专家自定义",
-      "desc": "自由配置 Beam Size、VAD 灵敏度与幻觉过滤等底层参数"
+      "name": "自定义",
+      "desc": "在「更多设置 › 专家」里选了手动调节，不再对应任何场景"
     }
   },
   "configLoad": {

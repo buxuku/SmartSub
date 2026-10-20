@@ -571,29 +571,55 @@
     },
     "title": "Scenario Presets",
     "customHint": "Tuning parameters below switches to custom",
+    "adjusted": "Adjusted",
+    "footer": {
+      "adjusted": "Adjusted: {{groups}}. Switching scenario resets them.",
+      "restore": "Restore “{{name}}”",
+      "custom": "No longer matches any scenario. Pick one to reset.",
+      "groupSeparator": ", ",
+      "moreSettings": "More settings",
+      "expertSettings": "Expert settings"
+    },
+    "groups": {
+      "recognitionStrategy": "Recognition strategy",
+      "decoding": "Decoding",
+      "vadRepetition": "VAD & repetition",
+      "segmentLength": "Line length",
+      "segmentTuning": "Line-break tuning",
+      "speakerDiarization": "Speaker diarization",
+      "aiCorrection": "AI correction",
+      "fillerPolicy": "Filler words",
+      "translationStyle": "Translation style",
+      "subtitleLayout": "Subtitle layout"
+    },
     "interview": {
       "name": "Meeting / Podcast",
+      "scene": "Several people taking turns: meetings, interviews, podcasts",
       "desc": "Short cues, local speaker clustering and original pauses; requires speaker models"
     },
     "lecture": {
       "name": "Lecture / Tutorial",
+      "scene": "One speaker, dense content: courses, talks, tutorials",
       "desc": "VAD, anti-repetition, glossary correction and fewer hesitations; requires AI refinement"
     },
     "movie": {
       "name": "Movie / Vlog",
+      "scene": "Dialogue with emotion: films, series, vlogs",
       "desc": "Compact two-line layout, natural pacing and emotion; translation requires AI"
     },
     "shortDrama": {
       "name": "Short Drama / Shorts",
+      "scene": "Fast pace, short lines: short dramas, short videos",
       "desc": "Compact two-line cues, pauses and emotion; translation requires AI"
     },
     "balanced": {
       "name": "Balanced",
-      "desc": "Balanced accuracy and speed, suitable for most general scenarios"
+      "scene": "When unsure, pick this: most everyday videos",
+      "desc": "Balances speed and segmentation stability without changing any extra setting"
     },
     "custom": {
-      "name": "Expert Custom",
-      "desc": "Fine-tune Beam Size, VAD thresholds, and hallucination filters"
+      "name": "Custom",
+      "desc": "Manual tuning was chosen in More settings › Expert, so it no longer matches any scenario"
     }
   },
   "configLoad": {

@@ -10,13 +10,13 @@
 
 ## 2. 场景控件
 
-- [ ] 2.1 `renderer/components/tasks/ScenarioPresetControl.tsx`：按钮显示基础场景名；有偏离时加小圆点与屏幕阅读器文本"已调整"；仅显式 `custom` 显示「自定义」（沿用原来的虚线弱化样式）
-- [ ] 2.2 弹层：5 个场景（去掉「专家自定义」行）；每行以 `presets.<id>.scene`（适合什么视频）作主说明，原 `desc`（技术说明与前置条件）作次行
-- [ ] 2.3 脚注：有偏离时列出被调整的分组并提示切换场景会重置它们，提供「恢复为『X』」（`applyScenarioPreset(form, 基础场景)`）；`custom` 时说明"当前不再对应任何场景"；常驻「更多设置」「专家设置」两个链接
-- [ ] 2.4 入口回调 `onOpenAdvanced` 改为 `onOpenSettings(tab?)`：`InlineConfigBar` 的 prop 与向导、任务页的调用点同步
-- [ ] 2.5 `renderer/components/__tests__/ScenarioPresetControl.test.tsx`（新增）：全新默认配置 → 「通用均衡」无圆点；改一项 → 场景名不变且有圆点；弹层只有 5 个场景；脚注列出分组、恢复生效；`custom` 的显示；「更多设置」「专家设置」调用的 tab 参数
-- [ ] 2.6 `renderer/public/locales/{zh,en}/tasks.json`：`presets.<id>.scene`、脚注与圆点文案；`presets.custom.name` 改为「自定义」
-- [ ] 2.7 提交 `feat(tasks)`：场景控件
+- [x] 2.1 `renderer/components/tasks/ScenarioPresetControl.tsx`：按钮显示基础场景名；有偏离时加小圆点与屏幕阅读器文本"已调整"；仅显式 `custom` 显示「自定义」（沿用原来的虚线弱化样式）
+- [x] 2.2 弹层：5 个场景（去掉「专家自定义」行）；每行以 `presets.<id>.scene`（适合什么视频）作主说明，原 `desc`（技术说明与前置条件）作次行
+- [x] 2.3 脚注：有偏离时列出被调整的分组并提示切换场景会重置它们，提供「恢复为『X』」（`applyScenarioPreset(form, 基础场景)`）；`custom` 时说明"当前不再对应任何场景"；常驻「更多设置」「专家设置」两个链接
+- [x] 2.4 入口回调 `onOpenAdvanced` 改为 `onOpenSettings(tab?)`：`InlineConfigBar` 的 prop 与向导、任务页的调用点同步
+- [x] 2.5 `renderer/components/__tests__/ScenarioPresetControl.test.tsx`（新增）：全新默认配置 → 「通用均衡」无圆点；改一项 → 场景名不变且有圆点；弹层只有 5 个场景；脚注列出分组、恢复生效；`custom` 的显示；「更多设置」「专家设置」调用的 tab 参数
+- [x] 2.6 `renderer/public/locales/{zh,en}/tasks.json`：`presets.<id>.scene`、脚注与圆点文案；`presets.custom.name` 改为「自定义」
+- [x] 2.7 提交 `feat(tasks)`：场景控件
 
 ## 3. 更多设置面板
 

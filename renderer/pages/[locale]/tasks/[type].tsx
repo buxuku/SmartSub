@@ -1627,7 +1627,7 @@ export default function TaskPage() {
             onRefineOpenChange={setRefinePopoverOpen}
             summaryOpen={summaryPopoverOpen}
             onSummaryOpenChange={setSummaryPopoverOpen}
-            onOpenAdvanced={() => setAdvancedOpen(true)}
+            onOpenSettings={() => setAdvancedOpen(true)}
           />
         )}
       </div>
