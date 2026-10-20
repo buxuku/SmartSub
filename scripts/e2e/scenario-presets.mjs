@@ -240,7 +240,9 @@ try {
     'expert edits stay task-local',
   );
 
-  // Keep the actual task values, switch only the ASR transport to a local fixture.
+  // Keep the actual task values, switch only the ASR transport to a local fixture. 「保存源
+  // 字幕文件」 is deliberately left at the factory 「不保存」: a task that only generates
+  // subtitles has to read that as the video's file name (see the assertions below).
   const provider = {
     id: 'scenario-asr',
     name: 'Scenario ASR',
@@ -258,7 +260,6 @@ try {
         transcriptionEngine: 'cloud',
         asrProviderId: provider.id,
         model: 'whisper-1',
-        sourceSrtSaveOption: 'fileName',
         aiCorrection: false,
         aiSegmentation: false,
         speakerDiarization: false,
@@ -287,6 +288,14 @@ try {
   const items = await page.evaluate(() => window.ipc.invoke('getWorkItems'));
   const task = items.find((item) => item.pipelineFiles?.length);
   assert.ok(task?.pipelineFiles[0].srtFile);
+  // Nobody touched 「保存源字幕文件」: the subtitles are the deliverable, so they sit next to
+  // the video as pauses.srt (not pauses_temp.srt), and the stored snapshot says what ran.
+  assert.equal(path.basename(task.pipelineFiles[0].srtFile), 'pauses.srt');
+  assert.deepEqual(
+    (await fs.readdir(output)).filter((name) => name.endsWith('.srt')),
+    ['pauses.srt'],
+  );
+  assert.equal(task.configSnapshot.sourceSrtSaveOption, 'fileName');
   const srt = await fs.readFile(task.pipelineFiles[0].srtFile, 'utf8');
   assert.match(srt, /00:00:00,000 --> 00:00:00,200\s+First/);
   assert.match(srt, /00:00:00,600 --> 00:00:00,800\s+I/);
@@ -307,6 +316,7 @@ try {
         'refresh recovery',
         'global isolation',
         'real local ASR pipeline',
+        'factory 「不保存」 delivers pauses.srt, not pauses_temp.srt, for a subtitles-only task',
         'pause-preserving SRT',
       ],
     }),

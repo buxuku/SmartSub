@@ -61,7 +61,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn, isSubtitleFile } from 'lib/utils';
-import { getTaskTypeByValue } from 'lib/taskTypes';
+import {
+  correctedSourceSrtSaveOption,
+  getTaskTypeByValue,
+} from 'lib/taskTypes';
 import { isProviderConfigured } from 'lib/providerUtils';
 import { validateSummaryProvider } from '../../../../types/summaryProvider';
 import { resolveDefaultTranslateProviderId } from 'lib/providerPanelUtils';
@@ -1665,9 +1668,17 @@ export default function TaskWizard() {
               });
       const projectId = draftProjectIdRef.current;
       const dubEngine = dubOn ? parseEngineKey(activeEngine!.key) : null;
+      // 「更多设置」把仅生成字幕任务的 noSave 显示为「文件名」，提交的就是显示的那个值，否则
+      // 字幕会落成 `<视频名>_temp.srt`。只改提交的配置、不改表单：同一份表单还会被切到「翻译」，
+      // 那时不保存源字幕才是对的（任务页没有这个问题：每种任务一页，页上直接改表单）。
+      const sourceSave = correctedSourceSrtSaveOption(
+        typeDef.taskType,
+        formData?.sourceSrtSaveOption,
+      );
       const payload = enforceSpeakerDiarizationTaskBoundary({
         ...formData,
         taskType: typeDef.taskType,
+        ...(sourceSave ? { sourceSrtSaveOption: sourceSave } : {}),
         ...(inputKind !== 'media'
           ? { manuscriptPath: '', manuscriptName: '' }
           : {}),
