@@ -80,7 +80,8 @@ tab 让两类内容各自成页、各自短；折叠区则把专家项又接在�
 `AdvancedSheet.tsx` → `TaskSettingsSheet.tsx`（外壳：标题、摘要条、tab、滚动区），常用 / 专家各一个文件，`SettingsGroup`、`SettingRow` 放在 `renderer/components/tasks/settings/`。`FasterWhisperAdvancedFields` 与它的草稿输入逻辑原样保留（只换位置）。引用点只有任务页、向导和一个测试。`SubtitleFormatSelect.tsx` 之后没有引用者，删除。
 
 **12. 数据层不动。**
-不新增 / 删除 / 改名任何任务字段；`applyScenarioPreset`、`convertToCustomOutcome`、`ALL_PRESET_FIELD_KEYS`、引擎映射与流水线一行不改。`scenarioPreset` 的含义不变（基础场景或 `custom`），变的只是界面怎么读它。
+不新增 / 删除 / 改名任何任务字段；`applyScenarioPreset`、`ALL_PRESET_FIELD_KEYS`、引擎映射与流水线原样不动。`scenarioPreset` 的含义不变（基础场景或 `custom`），变的只是界面怎么读它。
+评审后有两处例外，都是修 `main` / v3.10.1 里就有的缺陷：`convertToCustomOutcome` 的旋钮列表抽成共用常量、旁边新增 `leaveCustomOutcome`，行为不变（决策 16）；下载流水线的 `buildSubmission` 加了一条与任务页相同的源字幕保存修正（决策 15）。
 
 **13. 面板打开时焦点停在面板上，面板自身不画焦点环。（实现中补充）**
 Radix 在对话框打开时聚焦第一个可 Tab 的元素。没有 tab 的单页（纯翻译任务）上，那是标签旁的 ⓘ；聚焦 ⓘ 会打开它的提示，于是面板一开就有一条提示压在首行上，而且提示是最上层，会吞掉第一次 Esc——面板要按两次才关（`speaker-pipeline` e2e 里「切完开关马上 Esc」就卡在这里）。所以用 `onOpenAutoFocus` 把焦点放到面板自身，Tab 仍从第一个控件开始；有 tab 与没 tab 的面板行为一致。面板不是控件，键盘打开时浏览器会给整块面板画一圈外框（Electron 里实测 `outline-style: auto`），因此面板加 `focus:outline-none`，里面的控件各自保留焦点环。
@@ -90,12 +91,18 @@ Radix 在对话框打开时聚焦第一个可 Tab 的元素。没有 tab 的单�
 **14. 每页从顶部开始：滚动区以当前 tab 为 key。（实现中补充）**
 常用与专家是同一个面板的两页，共用一个滚动视口。在专家页滚动后切回常用，视口留在旧的偏移上，常用页的第一组被卷到上方，像是面板从中间打开。给 `ScrollArea` 加上 `key={activeTab}`，切页就换一个新视口，回到顶部。重建不丢任何东西：值与脏标记在表单里，不在页里（`shouldUnregister` 为 false，`TaskSettingsSheet.test.tsx` 锁定"切页不丢值，脏标记也在"）。不记住每页各自的滚动位置：两页内容差别大，回到上次位置的收益小，"打开就在顶部"是确定的。
 
-**15. 「仅生成字幕」的源字幕保存方式：向导在提交时修正，面板只改显示。（评审后补充）**
+**15. 「仅生成字幕」的源字幕保存方式：每个创建任务的入口按同一条规则修正，面板只改显示。（评审后补充）**
 「保存源字幕文件」出厂是「不保存」（`noSave`）。「仅生成字幕」任务的源字幕就是交付物，停在 `noSave` 会让它以 `<视频名>_temp.srt` 落盘（`getSrtFileName` 的 `noSave` 分支）；主进程为了不丢交付物，对这种旧配置照常导出，只是名字不对。任务页一直有一个 effect 把它改成 `fileName`，面板对这类任务隐藏「不保存」并把残留值显示成「文件名」，向导没有那个 effect——面板显示「文件名」，提交的却是 `noSave`。实测（真 Electron + 本地假 ASR，向导里不改任何设置走「视频 → 原文字幕」）：完成后视频旁边是 `pauses_temp.srt`，五秒后仍在；显式设成 `fileName` 的对照组是 `pauses.srt`。v3.10.1 就是这样，不是本分支引入的；本分支新增的向导「更多设置」按钮只是让「显示 ≠ 实际」更容易被看到。
-决定：规则只写一处，`renderer/lib/taskTypes.ts` 的 `correctedSourceSrtSaveOption(taskType, option)`（仅生成字幕且为 `noSave` / 空值时返回 `fileName`，否则返回 `undefined`），三个入口按各自的方式使用：任务页改表单（`correctValue`，不记为默认值，`sync-task-defaults-on-edit` 的规则不变）；面板只改显示；向导**只改提交的配置，不改表单**。
+决定：规则只写一处，`types/sourceSrtSave.ts` 的 `correctedSourceSrtSaveOption(taskType, option)`（仅生成字幕且为 `noSave` / 空值时返回 `fileName`，否则返回 `undefined`；放在 `types/` 是因为渲染进程与主进程都要用，所以不带任何运行时依赖），四个入口按各自的方式使用：任务页改表单（`correctValue`，不记为默认值，`sync-task-defaults-on-edit` 的规则不变）；面板只改显示；向导与下载流水线**只改提交的配置，不改表单、不改已存的配置**。
 为什么向导不改表单：任务页每种任务一页，页上的表单只会是这一种任务；向导的同一份表单会随「翻译」目标的开关在「仅生成」与「生成并翻译」之间来回切，若把 `fileName` 写进表单，切到翻译后源字幕就会多保存一份——带翻译的任务不保存源字幕才是默认。提交时再按当时的任务类型读一次，表单里的值始终是用户的选择（或出厂默认）。
-备选：在主进程提交的唯一入口（`persistTaskSubmission`，已有 `withValidTranslateContent` 的先例）统一修正——本次否决：决策 12 把主进程与流水线划在范围外，且会让所有入口（包括自动化显式传入的值）的行为一起变；备选：向导里加一个跟任务页一样的 effect——否决：理由同上，会污染切到翻译后的表单。
-范围之外：下载流水线（`main/helpers/videoDownload/pipeline.ts`）用 `defaultUserConfig` + 用户配置 + 配方里存的配置组任务，`taskType` 为 `generateOnly` 时没有人读这个字段，读代码看同样会落成 `_temp.srt`（未实测）。见待办。
+备选：在主进程提交的唯一入口（`persistTaskSubmission`，已有 `withValidTranslateContent` 的先例）统一修正——否决：会让所有入口（包括自动化显式传入的值）的语义一起变，而问题只出在两个创建任务时没有替用户读这个字段的入口，各补一行比改全局语义小；以后再出现新入口，再考虑收到那里；备选：向导里加一个跟任务页一样的 effect——否决：理由同上，会污染切到翻译后的表单。
+下载流水线（`main/helpers/videoDownload/pipeline.ts`，评审后一并修了）有同样的问题：配置来自 `defaultUserConfig` + 用户配置 + 配方，出厂的 `noSave` 没人改，`generateOnly` 的字幕落成 `<视频名>_temp.srt`。修在 `buildSubmission`（每个条目下载完成、真正组任务的那一刻），而不是 `resolveDownloadPipeline`（批次创建、用户确认配置的那一刻）：① 批次创建时就已存下的配置（升级前建的批次）一并修正；② 用户确认的配置指纹（`downloadPipelineKey`）不变，不会因此重新询问云端上传同意。下载到官方字幕、直接跳过听写的条目，`sourceOwned` 为 false，这个选项根本不被读取，改与不改没有区别。已经持久化的 `pending` 提交按设计原样重放（要保证幂等），不被改写。
+
+**16. 从「手动调节」改选内置识别策略时，丢掉手动调节写进任务的值。（评审后补充）**
+「手动调节」在进入时把被替换那一档的有效值（`maxContext`、`useVAD`、`reduceRepetition` 与 `TASK_VAD_FIELDS` 里的六个 VAD 字段）写进任务，供用户在此基础上微调（`convertToCustomOutcome`）；改选内置档位时，这些值原样留在表单里。内置档位自己决定 `maxContext` / `useVAD` / `reduceRepetition`，但 `resolveEffectiveSettings` 的 `withTaskVad` 让任务级 VAD 值对每一档都优先，于是留下的 VAD 值悄悄盖过档位自己的 VAD，档位名与实际参数对不上。实测：whisper 系拖过 VAD 滑块后切回「文字最准」，实际仍是 0.2 / 600，该档位本是 0.35 / 100；sherpa 系（funasr / qwen / fireRedAsr / parakeet）的档位只映射 VAD，只要点开过一次「手动调节」、一个滑块都没动，再改选「最干净最稳」，VAD 仍停在进入时那一档（均衡）的 0.5 / 250 / 100，而不是 0.65 / 400 / 150——各档之间对 VAD 不再有区别。这些值还会作为该任务页的默认值被记住，之后每个新任务都带着。`main` 与 v3.10.1 的 `AdvancedSheet` 里是同一段处理，不是本分支引入；评审时判断影响小、决定不修，用户随后要求修。
+决定：`renderer/lib/scenarioPresets.ts` 新增 `leaveCustomOutcome(form, tier)`，把 `convertToCustomOutcome` 写入的那一组值全部置为 `undefined`，再设档位。两个函数共用同一张表（常量 `CUSTOM_OUTCOME_KNOB_KEYS`），不会一边加了字段另一边忘了；`undefined` 同时把它们从记住的任务默认值里去掉（`applyTaskDefaultsPatch` 的既有规则）。`ExpertSettings` 只在当前显示的档位是「手动调节」时调用它。
+边界：① 内置档位之间切换仍只改档位——场景写进来的 VAD 值（如「会议访谈」的 0.35）照旧保留，那是场景的选择，不是手动调节留下的（`TaskSettingsSheet.test.tsx` 锁定）；② `scenarioPreset` 仍保持 `custom`，按钮继续显示「自定义」，这一步仍是单向的（见待办）；③ 以老快照没有 `subtitleOutcome`、靠旋钮反推出「手动调节」显示的任务，改选内置档位时同样清掉这组旋钮——用户明确选了某一档，就按那一档。
+取舍：进了「手动调节」又退回内置档位的用户，调过的 VAD 滑块不会跟着回来。以前它们碰巧还在，再进「手动调节」能看到上次的值，但代价正是上面的错位；现在再进「手动调节」是从当前档位的值开始。
 
 ## Risks / Trade-offs
 
@@ -112,6 +119,4 @@ Radix 在对话框打开时聚焦第一个可 Tab 的元素。没有 tab 的单�
 
 - 尚未归档的 `embedded-subtitle-start-prompt` 与 `sync-task-defaults-on-edit` 两个变更的规格 / 设计里仍写着「高级选项」「高级选项 › 转写」（写成时面板还叫这个名字）。它们归档前应改成「更多设置 › 常用」，免得主规格里留下一个界面上已经没有的名字；本次没有动别的变更的文件。
 - `main/helpers/engines/*.ts` 与 `main/helpers/ipcStoreHandlers.ts` 的注释仍说「字幕效果档位」。只是注释，`types/subtitleOutcome.ts` 的头注释写明了新旧名字的对应，之后顺手改即可。
-- 在「手动调节」之后改选内置档位，`scenarioPreset` 仍是 `custom`（按钮继续显示「自定义」），直到用户再选一次场景：`convertToCustomOutcome` 一向只往一个方向走，数据层不动，所以本次不改。
-  评审后补记这一步的另一个后果：留在表单里的任务级 VAD 值（`vadThreshold` 等四项）不会被清掉，仍叠在内置档位上（`resolveEffectiveSettings` 的 `withTaskVad` 对每一档都生效，界面上只有「手动调节」展开时才看得到滑块）。以真实函数验证：whisper 系只有拖过 VAD 滑块才有残留（拖到 0.2 / 600 再切回「文字最准」，实际仍是 0.2 / 600，该档位本是 0.35 / 100）；sherpa 系（funasr / qwen / fireRedAsr / parakeet）的档位只映射 VAD，只要点开过一次「手动调节」（一个滑块都没动）再切回内置档位，VAD 就停在进入时那一档的值，各档之间对 VAD 不再有区别。`main` 的 `AdvancedSheet` 里是同一段处理，不是本分支引入；只影响 VAD 灵敏度，且必须先进专家页的「手动调节」再退回，评审后决定不修。要修的话，切回内置档位时清掉 `TASK_VAD_FIELDS` 即可。
-- 下载流水线（`main/helpers/videoDownload/pipeline.ts`）生成的「仅生成字幕」任务可能仍落成 `<视频名>_temp.srt`，见决策 15 的「范围之外」（读代码得出，未实测）。要修，可以在那里组任务配置时用同一条规则，或在 `persistTaskSubmission` 统一处理。
+- 在「手动调节」之后改选内置档位，`scenarioPreset` 仍是 `custom`（按钮继续显示「自定义」），直到用户再选一次场景：`convertToCustomOutcome` 一向只往一个方向走，数据层不动，所以本次不改。手动调节写进任务的值已不再随之留下（决策 16），所以现在的不一致只剩按钮上的名字。要改的话，改选内置档位时把 `scenarioPreset` 还原成进入前的场景（需要先记住它），或直接按偏离判定重算。
