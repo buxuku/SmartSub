@@ -46,6 +46,7 @@
 对话框的两个选择按钮默认只改本次提交的载荷，不碰表单，不写默认配置，与云端上传确认一致（用户已确认）。勾选「记住我的选择，不再提示」后才写：`settings.embeddedSubtitlePrompt = false`（以后不再弹），以及默认配置里的 `useEmbeddedSubtitles`（经既有的 `updateTaskDefaults` 补丁通道，只写这一个键，`useEmbeddedSubtitles` 不是逐任务键）。两处缺一不可：只写前者，选了「改用语音识别」的人下次会被静默用回内封字幕，与「记住我的选择」相悖；只写后者，提示仍会弹。
 **与 `task-defaults-memory` 的关系。** 该规格（`sync-task-defaults-on-edit`，尚未归档）规定默认配置只来自可编辑的任务页，向导与开始任务本身都不写。这里的写入是用户在对话框里**显式勾选**的指令，而非「开始任务」或「同步表单」的副作用，范围只有一个键，向导里其它参数仍然不写。我认为这与那条规则的本意（防止向导 / 旧工程的整份配置冲掉默认值）不冲突，但字面上是一处例外，所以在该规格的对应要求末尾补了一句例外说明，并在本变更的规格里写成独立要求，避免两份规格各说各话。
 写入是尽力而为：失败只吞掉，本次选择照常生效（与云端上传确认一致）。点「取消」绝不记住。
+**新用户的默认值。** 出厂默认配置里 `useEmbeddedSubtitles` 为 `true`，设置里不写 `embeddedSubtitlePrompt`（缺省即提示），所以全新安装是「优先使用内封字幕」开、「记住」关；对话框里的复选框每次都从不勾选开始。「高级选项」里的「开始前提示我选择」是 `embeddedSubtitlePrompt` 的正向写法，与「记住」互为反面：勾选 = 会询问，不勾 = 已记住。这两项只有用户的显式操作才会改写——在「高级选项」里拨动开关会像其它参数一样被记为默认值，所以一台试过「关闭 + 记住」的机器上看到的「开关关、提示未勾」是它自己的存档，不是新用户的默认。出厂值由 `EmbeddedSubtitleDefaults.test.ts` 与端到端的第 0 步锁定。
 
 **7. 不弹窗的情形集中在入口处判断。**
 `useEmbeddedSubtitles === false`（已强制语音识别）、`embeddedSubtitlePrompt === false`、`typeDef.needsModel` 为假（翻译字幕类）、没有可探测的文件——在发出 IPC 之前就返回，零开销。重试经 `submit(input, { promptEmbeddedSubtitles: false })` 关闭：重试要复现原任务的行为，旧任务快照里没有该字段就等于「使用」，再问一次只会让人困惑。配置已固定的任务页（`configSnapshot` 存在，页面只读）同样关闭，经 `TaskControls` 的 `promptEmbeddedSubtitles` 入参传入：主进程的 `persistTaskSubmission` 在已有固定快照时沿用快照而不是本次提交的 `formData`，此时问了也不会被采纳，反而误导；第一次开始时快照还不存在，选择照常写进快照，之后每次开始都沿用它。自动化 / CLI / MCP 与在线下载的自动衔接不经 `useTaskSubmission`，天然不弹窗。`?autostart=1` 是用户发起的开始，照常询问。
