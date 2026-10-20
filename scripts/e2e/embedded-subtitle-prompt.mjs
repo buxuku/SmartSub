@@ -11,6 +11,7 @@ import { _electron, expect } from '@playwright/test';
  * Starting a task that transcribes video asks whether to use the subtitles a video already
  * carries: the real probe in the main process, the real pipeline behind the answer.
  *
+ * - a fresh install prefers the embedded subtitles and has remembered nothing;
  * - no embedded subtitles: no dialog, the start goes on as before;
  * - the answer only applies to the task being started (and "cancel" starts nothing);
  * - "use" extracts the track without any speech recognition, "transcribe" ignores it;
@@ -210,6 +211,28 @@ async function openWizard(mediaFile) {
   await expect(startButton).toBeEnabled();
 }
 
+// The task page of a media task holding `mediaFile`, with its Advanced options open.
+async function openAdvancedOptions(mediaFile) {
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showOpenDialog = async () => ({
+      canceled: false,
+      filePaths: [file],
+    });
+  }, mediaFile);
+  await page.goto(`${origin}/zh/tasks/generate/`);
+  await page.getByRole('button', { name: '导入', exact: true }).first().click();
+  await expect(page).toHaveURL(/project=/);
+  await page.getByRole('button', { name: '高级选项' }).click();
+  const advanced = page.getByRole('dialog');
+  return {
+    advanced,
+    preferEmbedded: advanced.getByRole('switch', {
+      name: '优先使用内封字幕',
+    }),
+    ask: advanced.getByRole('checkbox', { name: '开始前提示我选择' }),
+  };
+}
+
 async function finished(projectId) {
   await expect
     .poll(
@@ -240,6 +263,29 @@ try {
     .poll(() => page.evaluate(() => window.ipc.invoke('getAsrProviders')))
     .toEqual([provider]);
 
+  // 0. A fresh install prefers the embedded subtitles and has remembered nothing: Advanced
+  // options shows the switch on and the question on, and merely looking writes nothing.
+  assert.equal((await userConfig()).useEmbeddedSubtitles, true);
+  assert.equal((await settings()).embeddedSubtitlePrompt, undefined);
+  const fresh = await openAdvancedOptions(withSubtitles);
+  await expect(fresh.preferEmbedded).toBeChecked();
+  await expect(fresh.ask).toBeEnabled();
+  await expect(fresh.ask).toBeChecked();
+  await settle();
+  await page.screenshot({
+    path: path.join(output, 'fresh-install-advanced-options.png'),
+  });
+  await page.keyboard.press('Escape');
+  await expect(fresh.advanced).toHaveCount(0);
+  // Longer than the debounce of the defaults sync, so a stray write would have landed.
+  await page.waitForTimeout(1000);
+  assert.equal(
+    (await userConfig()).useEmbeddedSubtitles,
+    true,
+    'looking at the options is not choosing',
+  );
+  assert.equal((await settings()).embeddedSubtitlePrompt, undefined);
+
   // 1. A video without embedded subtitles is probed, found empty and started as before.
   await openWizard(withoutSubtitles);
   await startButton.click();
@@ -267,6 +313,10 @@ try {
   await expect(embeddedDialog).toContainText('with-subtitles.mp4');
   await expect(embeddedDialog).toContainText('MOV Text');
   await expect(embeddedDialog).toContainText('高级选项 › 转写');
+  await expect(
+    embeddedDialog.getByRole('checkbox', { name: '记住我的选择，不再提示' }),
+    'nothing is remembered unless the user says so',
+  ).not.toBeChecked();
   await settle();
   await page.screenshot({ path: path.join(output, 'embedded-prompt.png') });
   await embeddedDialog
@@ -391,21 +441,8 @@ try {
   assert.equal((await dispatched()).length, 3);
 
   // 6. Advanced options shows what was remembered and takes the question back.
-  await app.evaluate(({ dialog }, file) => {
-    dialog.showOpenDialog = async () => ({
-      canceled: false,
-      filePaths: [file],
-    });
-  }, withSubtitles);
-  await page.goto(`${origin}/zh/tasks/generate/`);
-  await page.getByRole('button', { name: '导入', exact: true }).first().click();
-  await expect(page).toHaveURL(/project=/);
-  await page.getByRole('button', { name: '高级选项' }).click();
-  const advanced = page.getByRole('dialog');
-  const preferEmbedded = advanced.getByRole('switch', {
-    name: '优先使用内封字幕',
-  });
-  const ask = advanced.getByRole('checkbox', { name: '开始前提示我选择' });
+  const { advanced, preferEmbedded, ask } =
+    await openAdvancedOptions(withSubtitles);
   await expect(preferEmbedded).not.toBeChecked();
   await expect(ask).toBeDisabled();
   await settle();
@@ -427,6 +464,7 @@ try {
       clickToDialogMs,
       probeMs: found.elapsedMs,
       checks: [
+        'a fresh install prefers embedded subtitles, remembers nothing, and looking changes nothing',
         'a video without embedded subtitles starts without a question',
         'a video with them asks; cancelling starts nothing',
         'using them is applied to that task and no audio is uploaded',
