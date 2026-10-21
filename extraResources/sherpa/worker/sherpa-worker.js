@@ -24,6 +24,8 @@ const channel = (() => {
 const sherpa = require(path.join(__dirname, '..', 'vendor', 'sherpa-onnx.js'));
 // wav 读写：Windows 非 ASCII 路径上原生 readWave/writeWave 打不开，改由 JS 读写（见 wav-io.js）。
 const wavIo = require(path.join(__dirname, 'wav-io.js'));
+// 超长 VAD 段硬切分（segment-split.js）：请求带 params.segment_hard_max_s 时才切，缺省/无效时不动。
+const segmentSplit = require(path.join(__dirname, 'segment-split.js'));
 
 const SAMPLE_RATE = 16000;
 const VAD_WINDOW_SIZE = 512;
@@ -317,36 +319,62 @@ async function transcribe(req) {
   const segments = [];
   let lastPercent = -1;
   const vadSegments = [];
+  // 被硬切分的原 VAD 段（params.segment_hard_max_s）：引擎据此记日志。
+  const splits = [];
+  const hardMaxSeconds = req.params.segment_hard_max_s;
+
+  // 解码一个单元：一个完整的 VAD 段，或硬切分后的一片。startSample 是它在整段音频里的起点。
+  const decodeUnit = async (startSample, unitSamples) => {
+    const stream = recognizer.createStream();
+    stream.acceptWaveform({ samples: unitSamples, sampleRate: SAMPLE_RATE });
+    activity({
+      phase: 'recognizing',
+      processedSeconds,
+      durationSeconds: total / SAMPLE_RATE,
+      units: [{ id: decoded + 1, phase: 'recognizing', startedAt: Date.now() }],
+    });
+    const r = await recognizer.decodeAsync(stream);
+    decoded += 1;
+    const start = startSample / SAMPLE_RATE;
+    const end = (startSample + unitSamples.length) / SAMPLE_RATE;
+    processedSeconds = end;
+    activity({
+      phase: 'recognizing',
+      processedSeconds,
+      durationSeconds: total / SAMPLE_RATE,
+      units: [],
+    });
+    vadSegments.push({ start, end });
+    const text = r && r.text ? r.text.trim() : '';
+    if (text) segments.push({ start, end, text });
+  };
 
   const drain = async () => {
     while (!vad.isEmpty()) {
       if (cancelled.has(req.id)) return;
       const seg = vad.front(false); // enableExternalBuffer=false
       vad.pop();
-      const stream = recognizer.createStream();
-      stream.acceptWaveform({ samples: seg.samples, sampleRate: SAMPLE_RATE });
-      activity({
-        phase: 'recognizing',
-        processedSeconds,
-        durationSeconds: total / SAMPLE_RATE,
-        units: [
-          { id: decoded + 1, phase: 'recognizing', startedAt: Date.now() },
-        ],
+      const pieces = segmentSplit.splitSegment(
+        seg.samples,
+        SAMPLE_RATE,
+        hardMaxSeconds,
+      );
+      if (pieces.length === 1) {
+        await decodeUnit(seg.start, seg.samples);
+        continue;
+      }
+      splits.push({
+        start: seg.start / SAMPLE_RATE,
+        end: (seg.start + seg.samples.length) / SAMPLE_RATE,
+        pieces: pieces.length,
       });
-      const r = await recognizer.decodeAsync(stream);
-      decoded += 1;
-      const start = seg.start / SAMPLE_RATE;
-      const end = (seg.start + seg.samples.length) / SAMPLE_RATE;
-      processedSeconds = end;
-      activity({
-        phase: 'recognizing',
-        processedSeconds,
-        durationSeconds: total / SAMPLE_RATE,
-        units: [],
-      });
-      vadSegments.push({ start, end });
-      const text = r && r.text ? r.text.trim() : '';
-      if (text) segments.push({ start, end, text });
+      for (const piece of pieces) {
+        if (cancelled.has(req.id)) return;
+        await decodeUnit(
+          seg.start + piece.start,
+          seg.samples.subarray(piece.start, piece.end),
+        );
+      }
     }
   };
 
@@ -365,7 +393,7 @@ async function transcribe(req) {
   await drain();
   if (cancelled.has(req.id)) return postCancelled(req.id);
   cancelled.delete(req.id);
-  channel.post({ type: 'done', id: req.id, segments, vadSegments });
+  channel.post({ type: 'done', id: req.id, segments, vadSegments, splits });
 }
 
 // 仅 VAD：缓存一个独立的 silero VAD 实例（避免每个文件重载 onnx），按 vadModel+参数 复用。

@@ -10,6 +10,7 @@ const workerPath = path.resolve(
   '../extraResources/sherpa/worker/sherpa-worker.js',
 );
 const wavIo = require('../extraResources/sherpa/worker/wav-io.js');
+const segmentSplit = require('../extraResources/sherpa/worker/segment-split.js');
 const helpers = require('../node_modules/.cache/engine-tests/main/helpers/sherpaOnnx/sherpaConfig.js');
 const params = {
   num_threads: 2,
@@ -42,6 +43,8 @@ const plain = (value) => JSON.parse(JSON.stringify(value));
 function harness(overrides = {}) {
   const configs = [];
   const messages = [];
+  // 交给识别器的每个 stream 的样本数（一次解码一项）
+  const streams = [];
   let listener;
   let decode;
   const sherpa = {
@@ -50,7 +53,9 @@ function harness(overrides = {}) {
         configs.push(plain(config));
       }
       createStream() {
-        return { acceptWaveform() {} };
+        return {
+          acceptWaveform: ({ samples }) => streams.push(samples.length),
+        };
       }
       decodeAsync() {
         return new Promise((resolve, reject) => {
@@ -64,8 +69,14 @@ function harness(overrides = {}) {
         this.fed = false;
       }
       acceptWaveform() {
-        if (!this.fed)
-          this.segment = { start: 0, samples: new Float32Array(512) };
+        if (!this.fed) {
+          this.segment = overrides.segment
+            ? {
+                start: overrides.segment.start,
+                samples: overrides.segment.samples,
+              }
+            : { start: 0, samples: new Float32Array(512) };
+        }
         this.fed = true;
       }
       isEmpty() {
@@ -98,9 +109,15 @@ function harness(overrides = {}) {
     fs.readFileSync(workerPath, 'utf8'),
     {
       __dirname: path.dirname(workerPath),
-      // wav-io.js 是纯 JS 模块，用真实实现；其余（原生库）用替身
+      // wav-io.js、segment-split.js 是纯 JS 模块，用真实实现；其余（原生库）用替身
       require: (id) =>
-        id === 'path' ? path : id.endsWith('wav-io.js') ? wavIo : sherpa,
+        id === 'path'
+          ? path
+          : id.endsWith('wav-io.js')
+            ? wavIo
+            : id.endsWith('segment-split.js')
+              ? segmentSplit
+              : sherpa,
       process: {
         parentPort: {
           postMessage: (msg) => messages.push(plain(msg)),
@@ -115,8 +132,9 @@ function harness(overrides = {}) {
   return {
     configs,
     messages,
+    streams,
     send: (msg) => listener({ data: msg }),
-    resolve: () => decode.resolve({ text: 'recognized text' }),
+    resolve: (text = 'recognized text') => decode.resolve({ text }),
     reject: () => decode.reject(new Error('decode failed')),
   };
 }
@@ -229,9 +247,146 @@ async function main() {
     'sherpa worker: TDT/CTC configuration, caching, prewarm, cancellation and recovery passed',
   );
 
+  await verifyHardSplit();
+  console.log(
+    'sherpa worker: hard split (limit, pieces, cues, splits, progress, cancel, empty text) passed',
+  );
+
   await verifyWavIoIntegration();
   console.log(
     'sherpa worker: wav-io integration (JS read for non-ASCII paths, loud writeWave failures) passed',
+  );
+}
+
+/**
+ * 超长 VAD 段硬切分（openspec split-qwen-asr-long-segments design D4）：
+ * params.segment_hard_max_s 为正时，worker 把超长段切成几片，每片独立解码、独立出 cue。
+ * 全零信号让切点退化为等分；切点的选择由 test-segment-split.cjs 覆盖，这里只验证接线。
+ */
+async function verifyHardSplit() {
+  const SR = 16000;
+  const start = (id, hardMax, overrides = {}) => {
+    const h = harness({
+      segment: { start: 10 * SR, samples: new Float32Array(56 * SR) },
+      readWave: () => ({ samples: new Float32Array(66 * SR) }),
+      ...overrides,
+    });
+    h.send({
+      type: 'transcribe',
+      id,
+      audioFile: 'long.wav',
+      ...ctc,
+      params:
+        hardMax === undefined
+          ? params
+          : { ...params, segment_hard_max_s: hardMax },
+    });
+    return h;
+  };
+  const doneOf = (h, id) =>
+    h.messages.find((m) => m.id === id && m.type === 'done');
+
+  // 参数缺省或为 0：与没有这个功能时一致，一整段只解码一次
+  for (const hardMax of [undefined, 0]) {
+    const id = `whole-${hardMax}`;
+    const h = start(id, hardMax);
+    h.resolve('whole');
+    await settle();
+    const done = doneOf(h, id);
+    assert.deepEqual(
+      h.streams,
+      [56 * SR],
+      `limit ${hardMax}: one decode of the whole segment`,
+    );
+    assert.deepEqual(done.segments, [{ start: 10, end: 66, text: 'whole' }]);
+    assert.deepEqual(done.vadSegments, [{ start: 10, end: 66 }]);
+    assert.deepEqual(
+      done.splits,
+      [],
+      `limit ${hardMax}: nothing is reported as split`,
+    );
+  }
+
+  // 上限 20 秒：56 秒的段切成 4 片
+  const h = start('split', 20);
+  for (let i = 1; i <= 4; i += 1) {
+    h.resolve(`piece ${i}`);
+    await settle();
+  }
+  const done = doneOf(h, 'split');
+  assert.ok(done, 'the split transcription completes');
+  assert.equal(h.streams.length, 4, 'four decodes');
+  assert.ok(
+    h.streams.every((n) => n <= 20 * SR),
+    'every piece fits the limit',
+  );
+  assert.equal(
+    h.streams.reduce((a, b) => a + b, 0),
+    56 * SR,
+    'no sample is dropped or decoded twice',
+  );
+  assert.deepEqual(
+    done.segments.map((s) => s.text),
+    ['piece 1', 'piece 2', 'piece 3', 'piece 4'],
+  );
+  assert.equal(
+    done.segments[0].start,
+    10,
+    'first cue starts where the segment starts',
+  );
+  assert.equal(
+    done.segments[3].end,
+    66,
+    'last cue ends where the segment ends',
+  );
+  done.segments.forEach((cue, i) => {
+    if (i > 0) {
+      assert.equal(cue.start, done.segments[i - 1].end, 'cues are contiguous');
+    }
+  });
+  assert.deepEqual(
+    done.vadSegments,
+    done.segments.map(({ start: s, end }) => ({ start: s, end })),
+    'vadSegments are the decoded pieces',
+  );
+  assert.deepEqual(done.splits, [{ start: 10, end: 66, pieces: 4 }]);
+  const processed = h.messages
+    .filter((m) => m.id === 'split' && m.type === 'activity')
+    .map((m) => m.detail.processedSeconds)
+    .filter((v) => v !== undefined);
+  assert.deepEqual(
+    processed,
+    [...processed].sort((a, b) => a - b),
+    'processed seconds never go back',
+  );
+  assert.equal(processed.at(-1), 66);
+
+  // 第 2 片解码结束后取消：不再解码后面的片
+  const c = start('cancel-pieces', 20);
+  c.resolve('piece 1');
+  await settle();
+  c.send({ type: 'cancel', id: 'cancel-pieces' });
+  c.resolve('piece 2'); // 已经在解码的第 2 片可以正常结束
+  await settle();
+  assert.equal(c.streams.length, 2, 'no piece is decoded after the cancel');
+  assert.equal(c.messages.at(-1).code, 'cancelled');
+  assert.ok(
+    !doneOf(c, 'cancel-pieces'),
+    'a cancelled transcription never reports done',
+  );
+
+  // 空文本的片：不出 cue，但仍算解码过的语音
+  const e = start('empty-piece', 20);
+  for (const text of ['piece 1', '', 'piece 3', 'piece 4']) {
+    e.resolve(text);
+    await settle();
+  }
+  const emptyDone = doneOf(e, 'empty-piece');
+  assert.equal(emptyDone.segments.length, 3, 'the empty piece produces no cue');
+  assert.equal(
+    emptyDone.vadSegments.length,
+    4,
+    'the empty piece is still listed',
   );
 }
 
