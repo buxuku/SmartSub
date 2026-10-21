@@ -3,6 +3,9 @@ import * as path from 'path';
 import * as fontkit from 'fontkit';
 import * as os from 'os';
 import { readAssEmbeddedFonts } from './assEmbeddedFonts';
+import type { FontFallbackSummary } from '../../types/subtitleMerge';
+
+export type { FontFallbackSummary };
 
 const MAC_FONTS: Record<string, string[]> = {
   'PingFang SC': ['/System/Library/Fonts/PingFang.ttc'],
@@ -566,10 +569,6 @@ const hasAllGlyphs = (font: FontRecord | null, codes: number[]) =>
 export interface FontFallbackReport {
   fallbacks: Map<string, { from: string; to: string; sample: string }>;
   missing: Set<string>;
-}
-export interface FontFallbackSummary {
-  fallbacks: { from: string; to: string; sample: string }[];
-  missingGlyphs: string[];
 }
 export const newFontFallbackReport = (): FontFallbackReport => ({
   fallbacks: new Map(),

@@ -1,5 +1,6 @@
 import {
   fontTextRuns,
+  type FontFallbackReport,
   resolveBurnFontName,
   type FontContext,
 } from './fontResolver';
@@ -10,6 +11,7 @@ export function resolveAssFonts(
   content: string,
   defaultFont: string,
   context: FontContext = [],
+  report?: FontFallbackReport,
 ): { content: string; fontNames: string[] } {
   const fontNames = new Set([defaultFont]);
   let format: string[] = [];
@@ -67,6 +69,7 @@ export function resolveAssFonts(
             token === '\\h' ? '\u00a0' : token,
             activeFont,
             context,
+            report,
           );
           if (runs.length === 1 && runs[0].fontName === activeFont)
             return token;

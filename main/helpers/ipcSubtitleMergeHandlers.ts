@@ -27,6 +27,7 @@ import {
   embeddedFontContext,
   listSubtitleFonts,
   prepareSubtitleFonts,
+  type FontFallbackSummary,
 } from './fontResolver';
 import { getHwAccelInfo } from './hwEncoderDetector';
 import { store } from './store';
@@ -412,6 +413,7 @@ export function setupSubtitleMergeHandlers(
           fontNames,
           embeddedFonts,
           fontSubstituted,
+          fontReport,
           translateY,
         } = buildAssForSubtitle(content, pathForFormat, style);
         return {
@@ -421,11 +423,13 @@ export function setupSubtitleMergeHandlers(
           fontName: effectiveStyle.fontName,
           fontNames,
           fontSubstituted,
+          fontReport,
           embeddedFonts,
         } as SubtitleMergeResponse<string> & {
           fontName: string;
           fontNames: string[];
           fontSubstituted: boolean;
+          fontReport: FontFallbackSummary;
         };
       } catch (error) {
         logMessage(`生成预览 ASS 失败: ${error}`, 'error');

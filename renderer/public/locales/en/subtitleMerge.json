@@ -65,6 +65,8 @@
   "fontSearch": "Search fonts",
   "fontNoResults": "No matching fonts",
   "fontSubstitution": "{{requested}} is unavailable or lacks required glyphs. Preview and export both use {{actual}}.",
+  "fontFallbackNotice": "{{from}} lacks some glyphs (e.g. {{sample}}); preview and export automatically use {{to}} for them.",
+  "fontMissingGlyphs": "No installed font has these characters: {{chars}}{{more}}. They will appear as boxes. Install Noto Sans CJK (Source Han Sans) and try again.",
   "fontMissing": "Not installed",
   "fontUnsupported": "Unsupported by preview",
   "fontLoading": "Loading font...",
