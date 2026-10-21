@@ -10,19 +10,16 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { acquireFontSample } from '../../lib/fontSampleCache';
+import {
+  organizeFonts,
+  type FontOption,
+  type FontRow,
+} from '../../lib/fontListing';
+import { readRecentFonts, rememberRecentFont } from '../../lib/recentFonts';
 
-interface FontOption {
-  name: string;
-  available: boolean;
-  reason?: 'missing' | 'unsupported';
-  embeddedId?: string;
-  sampleRuns?: {
-    text: string;
-    fontName: string;
-    fullName?: string;
-    postscriptName?: string;
-  }[];
-}
+const HEADER_HEIGHT = 28;
+const ROW_HEIGHT = 64;
+
 export function FontSample({
   font,
   subtitlePath,
@@ -119,12 +116,14 @@ export default function FontSelector({
   const [attempt, setAttempt] = useState(0);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [recent, setRecent] = useState<string[]>([]);
   const [active, setActive] = useState(-1);
   const [parent, setParent] = useState<HTMLDivElement | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const listId = useId();
   useEffect(() => {
     if (!open) return;
+    setRecent(readRecentFonts());
     let stale = false;
     setError(false);
     setLoading(true);
@@ -149,22 +148,31 @@ export default function FontSelector({
       stale = true;
     };
   }, [attempt, subtitlePath, open]);
-  const options = useMemo(() => {
+  const rowsData = useMemo<FontRow[]>(() => {
     const all = fonts.some((font) => font.name === value)
       ? fonts
       : [
           { name: value, available: false, reason: 'missing' as const },
           ...fonts,
         ];
-    return all.filter((font) =>
-      font.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
-    );
-  }, [fonts, value, query]);
+    return organizeFonts(all, { recent, query });
+  }, [fonts, value, query, recent]);
+  const selectable = (index: number) => {
+    const row = rowsData[index];
+    return row?.kind === 'font' && row.font.available;
+  };
+  // 1-based position among options only, for aria-posinset.
+  const fontPositions = useMemo(() => {
+    let count = 0;
+    return rowsData.map((row) => (row.kind === 'font' ? ++count : 0));
+  }, [rowsData]);
+  const fontCount = fontPositions.length ? Math.max(...fontPositions) : 0;
   const rows = useVirtualizer({
-    count: options.length,
+    count: rowsData.length,
     getScrollElement: () => parent,
     enabled: open,
-    estimateSize: () => 64,
+    estimateSize: (index) =>
+      rowsData[index]?.kind === 'header' ? HEADER_HEIGHT : ROW_HEIGHT,
     overscan: 3,
   });
   useEffect(() => {
@@ -172,14 +180,17 @@ export default function FontSelector({
       setQuery('');
       return;
     }
-    const selected = options.findIndex(
-      (font) => font.name === value && font.available,
+    const selected = rowsData.findIndex(
+      (row) =>
+        row.kind === 'font' && row.font.name === value && row.font.available,
     );
     const next =
-      selected >= 0 ? selected : options.findIndex((font) => font.available);
+      selected >= 0
+        ? selected
+        : rowsData.findIndex((_row, index) => selectable(index));
     setActive(next);
     if (parent && next >= 0) rows.scrollToIndex(next, { align: 'auto' });
-  }, [open, options, parent]);
+  }, [open, rowsData, parent]);
   useEffect(() => {
     setOpen(false);
   }, [subtitlePath, disabled]);
@@ -188,8 +199,16 @@ export default function FontSelector({
     setError(false);
   }, [subtitlePath]);
   const choose = (index: number) => {
-    if (!disabled && !loading && !error && options[index]?.available) {
-      onChange(options[index].name);
+    const row = rowsData[index];
+    if (
+      !disabled &&
+      !loading &&
+      !error &&
+      row?.kind === 'font' &&
+      row.font.available
+    ) {
+      rememberRecentFont(row.font.name);
+      onChange(row.font.name);
       setOpen(false);
     }
   };
@@ -207,10 +226,10 @@ export default function FontSelector({
       event.key === 'Home'
         ? 0
         : event.key === 'End'
-          ? options.length - 1
+          ? rowsData.length - 1
           : active + direction;
-    for (; index >= 0 && index < options.length; index += direction) {
-      if (!options[index].available) continue;
+    for (; index >= 0 && index < rowsData.length; index += direction) {
+      if (!selectable(index)) continue;
       setActive(index);
       rows.scrollToIndex(index, { align: 'auto' });
       break;
@@ -301,7 +320,24 @@ export default function FontSelector({
               style={{ height: rows.getTotalSize() }}
             >
               {rows.getVirtualItems().map((row) => {
-                const font = options[row.index];
+                const item = rowsData[row.index];
+                const position = {
+                  height: row.size,
+                  transform: `translateY(${row.start}px)`,
+                };
+                if (item.kind === 'header')
+                  return (
+                    <div
+                      key={`header-${item.group}`}
+                      role="presentation"
+                      data-font-group={item.group}
+                      className="absolute left-0 top-0 flex w-full items-end px-3 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+                      style={position}
+                    >
+                      {t(`fontGroup.${item.group}`)}
+                    </div>
+                  );
+                const font = item.font;
                 return (
                   <div
                     key={font.name}
@@ -309,21 +345,32 @@ export default function FontSelector({
                     role="option"
                     aria-selected={font.name === value}
                     aria-disabled={!font.available || loading || error}
-                    aria-posinset={row.index + 1}
-                    aria-setsize={options.length}
+                    aria-posinset={fontPositions[row.index]}
+                    aria-setsize={fontCount}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => choose(row.index)}
-                    onMouseMove={() => setActive(row.index)}
+                    onMouseMove={() =>
+                      selectable(row.index) && setActive(row.index)
+                    }
                     className={`absolute left-0 top-0 w-full px-3 py-2 ${font.available ? 'cursor-pointer' : 'opacity-50'} ${active === row.index ? 'bg-accent' : ''}`}
-                    style={{
-                      height: row.size,
-                      transform: `translateY(${row.start}px)`,
-                    }}
+                    style={position}
                   >
                     <span className="flex items-center gap-2 text-xs">
-                      <span className="min-w-0 truncate" title={font.name}>
-                        {font.name}
+                      <span
+                        className="min-w-0 truncate"
+                        title={
+                          font.displayName
+                            ? `${font.displayName} (${font.name})`
+                            : font.name
+                        }
+                      >
+                        {font.displayName || font.name}
                       </span>
+                      {font.displayName && (
+                        <span className="min-w-0 truncate text-muted-foreground">
+                          {font.name}
+                        </span>
+                      )}
                       {font.name === value && (
                         <Check className="h-3 w-3 flex-none" />
                       )}
@@ -348,7 +395,7 @@ export default function FontSelector({
                 );
               })}
             </div>
-            {!options.length && (
+            {!fontCount && (
               <p className="p-3 text-sm text-muted-foreground">
                 {t('fontNoResults')}
               </p>
