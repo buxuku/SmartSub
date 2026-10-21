@@ -4,6 +4,7 @@ import * as fontkit from 'fontkit';
 import * as os from 'os';
 import { readAssEmbeddedFonts } from './assEmbeddedFonts';
 import type { FontFallbackSummary } from '../../types/subtitleMerge';
+import { commonFontRank } from './commonFonts';
 
 export type { FontFallbackSummary };
 
@@ -107,7 +108,12 @@ interface FontFaceInfo {
   postscriptName: string;
   fullName: string;
   hasGlyphForCodePoint(code: number): boolean;
-  name?: { records?: { preferredFamily?: Record<string, string> } };
+  name?: {
+    records?: {
+      preferredFamily?: Record<string, string>;
+      fontFamily?: Record<string, string>;
+    };
+  };
 }
 interface FontRecord {
   fontName: string;
@@ -155,6 +161,7 @@ const records = new Map<
 const aliases = new Map<string, string>();
 const installedFamilies = new Map<string, Set<string>>();
 const catalog = new Map<string, { stamp: string; faces: FontFaceInfo[] }>();
+const MAX_SCANNED_FONT_FILES = 20000;
 const SAMPLE_TEXT = 'SmartSub 字幕示例 123';
 const yieldToApp = () => new Promise<void>((resolve) => setImmediate(resolve));
 let discovery: Promise<void> | undefined;
@@ -266,7 +273,7 @@ async function discoverInstalledFonts() {
   let count = 0;
   const next = new Map<string, { stamp: string; faces: FontFaceInfo[] }>();
   const visit = async (directory: string, depth: number) => {
-    if (depth > 8 || count >= 4096) return;
+    if (depth > 8 || count >= MAX_SCANNED_FONT_FILES) return;
     let entries: fs.Dirent[];
     try {
       entries = await fs.promises.readdir(directory, { withFileTypes: true });
@@ -277,7 +284,7 @@ async function discoverInstalledFonts() {
       const file = path.join(directory, entry.name);
       if (entry.isDirectory()) await visit(file, depth + 1);
       else if (entry.isFile() && /\.(ttf|otf|ttc|otc)$/i.test(entry.name)) {
-        if (++count > 4096) return;
+        if (++count > MAX_SCANNED_FONT_FILES) return;
         try {
           const stat = await fs.promises.stat(file);
           const stamp = `${stat.mtimeMs}:${stat.size}:${stat.ctimeMs}`;
@@ -304,6 +311,7 @@ async function discoverInstalledFonts() {
               name: {
                 records: {
                   preferredFamily: { ...face.name?.records?.preferredFamily },
+                  fontFamily: { ...face.name?.records?.fontFamily },
                 },
               },
               hasGlyphForCodePoint: (code: number) => codes.has(code),
@@ -724,6 +732,42 @@ export function fontTextRuns(
   return runs;
 }
 
+const DISPLAY_LANGUAGE_ORDER = [
+  'zh',
+  'zh-CN',
+  'zh-Hans',
+  'zh-TW',
+  'zh-Hant',
+  'zh-HK',
+  'ja',
+  'ko',
+];
+/** Localized family names (e.g. 苹方-简) plus the preferred display one. */
+export function localizedFamilyNames(face: FontFaceInfo): {
+  displayName?: string;
+  localizedNames: string[];
+} {
+  const records = [
+    face.name?.records?.preferredFamily,
+    face.name?.records?.fontFamily,
+  ].filter(Boolean) as Record<string, string>[];
+  const english = normalize(face.familyName || '');
+  const localizedNames = Array.from(
+    new Set(
+      records
+        .flatMap((record) => Object.values(record))
+        .filter((name) => name && normalize(name) !== english),
+    ),
+  );
+  for (const language of DISPLAY_LANGUAGE_ORDER)
+    for (const record of records) {
+      const name = record[language];
+      if (name && normalize(name) !== english)
+        return { displayName: name, localizedNames };
+    }
+  return { localizedNames };
+}
+
 export async function listSubtitleFonts(context: FontContext = []) {
   await prepareSubtitleFonts();
   const listedFace = (name: string): FontRecord | null => {
@@ -748,9 +792,7 @@ export async function listSubtitleFonts(context: FontContext = []) {
   };
   const names = Array.from(
     new Set([
-      ...Object.keys(MAC_FONTS),
-      ...Object.keys(WINDOWS_FONTS),
-      ...Object.keys(LINUX_FONTS),
+      ...Object.keys(candidates),
       ...context.map((font) => font.fontName),
       ...Array.from(installedFamilies.keys()),
     ]),
@@ -811,8 +853,15 @@ export async function listSubtitleFonts(context: FontContext = []) {
         /* A Latin-only installation can still select Latin fonts. */
       }
     }
+    const localized = font
+      ? localizedFamilyNames(font.face)
+      : { localizedNames: [] as string[] };
     options.push({
       name,
+      displayName: localized.displayName,
+      localizedNames: localized.localizedNames,
+      // Weight variants (e.g. "Hiragino Sans GB W3") share localized family names; only the family itself is "common".
+      rank: font ? commonFontRank([name]) : undefined,
       resolvedName: font?.fontName,
       embeddedId: font?.id,
       sampleRuns,

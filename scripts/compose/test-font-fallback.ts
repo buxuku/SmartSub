@@ -3,12 +3,15 @@ import fs from 'node:fs';
 import {
   embeddedFontContext,
   fontTextRuns,
+  localizedFamilyNames,
+  listSubtitleFonts,
   isFontAvailable,
   newFontFallbackReport,
   prepareSubtitleFonts,
   resolveFontFilePath,
   summarizeFontFallbackReport,
 } from '../../main/helpers/fontResolver';
+import { commonFontRank } from '../../main/helpers/commonFonts';
 import { embeddedFontFixture, fontSection } from './embedded-font-fixture.mjs';
 
 async function main() {
@@ -92,6 +95,43 @@ async function main() {
   } else {
     console.log('skip: no Hangul system font on this platform');
   }
+
+  // 7. Common-font ranking matches English and localized names, case-insensitively.
+  assert.equal(commonFontRank(['pingfang sc']), 0);
+  assert.equal(commonFontRank(['苹方-简']), 0);
+  assert.ok(commonFontRank(['Arial'])! > commonFontRank(['Microsoft YaHei'])!);
+  assert.equal(commonFontRank(['Hiragino Sans W3']), undefined);
+  assert.equal(commonFontRank([]), undefined);
+
+  // 8. Localized names exclude the English family and prefer Chinese for display.
+  const face = (fontFamily: Record<string, string>, preferred = {}) =>
+    ({
+      familyName: 'Heiti TC',
+      name: { records: { fontFamily, preferredFamily: preferred } },
+    }) as any;
+  assert.deepEqual(
+    localizedFamilyNames(
+      face({
+        en: 'Heiti TC',
+        'zh-TW': '黑體-繁',
+        ja: '黒体-繁',
+        zh: '黑体-繁',
+      }),
+    ),
+    {
+      displayName: '黑体-繁',
+      localizedNames: ['黑體-繁', '黒体-繁', '黑体-繁'],
+    },
+  );
+  assert.deepEqual(localizedFamilyNames(face({ en: 'Heiti TC' })), {
+    localizedNames: [],
+  });
+
+  // 9. The listing carries rank and localized names for the picker.
+  const listed = await listSubtitleFonts(context);
+  const codicon = listed.find((font) => font.name === 'codicon')!;
+  assert.equal(codicon.rank, undefined);
+  assert.ok(Array.isArray(codicon.localizedNames));
 
   console.log('font fallback checks passed');
 }

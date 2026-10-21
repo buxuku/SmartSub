@@ -68,6 +68,13 @@
   "fontFallbackNotice": "字体「{{from}}」缺少部分字形（如「{{sample}}」），预览和导出已自动改用「{{to}}」渲染这些字符。",
   "fontMissingGlyphs": "系统中没有字体包含这些字符：{{chars}}{{more}}，它们将显示为方块。建议安装思源黑体（Noto Sans CJK）后重试。",
   "fontMissing": "未安装",
+  "fontGroup": {
+    "embedded": "字幕文件内嵌",
+    "recent": "最近使用",
+    "common": "常用字体",
+    "other": "全部字体",
+    "unavailable": "不可用"
+  },
   "fontUnsupported": "预览引擎不支持",
   "fontLoading": "正在加载字体…",
   "fontSampleFailed": "字体样例加载失败",

@@ -219,3 +219,69 @@ it('closes on disable and ignores a late listing failure', async () => {
   expect(screen.getByRole('combobox', { name: 'fontFamily' })).toBeDisabled();
   expect(change).not.toHaveBeenCalled();
 });
+
+const groupedFonts = [
+  { name: 'Zeta', available: true },
+  { name: 'Arial', available: true, rank: 24 },
+  {
+    name: 'Heiti SC',
+    displayName: '黑体-简',
+    localizedNames: ['黑体-简'],
+    available: true,
+    rank: 6,
+  },
+  { name: 'Gone', available: false, reason: 'missing' },
+];
+const openList = async () => {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('combobox', { name: 'fontFamily' }));
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId('font-list')).toHaveAttribute(
+      'aria-busy',
+      'false',
+    ),
+  );
+};
+
+it('shows recent and common fonts first, with localized names, and unavailable ones last', async () => {
+  window.localStorage.setItem('smartsub:recentFonts', '["Zeta"]');
+  invoke.mockResolvedValue({ success: true, data: groupedFonts });
+  render(<FontSelector value="Arial" disabled={false} onChange={jest.fn()} />);
+  await openList();
+  const groups = Array.from(
+    screen.getByTestId('font-list').querySelectorAll('[data-font-group]'),
+  ).map((node) => node.getAttribute('data-font-group'));
+  expect(groups).toEqual(['recent', 'common', 'unavailable']);
+  const options = screen.getAllByRole('option').map((node) => node.textContent);
+  expect(options[0]).toMatch(/^Zeta/);
+  expect(options[1]).toMatch(/^黑体-简Heiti SC/);
+  expect(options[2]).toMatch(/^Arial/);
+  expect(options[3]).toMatch(/^Gone/);
+  expect(screen.getAllByRole('option')[1]).toHaveAttribute(
+    'aria-posinset',
+    '2',
+  );
+  expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-setsize', '4');
+});
+
+it('finds a font by its Chinese name, pinyin or initials and remembers the pick', async () => {
+  window.localStorage.clear();
+  invoke.mockResolvedValue({ success: true, data: groupedFonts });
+  const change = jest.fn();
+  render(<FontSelector value="Arial" disabled={false} onChange={change} />);
+  await openList();
+  for (const query of ['黑体', 'heiti', 'htj']) {
+    fireEvent.change(screen.getByRole('combobox', { name: 'fontSearch' }), {
+      target: { value: query },
+    });
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+  }
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'fontSearch' }), {
+    key: 'Enter',
+  });
+  expect(change).toHaveBeenCalledWith('Heiti SC');
+  expect(
+    JSON.parse(window.localStorage.getItem('smartsub:recentFonts')!),
+  ).toEqual(['Heiti SC']);
+});
