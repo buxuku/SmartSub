@@ -197,7 +197,9 @@ async function main() {
     fontTextRuns('Wiii', style.fontName)[0].fontName,
     style.fontName,
   );
-  assert.throws(() => fontTextRuns('\u{10FFFF}', style.fontName), /U\+10FFFF/);
+  assert.deepEqual(fontTextRuns('\u{10FFFF}', style.fontName), [
+    { fontName: style.fontName, text: '\u{10FFFF}' },
+  ]);
   if (process.platform === 'darwin') {
     assert.equal(
       resolveBurnFontName('Hiragino Sans GB', true),

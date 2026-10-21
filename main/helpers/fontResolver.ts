@@ -9,6 +9,8 @@ const MAC_FONTS: Record<string, string[]> = {
   'Hiragino Sans GB': ['/System/Library/Fonts/Hiragino Sans GB.ttc'],
   'Heiti SC': ['/System/Library/Fonts/STHeiti Medium.ttc'],
   'Songti SC': ['/System/Library/Fonts/Supplemental/Songti.ttc'],
+  'Apple SD Gothic Neo': ['/System/Library/Fonts/AppleSDGothicNeo.ttc'],
+  AppleGothic: ['/System/Library/Fonts/Supplemental/AppleGothic.ttf'],
   'Arial Unicode MS': ['/System/Library/Fonts/Supplemental/Arial Unicode.ttf'],
   Helvetica: ['/System/Library/Fonts/Helvetica.ttc'],
   'Helvetica Neue': ['/System/Library/Fonts/HelveticaNeue.ttc'],
@@ -30,6 +32,14 @@ const WINDOWS_FONTS: Record<string, string[]> = Object.fromEntries(
     SimHei: ['simhei.ttf'],
     SimSun: ['simsun.ttc'],
     KaiTi: ['simkai.ttf'],
+    'Malgun Gothic': ['malgun.ttf'],
+    'Yu Gothic': ['YuGothR.ttc', 'YuGothM.ttc'],
+    Meiryo: ['meiryo.ttc'],
+    'Microsoft JhengHei': ['msjh.ttc', 'msjh.ttf'],
+    'MS Gothic': ['msgothic.ttc'],
+    'Segoe UI': ['segoeui.ttf'],
+    'Segoe UI Symbol': ['seguisym.ttf'],
+    'Leelawadee UI': ['LeelawUI.ttf'],
     Arial: ['arial.ttf'],
     Verdana: ['verdana.ttf'],
     Georgia: ['georgia.ttf'],
@@ -60,10 +70,32 @@ const LINUX_FONTS: Record<string, string[]> = {
     '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
     '/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf',
   ],
+  'Noto Sans CJK KR': [
+    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+    '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+  ],
+  'Noto Sans CJK JP': [
+    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+    '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+  ],
+  'Noto Sans CJK TC': [
+    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+    '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+  ],
   'Noto Sans SC': [
     '/usr/share/fonts/truetype/noto/NotoSansSC-Regular.ttf',
     '/usr/share/fonts/opentype/noto/NotoSansSC-Regular.otf',
   ],
+  'Noto Sans KR': [
+    '/usr/share/fonts/truetype/noto/NotoSansKR-Regular.ttf',
+    '/usr/share/fonts/opentype/noto/NotoSansKR-Regular.otf',
+  ],
+  'Noto Sans JP': [
+    '/usr/share/fonts/truetype/noto/NotoSansJP-Regular.ttf',
+    '/usr/share/fonts/opentype/noto/NotoSansJP-Regular.otf',
+  ],
+  NanumGothic: ['/usr/share/fonts/truetype/nanum/NanumGothic.ttf'],
+  'WenQuanYi Micro Hei': ['/usr/share/fonts/truetype/wqy/wqy-microhei.ttc'],
 };
 
 interface FontFaceInfo {
@@ -286,6 +318,8 @@ async function discoverInstalledFonts() {
   aliases.clear();
   installedFamilies.clear();
   catalog.clear();
+  presetFallbacks.clear();
+  dynamicFallbacks.clear();
   for (const [file, entry] of next) {
     catalog.set(file, entry);
     registerFaces(file, entry.faces);
@@ -482,53 +516,208 @@ export function loadFontData(
   }
 }
 
-export function fallbackFontForText(
-  fontName: string,
-  text: string,
-  context: FontContext = [],
-): string | undefined {
-  const primary = resolveFace(fontName, context);
-  const missing = Array.from(
-    new Set(Array.from(text).map((character) => character.codePointAt(0)!)),
-  ).filter((code) => code >= 32 && !primary?.face.hasGlyphForCodePoint(code));
-  if (!missing.length) return undefined;
-  for (const name of [
-    ...context.map((font) => font.fontName),
-    'Arial Unicode MS',
-    'Heiti SC',
-    'Microsoft YaHei',
-    'Noto Sans CJK SC',
-    'Noto Sans SC',
-    'SimHei',
-    'DejaVu Sans',
-  ]) {
-    const fallback = resolveFace(name, context);
-    if (
-      fallback &&
-      missing.every((code) => fallback.face.hasGlyphForCodePoint(code))
-    )
-      return fallback.fontName;
-  }
-  throw new Error(
-    `No installed subtitle font contains glyphs: ${missing.map((code) => `U+${code.toString(16).toUpperCase()}`).join(', ')}`,
-  );
+/**
+ * System fonts tried (in order) for glyphs the requested font lacks. The first
+ * entries keep the historical order so already-covered text renders unchanged.
+ */
+export const FALLBACK_FONT_NAMES = [
+  'Arial Unicode MS',
+  'Heiti SC',
+  'Microsoft YaHei',
+  'Noto Sans CJK SC',
+  'Noto Sans SC',
+  'SimHei',
+  'DejaVu Sans',
+  'PingFang SC',
+  'Apple SD Gothic Neo',
+  'AppleGothic',
+  'Hiragino Sans',
+  'Malgun Gothic',
+  'Yu Gothic',
+  'Meiryo',
+  'Microsoft JhengHei',
+  'MS Gothic',
+  'Noto Sans CJK KR',
+  'Noto Sans CJK JP',
+  'Noto Sans CJK TC',
+  'Noto Sans KR',
+  'Noto Sans JP',
+  'NanumGothic',
+  'WenQuanYi Micro Hei',
+  'Leelawadee UI',
+  'Thonburi',
+  'Segoe UI Symbol',
+  'Segoe UI',
+  'Liberation Sans',
+];
+const fallbackNames = (context: FontContext) => [
+  ...context.map((font) => font.fontName),
+  ...FALLBACK_FONT_NAMES,
+];
+/** Zero-width and variation characters never draw a glyph, so they are not "missing". */
+const INVISIBLE_CHARACTER =
+  /[\u00ad\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufe00-\ufe0f\ufeff\u{e0100}-\u{e01ef}]/u;
+const DYNAMIC_SCAN_FILES = 60;
+/** The lookup is synchronous on the main process, so bound how long it may block. */
+const DYNAMIC_SCAN_BUDGET_MS = 400;
+const hasAllGlyphs = (font: FontRecord | null, codes: number[]) =>
+  Boolean(font) && codes.every((code) => font!.face.hasGlyphForCodePoint(code));
+
+export interface FontFallbackReport {
+  fallbacks: Map<string, { from: string; to: string; sample: string }>;
+  missing: Set<string>;
+}
+export interface FontFallbackSummary {
+  fallbacks: { from: string; to: string; sample: string }[];
+  missingGlyphs: string[];
+}
+export const newFontFallbackReport = (): FontFallbackReport => ({
+  fallbacks: new Map(),
+  missing: new Set(),
+});
+export function summarizeFontFallbackReport(
+  report: FontFallbackReport,
+): FontFallbackSummary {
+  return {
+    fallbacks: Array.from(report.fallbacks.values()),
+    missingGlyphs: Array.from(report.missing).slice(0, 50),
+  };
+}
+function noteFallback(
+  report: FontFallbackReport | undefined,
+  from: string,
+  to: string,
+  character: string,
+) {
+  if (!report) return;
+  const key = `${from}\u0000${to}`;
+  const entry = report.fallbacks.get(key) || { from, to, sample: '' };
+  if (entry.sample.length < 8 && !entry.sample.includes(character))
+    entry.sample += character;
+  report.fallbacks.set(key, entry);
 }
 
+// Resolved per-code-point fallbacks; only valid without document-embedded fonts.
+const presetFallbacks = new Map<number, string | null>();
+const dynamicFallbacks = new Map<string, string | null>();
+
+function presetFallbackFont(
+  codes: number[],
+  context: FontContext,
+): FontRecord | null {
+  const cacheable = !context.length && codes.length === 1;
+  if (cacheable && presetFallbacks.has(codes[0])) {
+    const name = presetFallbacks.get(codes[0]);
+    return name ? resolveFace(name) : null;
+  }
+  let found: FontRecord | null = null;
+  for (const name of fallbackNames(context)) {
+    // resolveFace rescans every known font for unknown names; skip absent ones.
+    if (
+      !context.some((font) => font.fontName === name) &&
+      !resolveFontFilePath(name)
+    )
+      continue;
+    const font = resolveFace(name, context);
+    if (hasAllGlyphs(font, codes)) {
+      found = font;
+      break;
+    }
+  }
+  if (cacheable) presetFallbacks.set(codes[0], found?.fontName ?? null);
+  return found;
+}
+
+const LIKELY_COVERAGE_NAME =
+  /cjk|gothic|malgun|nanum|gulim|batang|hei|ming|song|yahei|jheng|mincho|meiryo|unicode|noto|sans|hangul|korean|japan/i;
+
+/** Last resort: look through installed fonts for one covering every code point. */
+function installedFallbackFont(codes: number[]): FontRecord | null {
+  const key = codes.join(',');
+  if (!dynamicFallbacks.has(key)) {
+    let found: string | null = null;
+    const files = Array.from(catalog.keys())
+      .sort(
+        (a, b) =>
+          Number(LIKELY_COVERAGE_NAME.test(path.basename(b))) -
+          Number(LIKELY_COVERAGE_NAME.test(path.basename(a))),
+      )
+      .slice(0, DYNAMIC_SCAN_FILES);
+    const deadline = Date.now() + DYNAMIC_SCAN_BUDGET_MS;
+    for (const file of files) {
+      if (Date.now() > deadline) break;
+      try {
+        const face = readFaces(file).find(
+          (candidate) =>
+            candidate.familyName &&
+            !candidate.familyName.startsWith('.') &&
+            codes.every((code) => candidate.hasGlyphForCodePoint(code)),
+        );
+        if (face) {
+          found = face.familyName;
+          break;
+        }
+      } catch {
+        /* Skip damaged font files. */
+      }
+    }
+    dynamicFallbacks.set(key, found);
+  }
+  const name = dynamicFallbacks.get(key);
+  const font = name ? resolveFace(name) : null;
+  return hasAllGlyphs(font, codes) ? font : null;
+}
+
+/** A single font that covers every missing code point, so one line keeps one fallback look. */
+function coveringFont(codes: number[], context: FontContext) {
+  return presetFallbackFont(codes, context) || installedFallbackFont(codes);
+}
+
+/**
+ * Split text into runs of the requested font and explicit per-glyph fallbacks.
+ * Glyphs no installed font provides stay on the requested font (drawn as
+ * boxes) and are recorded in `report` instead of failing preview or export.
+ */
 export function fontTextRuns(
   text: string,
   fontName: string,
   context: FontContext = [],
+  report?: FontFallbackReport,
 ): Array<{ text: string; fontName: string }> {
   const primary = resolveFace(fontName, context);
-  const fallback = fallbackFontForText(fontName, text, context);
-  if (!fallback) return [{ text, fontName }];
+  const covered = (code: number) =>
+    code < 32 || Boolean(primary?.face.hasGlyphForCodePoint(code));
+  const missing = Array.from(
+    new Set(
+      Array.from(text)
+        .filter((char) => !INVISIBLE_CHARACTER.test(char))
+        .map((char) => char.codePointAt(0)!),
+    ),
+  ).filter((code) => !covered(code));
+  if (!missing.length) return [{ text, fontName }];
+  const single = coveringFont(missing, context);
+  const perCharacter = new Map<number, FontRecord | null>();
+  const fallbackFor = (code: number) => {
+    if (single) return single;
+    if (!perCharacter.has(code))
+      perCharacter.set(code, presetFallbackFont([code], context));
+    return perCharacter.get(code)!;
+  };
   const runs: Array<{ text: string; fontName: string }> = [];
   for (const character of Array.from(text)) {
-    const name =
-      character.codePointAt(0)! < 32 ||
-      primary?.face.hasGlyphForCodePoint(character.codePointAt(0)!)
-        ? fontName
-        : fallback;
+    const code = character.codePointAt(0)!;
+    let name = fontName;
+    if (!covered(code)) {
+      const fallback = INVISIBLE_CHARACTER.test(character)
+        ? single
+        : fallbackFor(code);
+      if (fallback) {
+        name = fallback.fontName;
+        noteFallback(report, fontName, name, character);
+      } else if (!INVISIBLE_CHARACTER.test(character)) {
+        report?.missing.add(character);
+      }
+    }
     const last = runs[runs.length - 1];
     if (last?.fontName === name) last.text += character;
     else runs.push({ text: character, fontName: name });
@@ -568,6 +757,26 @@ export async function listSubtitleFonts(context: FontContext = []) {
     ]),
   );
   const options = [];
+  // Fallbacks are shared by every listed font: resolve each at most once.
+  const sampleFallbackNames = fallbackNames(context);
+  const sampleFaces = new Map<string, FontRecord | null>();
+  const sampleFace = (name: string) => {
+    if (!sampleFaces.has(name)) sampleFaces.set(name, listedFace(name));
+    return sampleFaces.get(name)!;
+  };
+  const sampleFallback = (missing: string[]) => {
+    for (const name of sampleFallbackNames) {
+      const face = sampleFace(name);
+      if (
+        face &&
+        missing.every((char) =>
+          face.face.hasGlyphForCodePoint(char.codePointAt(0)!),
+        )
+      )
+        return face;
+    }
+    return undefined;
+  };
   for (const name of names) {
     const font = listedFace(name);
     let sampleRuns: Array<{
@@ -581,26 +790,7 @@ export async function listSubtitleFonts(context: FontContext = []) {
         const missing = Array.from(SAMPLE_TEXT).filter(
           (char) => !font.face.hasGlyphForCodePoint(char.codePointAt(0)!),
         );
-        const fallback = missing.length
-          ? [
-              ...context.map((f) => f.fontName),
-              'Arial Unicode MS',
-              'Heiti SC',
-              'Microsoft YaHei',
-              'Noto Sans CJK SC',
-              'Noto Sans SC',
-              'SimHei',
-              'DejaVu Sans',
-            ]
-              .map(listedFace)
-              .find(
-                (f) =>
-                  f &&
-                  missing.every((char) =>
-                    f.face.hasGlyphForCodePoint(char.codePointAt(0)!),
-                  ),
-              )
-          : font;
+        const fallback = missing.length ? sampleFallback(missing) : font;
         if (!fallback) throw new Error('No sample fallback');
         for (const char of Array.from(SAMPLE_TEXT)) {
           const selected = font.face.hasGlyphForCodePoint(char.codePointAt(0)!)
