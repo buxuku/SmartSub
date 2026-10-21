@@ -90,3 +90,70 @@ export function buildQwenParams(
     vad_max_speech_duration_s: clampQwenMaxSpeech(s.vadMaxSpeechDuration),
   };
 }
+
+/** 音频每秒占用的 token 数（约 13）。取自 sherpa-onnx v1.13.2，升级时需复核。 */
+export const QWEN_AUDIO_TOKENS_PER_SECOND = 13;
+/** 提示词脚手架占用的 token 数（约 15）。取自 sherpa-onnx v1.13.2，升级时需复核。 */
+export const QWEN_PROMPT_TOKENS = 15;
+
+/**
+ * 估算解码一个 VAD 段所需的 token 数：提示词 + 音频 + 满额生成预留。
+ * 超过 max_total_len 时，文本会在生成循环触顶处被静默截断；更长时音频本身也被截断，
+ * 生成循环首步即退出，只剩首个 token（见 openspec fix-qwen-asr-long-segments design Context）。
+ */
+export function estimateQwenTokens(
+  durationS: number,
+  maxNewTokens: number,
+): number {
+  return (
+    QWEN_PROMPT_TOKENS +
+    Math.ceil(durationS * QWEN_AUDIO_TOKENS_PER_SECOND) +
+    maxNewTokens
+  );
+}
+
+export interface QwenOverBudget {
+  /** 超出解码预算的段数。 */
+  count: number;
+  /** 参与判断的有效 VAD 段总数（时长非正或非有限的段不计）。 */
+  total: number;
+  /** 估算 token 最多的那一段（秒）。 */
+  longest: { start: number; end: number; tokens: number };
+  /** 当前预算下能放下的最长段长（秒，向下取一位小数）。 */
+  fitSeconds: number;
+}
+
+/**
+ * 在转写结果的 VAD 段里找出超出解码预算的段。没有 VAD 信息或没有超限段时返回 null。
+ * 只用于日志告警，不改变转写结果。
+ */
+export function findQwenOverBudgetSegments(
+  params: Pick<QwenAddonParams, 'max_total_len' | 'max_new_tokens'>,
+  vadSegments: ReadonlyArray<{ start: number; end: number }> | undefined,
+): QwenOverBudget | null {
+  if (!vadSegments?.length) return null;
+  let count = 0;
+  let total = 0;
+  let longest: QwenOverBudget['longest'] | null = null;
+  for (const segment of vadSegments) {
+    const start = Number(segment.start);
+    const end = Number(segment.end);
+    const duration = end - start;
+    if (!Number.isFinite(duration) || duration <= 0) continue;
+    total += 1;
+    const tokens = estimateQwenTokens(duration, params.max_new_tokens);
+    if (tokens <= params.max_total_len) continue;
+    count += 1;
+    if (!longest || tokens > longest.tokens) longest = { start, end, tokens };
+  }
+  if (!longest) return null;
+  const fitSeconds =
+    Math.floor(
+      Math.max(
+        0,
+        (params.max_total_len - QWEN_PROMPT_TOKENS - params.max_new_tokens) /
+          QWEN_AUDIO_TOKENS_PER_SECOND,
+      ) * 10,
+    ) / 10;
+  return { count, total, longest, fitSeconds };
+}

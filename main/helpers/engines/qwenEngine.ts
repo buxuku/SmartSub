@@ -21,7 +21,12 @@ import {
   trimSubtitleTrailingSilence,
 } from '../subtitleTiming';
 import { resplitSubtitleCues } from '../subtitleSegmentation';
-import { buildQwenParams } from './qwenParams';
+import {
+  buildQwenParams,
+  findQwenOverBudgetSegments,
+  type QwenAddonParams,
+  type QwenOverBudget,
+} from './qwenParams';
 import { sanitizeQwenAsrText } from './qwenText';
 import { resolveEffectiveSettings } from './outcomePresets';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
@@ -42,6 +47,21 @@ function buildModelRequest(
     vadModel: getQwenVadModelPath(),
     params: buildQwenParams(settings),
   };
+}
+
+/** 超解码预算告警的日志正文：只陈述事实与可操作的办法，不改变转写结果。 */
+function describeOverBudget(
+  overBudget: QwenOverBudget,
+  params: QwenAddonParams,
+): string {
+  const { count, total, longest, fitSeconds } = overBudget;
+  return (
+    `qwen(sherpa): ${count} of ${total} VAD segments exceed the decoding budget ` +
+    `(max_total_len=${params.max_total_len}, max_new_tokens=${params.max_new_tokens}); ` +
+    `longest ${longest.start.toFixed(1)}s-${longest.end.toFixed(1)}s needs ~${longest.tokens} tokens, ` +
+    `segments up to ~${fitSeconds}s fit. Longer segments can be truncated or come back empty; ` +
+    `lower "Maximum speech" (More settings > Expert > Manual tuning) to split them.`
+  );
 }
 
 /**
@@ -139,6 +159,18 @@ async function transcribeQwen(ctx: TranscribeContext): Promise<string> {
   }
 
   if (signal?.aborted) throw new TaskCancelledError();
+
+  // 解码预算体检：超出 max_total_len 的 VAD 段，文本可能被静默截断或整段为空（sherpa 不报错）。
+  // 参数与上面的 worker 请求同源（buildQwenParams 是纯函数）；只记一条汇总日志，不改变结果。
+  const decodeBudget = buildQwenParams(settings);
+  const overBudget = findQwenOverBudgetSegments(
+    decodeBudget,
+    transcription?.vadSegments,
+  );
+  if (overBudget) {
+    logMessage(describeOverBudget(overBudget, decodeBudget), 'warning');
+  }
+
   ctx.onActivity?.({ phase: 'organizing', units: [] });
 
   ctx.onDiagnostics?.({
