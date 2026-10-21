@@ -74,10 +74,11 @@ async function main() {
   } = require('../main/helpers/engines/qwenEngine.ts');
   const { parseSubtitleCues } = require('../main/helpers/subtitleFormats.ts');
 
-  async function run(name, segments, config = {}) {
+  async function run(name, segments, config = {}, extra = {}) {
     const source = {
       segments,
       vadSegments: segments.map(({ start, end }) => ({ start, end })),
+      ...extra,
     };
     const before = JSON.stringify(source);
     // The adapter must copy segments, including when a segment is discarded.
@@ -296,6 +297,46 @@ async function main() {
     'a smaller budget (256/128) lowers the limit to 8.6s',
   );
   storeSettings = {};
+
+  // Hard split: one info line names what was cut; pieces that fit never trigger the budget warning.
+  const splitInfos = () =>
+    logs.filter(
+      (entry) =>
+        entry.level === 'info' &&
+        /split \d+ VAD segment\(s\)/.test(entry.message),
+    );
+  assert.equal(splitInfos().length, 0, 'nothing was reported as split so far');
+  const warningsBefore = budgetWarnings().length;
+  const pieces = [0, 1, 2, 3].map((i) => ({
+    start: 10 + 14 * i,
+    end: 24 + 14 * i,
+    text: `language English<asr_text>Piece ${i + 1}`,
+  }));
+  const split = await run(
+    'split',
+    pieces,
+    {},
+    { splits: [{ start: 10, end: 66, pieces: 4 }] },
+  );
+  assert.equal(split.cues.length, 4, 'every piece keeps its own subtitle');
+  assert.equal(splitInfos().length, 1, 'one info line per transcription');
+  assert.equal(
+    splitInfos()[0].message,
+    'qwen(sherpa): split 1 VAD segment(s) longer than 20s into 4 pieces at the quietest points (longest 10.0s-66.0s); when the audio has no pause a cut can land inside a word.',
+  );
+  assert.equal(
+    budgetWarnings().length,
+    warningsBefore,
+    'pieces that fit the budget do not warn',
+  );
+  await run('split-none', pieces, {}, { splits: [] });
+  assert.equal(splitInfos().length, 1, 'an empty splits list logs nothing');
+  await run('split-fallback', longSegments, {}, { splits: [] });
+  assert.equal(
+    budgetWarnings().length,
+    warningsBefore + 1,
+    'a 45s piece that still reached the decoder keeps the over-budget warning',
+  );
   console.log('Qwen scaffold adapter regression tests passed');
 }
 
