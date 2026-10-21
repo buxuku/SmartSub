@@ -130,7 +130,12 @@ import {
   segmentTiming,
   progressPercent,
 } from '../main/helpers/sherpaOnnx/sherpaConfig';
-import { buildQwenParams } from '../main/helpers/engines/qwenParams';
+import {
+  buildQwenParams,
+  clampQwenMaxSpeech,
+  QWEN_DEFAULT_MAX_SPEECH_S,
+  QWEN_HARD_MAX_SPEECH_S,
+} from '../main/helpers/engines/qwenParams';
 import { sanitizeQwenAsrText } from '../main/helpers/engines/qwenText';
 import {
   buildFireRedParams,
@@ -1411,9 +1416,10 @@ eq(
     vad_threshold: 0.5,
     vad_min_silence_duration_ms: 100,
     vad_min_speech_duration_ms: 250,
-    vad_max_speech_duration_s: 0,
+    // 不再沿用「0 = 不限制」：Qwen 的 token 预算装不下长段（design D2/D3）。
+    vad_max_speech_duration_s: QWEN_DEFAULT_MAX_SPEECH_S,
   },
-  'qwen: default params match sherpa upstream defaults',
+  'qwen: default params match sherpa upstream defaults (max speech capped)',
 );
 eq(
   buildQwenParams({ qwenProvider: 'cuda', qwenNumThreads: 4 }).provider,
@@ -1430,6 +1436,58 @@ eq(
     .max_new_tokens,
   256,
   'qwen: custom max_new_tokens passthrough',
+);
+
+// --- qwenParams: 段长安全闸（design D2/D3）---
+// 默认 15 秒、上限 20 秒；0 / 未设 / 非法 → 默认，绝不把「不限制」传给 VAD。
+eq(QWEN_DEFAULT_MAX_SPEECH_S, 15, 'qwen: default max speech is 15s');
+eq(QWEN_HARD_MAX_SPEECH_S, 20, 'qwen: hard max speech is 20s');
+for (const [raw, label] of [
+  [0, '0 (unlimited convention)'],
+  [undefined, 'undefined'],
+  [null, 'null'],
+  [Number.NaN, 'NaN'],
+  [Number.POSITIVE_INFINITY, 'Infinity'],
+  [-5, 'negative'],
+  ['abc', 'non-numeric string'],
+] as Array<[unknown, string]>) {
+  eq(
+    clampQwenMaxSpeech(raw),
+    QWEN_DEFAULT_MAX_SPEECH_S,
+    `qwen: max speech ${label} -> 15s default (never unlimited)`,
+  );
+}
+eq(clampQwenMaxSpeech(12), 12, 'qwen: in-range max speech passes through');
+eq(
+  clampQwenMaxSpeech(20),
+  20,
+  'qwen: max speech exactly at the 20s hard cap passes through',
+);
+eq(clampQwenMaxSpeech(0.5), 0.5, 'qwen: fractional max speech passes through');
+eq(
+  clampQwenMaxSpeech(25),
+  QWEN_HARD_MAX_SPEECH_S,
+  'qwen: max speech above the cap clamps to 20s',
+);
+eq(
+  clampQwenMaxSpeech(60),
+  QWEN_HARD_MAX_SPEECH_S,
+  'qwen: slider maximum (60s) clamps to 20s',
+);
+eq(
+  buildQwenParams({ vadMaxSpeechDuration: 0 }).vad_max_speech_duration_s,
+  QWEN_DEFAULT_MAX_SPEECH_S,
+  'qwen: buildQwenParams overrides 0=unlimited convention (auto 15s)',
+);
+eq(
+  buildQwenParams({ vadMaxSpeechDuration: 12 }).vad_max_speech_duration_s,
+  12,
+  'qwen: buildQwenParams keeps a valid manual max speech',
+);
+eq(
+  buildQwenParams({ vadMaxSpeechDuration: 60 }).vad_max_speech_duration_s,
+  QWEN_HARD_MAX_SPEECH_S,
+  'qwen: buildQwenParams clamps an oversized max speech to 20s',
 );
 
 // --- qwenText: protocol cleanup without guessing which words are speech ---

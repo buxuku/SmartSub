@@ -12,6 +12,9 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'smartsub-qwen-scaffold-'));
 const originalLoad = Module._load;
 const originalTsLoader = require.extensions['.ts'];
 let response;
+// Recorded so the tests can assert on what the adapter asks the worker for.
+const transcribeRequests = [];
+const prewarmRequests = [];
 
 require.extensions['.ts'] = (module, filename) => {
   module._compile(
@@ -46,10 +49,13 @@ Module._load = function (request, parent, isMain) {
   if (request.endsWith('/sherpaFunasrRuntime'))
     return {
       getSherpaAsrRuntime: () => ({
-        transcribe: () => ({
-          id: 'fixture',
-          result: Promise.resolve(response),
-        }),
+        transcribe: (model) => {
+          transcribeRequests.push(model);
+          return { id: 'fixture', result: Promise.resolve(response) };
+        },
+        prewarm: (model) => {
+          prewarmRequests.push(model);
+        },
       }),
     };
   return originalLoad.call(this, request, parent, isMain);
@@ -182,6 +188,49 @@ async function main() {
   ]);
   assert.equal(empty.srt, '', 'metadata-only output creates no blank cues');
   assert.deepEqual(empty.cues, []);
+
+  // The worker request carries the clamped VAD limit, and prewarm asks for the same one.
+  const requestFor = async (name, config) => {
+    await run(
+      name,
+      [{ start: 0, end: 2, text: 'language English<asr_text>Hi' }],
+      config,
+    );
+    return transcribeRequests.at(-1);
+  };
+  assert.equal(
+    (await requestFor('limit-default', {})).params.vad_max_speech_duration_s,
+    15,
+    'default settings no longer mean unlimited',
+  );
+  const zero = await requestFor('limit-zero', { vadMaxSpeechDuration: 0 });
+  assert.equal(
+    zero.params.vad_max_speech_duration_s,
+    15,
+    '0 is treated as automatic (15s)',
+  );
+  assert.equal(
+    (await requestFor('limit-manual', { vadMaxSpeechDuration: 12 })).params
+      .vad_max_speech_duration_s,
+    12,
+    'a valid manual value is kept',
+  );
+  assert.equal(
+    (await requestFor('limit-big', { vadMaxSpeechDuration: 60 })).params
+      .vad_max_speech_duration_s,
+    20,
+    'an oversized value is clamped to the 20s cap',
+  );
+  qwenEngineAdapter.prewarm({
+    transcriptionEngine: 'qwen',
+    model: 'qwen3-asr-0.6b',
+    vadMaxSpeechDuration: 0,
+  });
+  assert.deepEqual(
+    prewarmRequests.at(-1),
+    zero,
+    'prewarm builds the identical worker request as transcribe',
+  );
   console.log('Qwen scaffold adapter regression tests passed');
 }
 
