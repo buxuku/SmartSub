@@ -161,7 +161,7 @@
   "vadMinSilenceDuration": "Minimum Silence Duration (ms)",
   "vadMinSilenceDurationTip": "Minimum duration of silence to split speech segments",
   "vadMaxSpeechDuration": "Maximum Speech Duration (s)",
-  "vadMaxSpeechDurationTip": "Maximum duration for a single speech segment. Use 0 for unlimited",
+  "vadMaxSpeechDurationTip": "Maximum duration for a single speech segment. Use 0 for unlimited. Exceptions: for Qwen3-ASR, 0 means 15 s and the cap is 20 s; for FireRedASR, 0 means 60 s and the cap is 60 s",
   "vadSpeechPad": "Speech Padding (ms)",
   "vadSpeechPadTip": "Padding added around detected speech segments",
   "vadSamplesOverlap": "Samples Overlap",
