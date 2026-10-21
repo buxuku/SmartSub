@@ -135,9 +135,12 @@ import {
   clampQwenMaxSpeech,
   estimateQwenTokens,
   findQwenOverBudgetSegments,
+  qwenFitSeconds,
+  qwenSegmentHardMaxSeconds,
   QWEN_DEFAULT_MAX_SPEECH_S,
   QWEN_HARD_MAX_SPEECH_S,
 } from '../main/helpers/engines/qwenParams';
+import { buildFunasrParams } from '../main/helpers/engines/funasrParams';
 import { sanitizeQwenAsrText } from '../main/helpers/engines/qwenText';
 import {
   buildFireRedParams,
@@ -1420,6 +1423,8 @@ eq(
     vad_min_speech_duration_ms: 250,
     // 不再沿用「0 = 不限制」：Qwen 的 token 预算装不下长段（design D2/D3）。
     vad_max_speech_duration_s: QWEN_DEFAULT_MAX_SPEECH_S,
+    // worker 硬切分上限：默认预算下取 20 秒（design D3）。
+    segment_hard_max_s: 20,
   },
   'qwen: default params match sherpa upstream defaults (max speech capped)',
 );
@@ -1587,6 +1592,57 @@ eq(
   null,
   'qwen budget: empty, NaN and reversed segments are ignored',
 );
+
+// --- qwenParams: worker 硬切分上限（openspec split-qwen-asr-long-segments design D3）---
+eq(
+  qwenFitSeconds(QWEN_DEFAULT_BUDGET),
+  28.3,
+  'qwen hard split: the default budget fits 28.3s (same figure as the over-budget warning)',
+);
+eq(
+  qwenFitSeconds({ max_total_len: 100, max_new_tokens: 128 }),
+  0,
+  'qwen hard split: a budget with no room for audio fits 0s, never negative',
+);
+eq(
+  buildQwenParams({}).segment_hard_max_s,
+  20,
+  'qwen hard split: default limit is 20s',
+);
+eq(
+  buildQwenParams({ qwenMaxTotalLen: 256, qwenMaxNewTokens: 128 })
+    .segment_hard_max_s,
+  8.6,
+  'qwen hard split: a smaller budget (256/128) tightens the limit to 8.6s',
+);
+eq(
+  buildQwenParams({ qwenMaxTotalLen: 100, qwenMaxNewTokens: 128 })
+    .segment_hard_max_s,
+  1,
+  'qwen hard split: a budget that cannot fit 1s floors the limit at 1s',
+);
+eq(
+  buildQwenParams({ qwenMaxTotalLen: 1024, qwenMaxNewTokens: 256 })
+    .segment_hard_max_s,
+  20,
+  'qwen hard split: a larger budget never raises the limit above 20s',
+);
+eq(
+  qwenSegmentHardMaxSeconds({ max_total_len: 512, max_new_tokens: 128 }),
+  buildQwenParams({}).segment_hard_max_s,
+  'qwen hard split: buildQwenParams uses qwenSegmentHardMaxSeconds',
+);
+for (const [label, params] of [
+  ['funasr', buildFunasrParams({})],
+  ['fireRed', buildFireRedParams({})],
+  ['parakeet', buildParakeetParams({})],
+] as Array<[string, object]>) {
+  eq(
+    'segment_hard_max_s' in params,
+    false,
+    `${label}: no hard split limit is sent to the worker`,
+  );
+}
 
 // --- qwenText: protocol cleanup without guessing which words are speech ---
 const qwenTextCases: Array<[string | null | undefined, string]> = [
