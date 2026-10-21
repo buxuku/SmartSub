@@ -12,9 +12,11 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'smartsub-qwen-scaffold-'));
 const originalLoad = Module._load;
 const originalTsLoader = require.extensions['.ts'];
 let response;
-// Recorded so the tests can assert on what the adapter asks the worker for.
+// Recorded so the tests can assert on what the adapter logs and asks the worker for.
+const logs = [];
 const transcribeRequests = [];
 const prewarmRequests = [];
+let storeSettings = {};
 
 require.extensions['.ts'] = (module, filename) => {
   module._compile(
@@ -33,7 +35,12 @@ require.extensions['.ts'] = (module, filename) => {
 Module._load = function (request, parent, isMain) {
   if (request === 'electron') return { app: { getPath: () => root } };
   if (request.endsWith('/storeManager'))
-    return { logMessage() {}, store: { get: () => ({}) } };
+    return {
+      logMessage(message, level) {
+        logs.push({ message: String(message), level });
+      },
+      store: { get: () => storeSettings },
+    };
   if (request.endsWith('/qwenModelCatalog'))
     return {
       getQwenModelFiles: () => ({}),
@@ -188,6 +195,50 @@ async function main() {
   ]);
   assert.equal(empty.srt, '', 'metadata-only output creates no blank cues');
   assert.deepEqual(empty.cues, []);
+
+  // Decoding budget: segments inside it stay silent, one far beyond it logs one warning.
+  const budgetWarnings = () =>
+    logs.filter(
+      (entry) =>
+        entry.level === 'warning' && /decoding budget/.test(entry.message),
+    );
+  assert.equal(
+    budgetWarnings().length,
+    0,
+    'segments inside the decoding budget never warn',
+  );
+  const longSegments = [
+    { start: 0, end: 45, text: 'language English<asr_text>Long speech' },
+  ];
+  const long = await run('long', longSegments);
+  assert.deepEqual(
+    long.cues,
+    [{ startMs: 0, endMs: 45000, text: 'Long speech' }],
+    'an over-budget segment still produces its subtitle unchanged',
+  );
+  assert.equal(
+    budgetWarnings().length,
+    1,
+    'one aggregated warning per transcription',
+  );
+  const [warning] = budgetWarnings();
+  assert.match(
+    warning.message,
+    /1 of 1 VAD segments exceed the decoding budget/,
+  );
+  assert.match(warning.message, /0\.0s-45\.0s/, 'names the longest segment');
+  assert.match(warning.message, /~728 tokens/, 'states the estimated need');
+  assert.match(warning.message, /~28\.3s/, 'states what still fits');
+
+  // A raised budget fits the same segment, so nothing new is logged.
+  storeSettings = { qwenMaxTotalLen: 1024, qwenMaxNewTokens: 256 };
+  await run('long-big-budget', longSegments);
+  storeSettings = {};
+  assert.equal(
+    budgetWarnings().length,
+    1,
+    'a raised budget (1024/256) fits a 45s segment without a warning',
+  );
 
   // The worker request carries the clamped VAD limit, and prewarm asks for the same one.
   const requestFor = async (name, config) => {

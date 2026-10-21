@@ -133,6 +133,8 @@ import {
 import {
   buildQwenParams,
   clampQwenMaxSpeech,
+  estimateQwenTokens,
+  findQwenOverBudgetSegments,
   QWEN_DEFAULT_MAX_SPEECH_S,
   QWEN_HARD_MAX_SPEECH_S,
 } from '../main/helpers/engines/qwenParams';
@@ -1488,6 +1490,102 @@ eq(
   buildQwenParams({ vadMaxSpeechDuration: 60 }).vad_max_speech_duration_s,
   QWEN_HARD_MAX_SPEECH_S,
   'qwen: buildQwenParams clamps an oversized max speech to 20s',
+);
+
+// --- qwenParams: 解码预算估算（sherpa-onnx v1.13.2：提示词约 15 + 音频 13/秒 + 生成预留）---
+eq(
+  estimateQwenTokens(28, 128),
+  507,
+  'qwen: a 28s segment needs 507 tokens (fits the default 512)',
+);
+eq(
+  estimateQwenTokens(30, 128),
+  533,
+  'qwen: a 30s segment needs 533 tokens (over the default 512)',
+);
+eq(
+  estimateQwenTokens(28.3, 128),
+  511,
+  'qwen: 28.3s still fits the default 512 budget',
+);
+eq(
+  estimateQwenTokens(28.4, 128),
+  513,
+  'qwen: 28.4s no longer fits the default 512 budget',
+);
+eq(
+  estimateQwenTokens(45, 256),
+  856,
+  'qwen: token estimate follows the configured max_new_tokens',
+);
+
+// --- qwenParams: 超预算 VAD 段查找 ---
+const QWEN_DEFAULT_BUDGET = { max_total_len: 512, max_new_tokens: 128 };
+eq(
+  findQwenOverBudgetSegments(QWEN_DEFAULT_BUDGET, undefined),
+  null,
+  'qwen budget: no VAD info -> nothing to report',
+);
+eq(
+  findQwenOverBudgetSegments(QWEN_DEFAULT_BUDGET, []),
+  null,
+  'qwen budget: empty VAD list -> nothing to report',
+);
+eq(
+  findQwenOverBudgetSegments(QWEN_DEFAULT_BUDGET, [
+    { start: 0, end: 12.5 },
+    { start: 13, end: 41 },
+  ]),
+  null,
+  'qwen budget: segments up to 28s fit (boundary included)',
+);
+eq(
+  findQwenOverBudgetSegments(QWEN_DEFAULT_BUDGET, [{ start: 0, end: 30 }]),
+  {
+    count: 1,
+    total: 1,
+    longest: { start: 0, end: 30, tokens: 533 },
+    fitSeconds: 28.3,
+  },
+  'qwen budget: a single 30s segment is reported with its token need',
+);
+eq(
+  findQwenOverBudgetSegments(QWEN_DEFAULT_BUDGET, [
+    { start: 0, end: 10 },
+    { start: 10, end: 55 },
+    { start: 60, end: 92 },
+    { start: 100, end: 110 },
+  ]),
+  {
+    count: 2,
+    total: 4,
+    longest: { start: 10, end: 55, tokens: 728 },
+    fitSeconds: 28.3,
+  },
+  'qwen budget: mixed segments report count, total and the longest one',
+);
+eq(
+  findQwenOverBudgetSegments({ max_total_len: 1024, max_new_tokens: 256 }, [
+    { start: 0, end: 45 },
+  ]),
+  null,
+  'qwen budget: a raised budget (1024/256) fits a 45s segment',
+);
+eq(
+  findQwenOverBudgetSegments({ max_total_len: 1024, max_new_tokens: 256 }, [
+    { start: 0, end: 60 },
+  ])?.fitSeconds,
+  57.9,
+  'qwen budget: fitSeconds follows the configured budget',
+);
+eq(
+  findQwenOverBudgetSegments(QWEN_DEFAULT_BUDGET, [
+    { start: 5, end: 5 },
+    { start: Number.NaN, end: 3 },
+    { start: 9, end: 2 },
+  ]),
+  null,
+  'qwen budget: empty, NaN and reversed segments are ignored',
 );
 
 // --- qwenText: protocol cleanup without guessing which words are speech ---
