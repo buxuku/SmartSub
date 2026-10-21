@@ -2,7 +2,7 @@
 
 ### Requirement: worker 把超过上限的 VAD 段按最安静处切成多片
 
-当请求带有正数 `segment_hard_max_s` 时，sherpa worker SHALL 在 VAD 出段之后、创建识别 stream 之前，检查每个段的时长 d。d 不超过上限 L 时 MUST 原样解码，不做任何处理。d 超过 L 时，worker MUST 把该段切成 n = ceil(d / (L − 2r)) 片，其中 r = min(2 秒, L / 4)。每片 MUST NOT 超过 L；各片首尾相接、合起来恰好覆盖原段，MUST NOT 丢弃任何样本。第 k 个切点（k = 1 … n − 1）MUST 取理想位置 k·d/n 前后 r 秒内、以 20 ms 为一帧并做三帧能量平滑后能量最低的那一帧的中心；能量并列时 MUST 取离理想位置最近的一帧。请求里的 `segment_hard_max_s` 缺省、为 0、为负数或不是有限数值时，worker 的行为 MUST 与没有这个功能时一致。
+当请求带有正数 `segment_hard_max_s` 时，sherpa worker SHALL 在 VAD 出段之后、创建识别 stream 之前，检查每个段的时长 d。d 不超过上限 L 时 MUST 原样解码，不做任何处理。d 超过 L 时，worker MUST 把该段切成 n = ceil(d / (L − 2r)) 片，其中 r = min(2 秒, L / 6)。每片 MUST NOT 超过 L；各片首尾相接、合起来恰好覆盖原段，MUST NOT 丢弃任何样本。第 k 个切点（k = 1 … n − 1）MUST 取理想位置 k·d/n 前后 r 秒内、以 20 ms 为一帧并做三帧能量平滑后能量最低的那一帧的中心；能量并列时 MUST 取离理想位置最近的一帧。请求里的 `segment_hard_max_s` 缺省、为 0、为负数、小于 1 秒或不是有限数值时，worker 的行为 MUST 与没有这个功能时一致。
 
 #### Scenario: 不超过上限的段不动
 
@@ -24,9 +24,14 @@
 - **WHEN** 一个超长段整段能量完全相同（例如全零）
 - **THEN** 切点就落在理想的等分位置
 
+#### Scenario: 上限较小时切点次序不颠倒
+
+- **WHEN** 上限为 8.6 秒，VAD 给出时长在 10 秒到 40 秒之间的各种段
+- **THEN** 每个段的切点严格递增，每片非空且不超过 8.6 秒
+
 #### Scenario: 参数缺省时与现在一致
 
-- **WHEN** 请求不带 `segment_hard_max_s`，或它为 0、负数、NaN
+- **WHEN** 请求不带 `segment_hard_max_s`，或它为 0、负数、小于 1 秒、NaN
 - **THEN** 无论段多长都只解码一次，`done` 消息里没有被切开的段
 
 ### Requirement: 每一片独立解码并如实回报

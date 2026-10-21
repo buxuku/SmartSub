@@ -8,7 +8,7 @@
 
 ## 2. 切分纯函数（测试先行）
 
-- [ ] 2.1 先写失败测试 `scripts/test-segment-split.cjs`，并入 `yarn test:engines`：不超过上限与恰好等于上限不切；56 秒切成 4 片、每片不超过 20 秒、首尾相接且覆盖整段；在已知位置挖出静音谷的合成信号里，切点落在谷里；全零或平坦信号等分；上限很小时 r 取 L / 4；末片不会极短；非有限数值、0、负数的上限返回单片。确认测试因文件不存在而变红
+- [ ] 2.1 先写失败测试 `scripts/test-segment-split.cjs`，并入 `yarn test:engines`：不超过上限与恰好等于上限不切；56 秒切成 4 片、每片不超过 20 秒、首尾相接且覆盖整段；在已知位置挖出静音谷的合成信号里，切点落在谷里；全零或平坦信号等分；上限较小（如 8.6 秒、1 秒）时切点仍严格递增、每片不超过上限（r 取 L / 6）；末片不会极短；非有限数值、0、负数、小于 1 秒的上限返回单片。确认测试因文件不存在而变红
 - [ ] 2.2 实现 `extraResources/sherpa/worker/segment-split.js`（纯函数，无依赖），确认变绿
 
 ## 3. worker 接入（测试先行）
@@ -34,6 +34,7 @@
 - [ ] 6.5 `openspec validate split-qwen-asr-long-segments --strict`
 - [ ] 6.6 `prettier --check` 覆盖本分支改动的全部文件
 - [ ] 6.7 核对 `electron-builder.yml` 在 mac、win、linux 三处对 `extraResources/sherpa/` 的规则覆盖新文件；用 `worker_threads` 跑真实 worker 的脚本（如 `scripts/test-sherpa-runtime-failures.cjs` 所在链路）能 `require` 到它
+- [ ] 6.8 本机一次性核对（不入库）：真实 Silero VAD + 真实 worker 代码（`vm` 加载）+ 假识别器，在无停顿素材（145 秒 / 123 秒）上确认每个解码单元不超过 20 秒、cue 首尾相接、`splits` 非空；同一素材不带参数时仍是一整段
 
 ## 7. 未验证项（需要真实环境，请勿当作已验证）
 
