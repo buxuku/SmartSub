@@ -65,8 +65,8 @@
   "fontSearch": "搜索字体",
   "fontNoResults": "没有匹配的字体",
   "fontSubstitution": "字体「{{requested}}」不可用或缺少所需字形，预览和导出统一使用「{{actual}}」。",
-  "fontFallbackNotice": "字体「{{from}}」缺少部分字形（如「{{sample}}」），预览和导出已自动改用「{{to}}」渲染这些字符。",
-  "fontMissingGlyphs": "系统中没有字体包含这些字符：{{chars}}{{more}}，它们将显示为方块。建议安装思源黑体（Noto Sans CJK）后重试。",
+  "fontFallbackNotice": "字体「{{from}}」缺少部分字形（如「{{sample}}」），当前临时用「{{to}}」渲染，效果可能与预期不同。",
+  "fontMissingGlyphs": "系统中没有字体包含这些字符：{{chars}}{{more}}，它们将显示为方块。",
   "fontMissing": "未安装",
   "fontGroup": {
     "embedded": "字幕文件内嵌",
@@ -213,5 +213,8 @@
   "reconnectQueued": "排队中",
   "draftLocked": "此合成工程正在另一个窗口中编辑。该窗口离开或关闭后，将自动读取最新草稿。",
   "draftLockFailed": "无法取得合成工程编辑锁，已暂停编辑以保护草稿。",
-  "pageDesc": "把字幕烧录进画面，或封装为软字幕轨道"
+  "pageDesc": "把字幕烧录进画面，或封装为软字幕轨道",
+  "fontRecommendLoading": "正在查找可完整显示这些字幕的字体…",
+  "fontRecommendLabel": "可完整显示的字体（点击切换）：",
+  "fontInstallHint": "建议安装思源黑体（Noto Sans CJK）后重试。"
 }
