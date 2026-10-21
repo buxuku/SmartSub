@@ -1,0 +1,181 @@
+# TEMPORARY — only for verifying issue #547; do not merge into main.
+#
+# 验证 whisper.cpp【已发布】的 release（builder 上 workflow_dispatch + publish=true 的那次构建）里的 Linux CUDA addon：
+#   1. 发布本身：publish run 成功，release-<时间戳> 已发布且 tag 指向构建提交，latest 里的 Linux CUDA 资产被换成了新的
+#   2. 按应用的下载方式（releases/download/latest/<文件>）取到的文件：sha256 与 GitHub digest、addon-versions.json 一致，版本号比上一版新
+#   3. addon 的 DT_NEEDED 里没有 libnccl；守卫放行线上的包、仍然拒绝已知坏包；Full tar.gz 内容正确
+#   4. 提问者的环境（Fedora 44 + CUDA 13.4，无 NCCL）里线上的 1302 能 dlopen；Ubuntu 22.04 + CUDA 12.4 里线上的 1240 能 dlopen
+#   5. Full 包放进没有 CUDA toolkit 的干净容器：应用的加载方式能找到包里的库
+#
+# 第一行（negative control）把同一套检查用在 2026-10-13 的坏 release 上：这套检查必须在实质项上变红，
+# 否则说明检查本身是空的。该 job 设了 continue-on-error，红是预期结果。
+name: addon-release-verify (temporary)
+
+on:
+  push:
+    branches: [tmp/verify-nccl-addon]
+    paths:
+      - .github/workflows/addon-release-verify.yml
+      - .github/addon-release-verify/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: addon-release-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WCPP_REPO: buxuku/whisper.cpp
+  # 已知坏包：2026-10-13 的构建，带 libnccl.so.2（固定 tag，不用会变的 latest）
+  BAD_TAG: release-20261013-135642
+  # 已知好包：引入 NCCL 之前的最后一次构建
+  GOOD_TAG: release-20260611-130108
+  # 守卫脚本取自要发布的那个提交（builder 上的 c9f88ec）
+  GUARD_COMMIT: c9f88ec161cdcc474b3744e73829617abf88bd3a
+  EXPECT_UPSTREAM_TAG: v1.9.5
+
+jobs:
+  verify:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    continue-on-error: ${{ matrix.control == 'yes' }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 反向对照：把线上现存的 2026-10-13 坏 release 当作“被验证的发布”，元数据项自洽（都应通过），实质项必须变红
+          - label: 'negative control (the 2026-10-13 release must FAIL the substantive checks)'
+            control: 'yes'
+            release_tag: release-20261013-135642
+            ts_tag: release-20261013-135642
+            prev_tag: release-20261013-135642
+            expect_commit: 9c38c27391111bdf4e80355e14a3460ef13152d2
+            expect_run: '38397935807'
+            published_after: '2026-10-13T12:00:00Z'
+            expect_origin: 'yes'
+            expect_a: 'OK'
+            wait_min: '0'
+          # 真正要验证的：builder 上 publish=true 的那次构建
+          - label: 'published latest (publish run 39550555170)'
+            control: 'no'
+            release_tag: latest
+            ts_tag: auto
+            prev_tag: release-20261013-135642
+            expect_commit: c9f88ec161cdcc474b3744e73829617abf88bd3a
+            expect_run: '39550555170'
+            published_after: '2026-10-21T05:36:00Z'
+            expect_origin: 'yes'
+            expect_a: 'OK'
+            wait_min: '110'
+    steps:
+      - name: Checkout the verification scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/addon-release-verify
+            .github/addon-build-verify
+            .github/addon-preflight
+
+      - name: Fetch the published known-bad (2026-10-13) and known-good (2026-06-11) addons
+        run: |
+          set -euo pipefail
+          mkdir -p work/in
+          for v in 1240 1302; do
+            for kind in bad good; do
+              if [ "$kind" = bad ]; then tag="$BAD_TAG"; else tag="$GOOD_TAG"; fi
+              curl -fL --retry 3 -o "work/in/$kind-$v.node.gz" \
+                "https://github.com/$WCPP_REPO/releases/download/$tag/addon-linux-cuda-$v-optimized.node.gz"
+              gunzip -f "work/in/$kind-$v.node.gz"
+            done
+          done
+          ls -l work/in
+
+      - name: "Release under test: the publish run, the releases, the downloaded packs (host)"
+        env:
+          RELEASE_TAG: ${{ matrix.release_tag }}
+          TS_TAG: ${{ matrix.ts_tag }}
+          PREV_TAG: ${{ matrix.prev_tag }}
+          EXPECT_COMMIT: ${{ matrix.expect_commit }}
+          EXPECT_RUN: ${{ matrix.expect_run }}
+          PUBLISHED_AFTER: ${{ matrix.published_after }}
+          EXPECT_ORIGIN: ${{ matrix.expect_origin }}
+          WAIT_MIN: ${{ matrix.wait_min }}
+        run: bash .github/addon-release-verify/release-checks.sh
+
+      - name: Extract the libcuda driver stubs from the nvidia/cuda devel images
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          for pair in 1240:12.4.0 1302:13.0.2; do
+            v=${pair%%:*}; cuda=${pair#*:}
+            mkdir -p "work/out/$v/stubs"
+            docker run --rm -v "$PWD/work/out/$v/stubs:/stubs" "nvidia/cuda:$cuda-devel-ubuntu22.04" \
+              bash -c 'cp -L /usr/local/cuda/lib64/stubs/libcuda.so /stubs/libcuda.so.1'
+            ls -l "work/out/$v/stubs"
+          done
+
+      - name: "Stage A: Fedora 44 + CUDA 13.4 runtime, no NCCL (the reporter's environment) — published addon 1302"
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          mkdir -p work/fedora/bad work/fedora/good work/fedora/new
+          cp work/in/bad-1302.node work/fedora/bad/addon.node
+          cp work/in/good-1302.node work/fedora/good/addon.node
+          cp work/out/1302/addon.node work/fedora/new/addon.node
+          docker run --rm \
+            -v "$PWD/work/fedora:/work" \
+            -v "$PWD/.github/addon-preflight:/pf:ro" \
+            -v "$PWD/.github/addon-build-verify:/bv:ro" \
+            quay.io/fedora/fedora:44 bash /bv/fedora-load.sh
+
+      - name: "Stage B: Ubuntu 22.04 + CUDA 12.4 runtime, no NCCL — published addon 1240"
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          mkdir -p work/ubuntu/stubs
+          cp work/in/bad-1240.node work/ubuntu/bad.node
+          cp work/in/good-1240.node work/ubuntu/good.node
+          cp work/out/1240/addon.node work/ubuntu/new.node
+          cp work/out/1240/stubs/libcuda.so.1 work/ubuntu/stubs/libcuda.so.1
+          docker run --rm \
+            -v "$PWD/work/ubuntu:/work" \
+            -v "$PWD/.github/addon-preflight:/pf:ro" \
+            -v "$PWD/.github/addon-build-verify:/bv:ro" \
+            nvidia/cuda:12.4.0-base-ubuntu22.04 bash /bv/ubuntu-load.sh
+
+      - name: "Stage C: the published Full packs in a clean Debian 12 + Node 22 (no CUDA toolkit, no NCCL)"
+        if: ${{ !cancelled() }}
+        env:
+          EXPECT_A: ${{ matrix.expect_a }}
+        run: |
+          rc=0
+          for v in 1240 1302; do
+            echo "################ Full pack $v"
+            docker run --rm -e EXPECT_A \
+              -v "$PWD/work/out/$v:/work/out" \
+              -v "$PWD/.github/addon-preflight:/pf:ro" \
+              node:22-bookworm-slim bash /pf/clean-stage.sh || rc=1
+          done
+          exit $rc
+
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "### ${{ matrix.label }}"
+            echo "release: ${{ matrix.release_tag }}  publish run: ${{ matrix.expect_run }}"
+            for f in work/out/static-results.tsv work/fedora/fedora-results.tsv work/ubuntu/ubuntu-results.tsv \
+                     work/out/1240/clean-results.tsv work/out/1302/clean-results.tsv; do
+              [ -f "$f" ] || continue
+              echo
+              echo "**$f**"
+              echo
+              echo "| check | expected | actual | verdict | note |"
+              echo "|---|---|---|---|---|"
+              awk -F'\t' '{ e=substr($2,1,70); a=substr($3,1,70); n=substr($5,1,200); gsub(/\|/,"\\|",e); gsub(/\|/,"\\|",a); gsub(/\|/,"\\|",n); printf "| %s | %s | %s | %s | %s |\n", $1,e,a,$4,n }' "$f"
+            done
+          } >>"$GITHUB_STEP_SUMMARY"
