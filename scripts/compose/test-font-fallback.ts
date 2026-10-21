@@ -8,6 +8,7 @@ import {
   isFontAvailable,
   newFontFallbackReport,
   prepareSubtitleFonts,
+  recommendFontsForText,
   resolveFontFilePath,
   summarizeFontFallbackReport,
 } from '../../main/helpers/fontResolver';
@@ -132,6 +133,43 @@ async function main() {
   const codicon = listed.find((font) => font.name === 'codicon')!;
   assert.equal(codicon.rank, undefined);
   assert.ok(Array.isArray(codicon.localizedNames));
+
+  // 10. Invisible characters stay on the requested font and never create a fallback notice.
+  const quiet = newFontFallbackReport();
+  const quietRuns = fontTextRuns('\uea60\u200b', 'codicon', context, quiet);
+  assert.deepEqual(quietRuns, [{ fontName: 'codicon', text: '\uea60\u200b' }]);
+  assert.deepEqual(summarizeFontFallbackReport(quiet).fallbacks, []);
+
+  // 11. Recommendations only name fonts that need no fallback for the whole text.
+  const embedded = await recommendFontsForText('\uea60', context);
+  assert.deepEqual(
+    embedded.fonts.map((font) => font.name),
+    ['codicon'],
+    'a document font covering the text is recommended',
+  );
+  assert.equal(embedded.complete, true);
+  assert.deepEqual(
+    (await recommendFontsForText('\uea60', context, { exclude: 'codicon' }))
+      .fonts,
+    [],
+    'the current font is never recommended',
+  );
+  assert.deepEqual((await recommendFontsForText('\u{10FFFF}')).fonts, []);
+  const hangulText = '지금 채팅은 하나';
+  const hangul = await recommendFontsForText(hangulText, [], { limit: 3 });
+  for (const font of hangul.fonts) {
+    const check = newFontFallbackReport();
+    fontTextRuns(hangulText, font.name, [], check);
+    assert.deepEqual(
+      summarizeFontFallbackReport(check),
+      { fallbacks: [], missingGlyphs: [] },
+      `${font.name} must render the whole text without fallback`,
+    );
+  }
+  if (hangulFont) assert.ok(hangul.fonts.length > 0, 'a Hangul font is found');
+  assert.ok(hangul.fonts.length <= 3);
+  const rushed = await recommendFontsForText(hangulText, [], { budgetMs: 0 });
+  assert.equal(rushed.complete, false, 'an exhausted budget is reported');
 
   console.log('font fallback checks passed');
 }

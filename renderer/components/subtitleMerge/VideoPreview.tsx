@@ -325,7 +325,17 @@ export default function VideoPreview({
           </p>
         )}
       {!softMux && !previewError && jassub.effectiveFont && (
-        <FontFallbackNotice report={jassub.fontReport} />
+        <FontFallbackNotice
+          report={jassub.fontReport}
+          fontName={style.fontName}
+          subtitlePath={subtitlePath}
+          sampleText={sampleText}
+          onSelectFont={
+            onUpdateStyle
+              ? (fontName) => onUpdateStyle({ fontName })
+              : undefined
+          }
+        />
       )}
       {previewError && (
         <div

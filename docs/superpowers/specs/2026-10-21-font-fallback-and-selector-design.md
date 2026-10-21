@@ -15,9 +15,9 @@ Malgun Gothic、Yu Gothic、Meiryo 等）。另外字体选择器只按「可用
 
 ## A. 字体兜底（`main/helpers/fontResolver.ts`、`assFonts.ts`）
 
-- 兜底候选 = 内嵌字体 → 预置列表（补充韩/日/繁中/泰等系统字体及各平台路径）→
-  已扫描目录中动态查找能覆盖缺失字符的字体（按名称启发式排序，限定尝试文件数）。
-- 先找能覆盖**全部**缺失字符的单一字体，找不到再按字符逐个选字体。
+- **尽量不自动采用兜底字体**：自动兜底只使用内嵌字体和预置列表（补充韩/日/繁中/泰等
+  系统字体及各平台路径），**不会**在已安装字体里随意挑一个，避免出现用户预期之外的效果。
+- 先找能覆盖**全部**缺失字符的单一字体，找不到再按字符逐个从预置列表选字体。
 - 仍然没有的字符：保留主字体，记录到 `missingGlyphs`，**不再抛错**。
 - 零宽/格式控制字符不计入缺字。
 - 逐码位结果缓存（仅无内嵌字体上下文时），扫描刷新时清空。
@@ -29,6 +29,11 @@ Malgun Gothic、Yu Gothic、Meiryo 等）。另外字体选择器只按「可用
 - `subtitleMerge:buildPreviewAss` 透传；`useJassubPreview` 暴露 `fontReport`；
   `VideoPreview` 的提示条显示「已自动用 X 渲染 …」以及「N 个字符无可用字体，将显示为方块，建议安装思源黑体 / Noto Sans CJK」。
 - 导出（`composeRunner`）把同样的信息写入日志（warning）。
+- **推荐字体**：新增 IPC `subtitleMerge:recommendFonts`（`recommendFontsForText`）。
+  只要出现兜底或缺字，提示条就异步查询「无需任何兜底即可完整显示整份字幕」的已安装字体
+  （常用字体优先，最多 5 个，默认 2.5s 预算，超时不写缓存），以按钮展示，点击后通过
+  `onUpdateStyle` 切换字体。查询与预览/导出使用同一套 `resolveFace`，保证推荐结果确实无需兜底。
+- 没有任何推荐字体时给出安装思源黑体（Noto Sans CJK）的建议。
 - 新增中英文 i18n 文案。
 
 ## C. 字体选择器（`listSubtitleFonts` + `FontSelector.tsx`）

@@ -65,8 +65,8 @@
   "fontSearch": "Search fonts",
   "fontNoResults": "No matching fonts",
   "fontSubstitution": "{{requested}} is unavailable or lacks required glyphs. Preview and export both use {{actual}}.",
-  "fontFallbackNotice": "{{from}} lacks some glyphs (e.g. {{sample}}); preview and export automatically use {{to}} for them.",
-  "fontMissingGlyphs": "No installed font has these characters: {{chars}}{{more}}. They will appear as boxes. Install Noto Sans CJK (Source Han Sans) and try again.",
+  "fontFallbackNotice": "{{from}} lacks some glyphs (e.g. {{sample}}); {{to}} is temporarily used for them, so the result may differ from what you expect.",
+  "fontMissingGlyphs": "No installed font has these characters: {{chars}}{{more}}. They will appear as boxes.",
   "fontMissing": "Not installed",
   "fontGroup": {
     "embedded": "Embedded in subtitle",
@@ -213,5 +213,8 @@
   "reconnectQueued": "Queued",
   "draftLocked": "This composition is open in another window. Waiting for that window to leave or close before loading the latest draft.",
   "draftLockFailed": "Cannot acquire the composition lock. Editing is disabled to protect the draft.",
-  "pageDesc": "Burn subtitles into the video, or mux them as a soft subtitle track"
+  "pageDesc": "Burn subtitles into the video, or mux them as a soft subtitle track",
+  "fontRecommendLoading": "Looking for fonts that can show all of this subtitle…",
+  "fontRecommendLabel": "Fonts that show everything (click to switch):",
+  "fontInstallHint": "Install Noto Sans CJK (Source Han Sans) and try again."
 }

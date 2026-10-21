@@ -330,7 +330,6 @@ async function discoverInstalledFonts() {
   installedFamilies.clear();
   catalog.clear();
   presetFallbacks.clear();
-  dynamicFallbacks.clear();
   for (const [file, entry] of next) {
     catalog.set(file, entry);
     registerFaces(file, entry.faces);
@@ -568,9 +567,6 @@ const fallbackNames = (context: FontContext) => [
 /** Zero-width and variation characters never draw a glyph, so they are not "missing". */
 const INVISIBLE_CHARACTER =
   /[\u00ad\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufe00-\ufe0f\ufeff\u{e0100}-\u{e01ef}]/u;
-const DYNAMIC_SCAN_FILES = 60;
-/** The lookup is synchronous on the main process, so bound how long it may block. */
-const DYNAMIC_SCAN_BUDGET_MS = 400;
 const hasAllGlyphs = (font: FontRecord | null, codes: number[]) =>
   Boolean(font) && codes.every((code) => font!.face.hasGlyphForCodePoint(code));
 
@@ -606,7 +602,6 @@ function noteFallback(
 
 // Resolved per-code-point fallbacks; only valid without document-embedded fonts.
 const presetFallbacks = new Map<number, string | null>();
-const dynamicFallbacks = new Map<string, string | null>();
 
 function presetFallbackFont(
   codes: number[],
@@ -638,46 +633,14 @@ function presetFallbackFont(
 const LIKELY_COVERAGE_NAME =
   /cjk|gothic|malgun|nanum|gulim|batang|hei|ming|song|yahei|jheng|mincho|meiryo|unicode|noto|sans|hangul|korean|japan/i;
 
-/** Last resort: look through installed fonts for one covering every code point. */
-function installedFallbackFont(codes: number[]): FontRecord | null {
-  const key = codes.join(',');
-  if (!dynamicFallbacks.has(key)) {
-    let found: string | null = null;
-    const files = Array.from(catalog.keys())
-      .sort(
-        (a, b) =>
-          Number(LIKELY_COVERAGE_NAME.test(path.basename(b))) -
-          Number(LIKELY_COVERAGE_NAME.test(path.basename(a))),
-      )
-      .slice(0, DYNAMIC_SCAN_FILES);
-    const deadline = Date.now() + DYNAMIC_SCAN_BUDGET_MS;
-    for (const file of files) {
-      if (Date.now() > deadline) break;
-      try {
-        const face = readFaces(file).find(
-          (candidate) =>
-            candidate.familyName &&
-            !candidate.familyName.startsWith('.') &&
-            codes.every((code) => candidate.hasGlyphForCodePoint(code)),
-        );
-        if (face) {
-          found = face.familyName;
-          break;
-        }
-      } catch {
-        /* Skip damaged font files. */
-      }
-    }
-    dynamicFallbacks.set(key, found);
-  }
-  const name = dynamicFallbacks.get(key);
-  const font = name ? resolveFace(name) : null;
-  return hasAllGlyphs(font, codes) ? font : null;
-}
-
-/** A single font that covers every missing code point, so one line keeps one fallback look. */
+/**
+ * One preset font covering every missing code point, so a line keeps a single
+ * fallback look. Installed fonts are deliberately not searched here: swapping
+ * in an arbitrary system font is an effect the user did not choose. Such text
+ * is reported instead, together with recommended fonts to pick explicitly.
+ */
 function coveringFont(codes: number[], context: FontContext) {
-  return presetFallbackFont(codes, context) || installedFallbackFont(codes);
+  return presetFallbackFont(codes, context);
 }
 
 /**
@@ -714,22 +677,85 @@ export function fontTextRuns(
   for (const character of Array.from(text)) {
     const code = character.codePointAt(0)!;
     let name = fontName;
-    if (!covered(code)) {
-      const fallback = INVISIBLE_CHARACTER.test(character)
-        ? single
-        : fallbackFor(code);
+    // Invisible characters draw nothing, so they stay on the requested font.
+    if (!covered(code) && !INVISIBLE_CHARACTER.test(character)) {
+      const fallback = fallbackFor(code);
       if (fallback) {
         name = fallback.fontName;
         noteFallback(report, fontName, name, character);
-      } else if (!INVISIBLE_CHARACTER.test(character)) {
-        report?.missing.add(character);
-      }
+      } else report?.missing.add(character);
     }
     const last = runs[runs.length - 1];
     if (last?.fontName === name) last.text += character;
     else runs.push({ text: character, fontName: name });
   }
   return runs;
+}
+
+export interface FontRecommendation {
+  name: string;
+  displayName?: string;
+}
+const MAX_RECOMMENDATION_CODES = 3000;
+
+/**
+ * Installed fonts that render all of `text` without any fallback, most common
+ * first. Runs asynchronously (yielding to the app) and within `budgetMs`; a
+ * truncated search reports `complete: false` and caches nothing.
+ */
+export async function recommendFontsForText(
+  text: string,
+  context: FontContext = [],
+  options: { exclude?: string; limit?: number; budgetMs?: number } = {},
+): Promise<{ fonts: FontRecommendation[]; complete: boolean }> {
+  const { exclude, limit = 5, budgetMs = 2500 } = options;
+  const codes = Array.from(
+    new Set(
+      Array.from(text)
+        .filter((char) => !/\s/.test(char) && !INVISIBLE_CHARACTER.test(char))
+        .map((char) => char.codePointAt(0)!)
+        .filter((code) => code >= 32),
+    ),
+  ).slice(0, MAX_RECOMMENDATION_CODES);
+  if (!codes.length) return { fonts: [], complete: true };
+  await prepareSubtitleFonts();
+  const excluded = normalize(exclude || '');
+  const rankOf = (name: string) => commonFontRank([name]) ?? Infinity;
+  const names = Array.from(
+    new Set([
+      ...context.map((font) => font.fontName),
+      ...Array.from(installedFamilies.keys()),
+    ]),
+  )
+    .filter(
+      (name) => name && !name.startsWith('.') && normalize(name) !== excluded,
+    )
+    .sort(
+      (a, b) =>
+        Number(context.some((font) => font.fontName === b)) -
+          Number(context.some((font) => font.fontName === a)) ||
+        rankOf(a) - rankOf(b) ||
+        Number(LIKELY_COVERAGE_NAME.test(b)) -
+          Number(LIKELY_COVERAGE_NAME.test(a)) ||
+        a.localeCompare(b),
+    );
+  const deadline = Date.now() + budgetMs;
+  const fonts: FontRecommendation[] = [];
+  let checked = 0;
+  for (const name of names) {
+    if (fonts.length >= limit) break;
+    if (Date.now() >= deadline) return { fonts, complete: false };
+    if (++checked % 4 === 0) await yieldToApp();
+    // Same lookup as preview and export, so a recommendation really needs no fallback.
+    const font = resolveFace(name, context);
+    if (!font || !hasAllGlyphs(font, codes)) continue;
+    if (fonts.some((item) => item.name === font.fontName)) continue;
+    fonts.push({
+      name: font.fontName,
+      displayName: localizedFamilyNames(font.face).displayName,
+    });
+  }
+  return { fonts, complete: true };
 }
 
 const DISPLAY_LANGUAGE_ORDER = [

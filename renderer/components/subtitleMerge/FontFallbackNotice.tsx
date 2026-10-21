@@ -1,18 +1,75 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'next-i18next';
+import { Button } from '@/components/ui/button';
 import type { FontFallbackSummary } from '../../../types/subtitleMerge';
 
 const MAX_FALLBACK_ROWS = 3;
 const MAX_MISSING_CHARACTERS = 12;
 
-/** Explains glyph fallbacks and characters that no installed font can draw. */
+interface Recommendation {
+  name: string;
+  displayName?: string;
+}
+
+/**
+ * Explains glyph fallbacks and characters no installed font can draw, and
+ * offers installed fonts that render the whole subtitle without any fallback.
+ * Nothing is switched automatically: the user picks the font.
+ */
 export default function FontFallbackNotice({
   report,
+  fontName,
+  subtitlePath,
+  sampleText,
+  onSelectFont,
 }: {
   report: FontFallbackSummary;
+  fontName: string;
+  subtitlePath?: string | null;
+  sampleText?: string;
+  onSelectFont?: (name: string) => void;
 }) {
   const { t } = useTranslation('subtitleMerge');
-  if (!report.fallbacks.length && !report.missingGlyphs.length) return null;
+  const affected =
+    report.fallbacks.length > 0 || report.missingGlyphs.length > 0;
+  const reportKey = JSON.stringify(report);
+  const [recommended, setRecommended] = useState<Recommendation[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
+  useEffect(() => {
+    setRecommended([]);
+    setSearched(false);
+    if (!affected) {
+      setSearching(false);
+      return;
+    }
+    let stale = false;
+    setSearching(true);
+    window.ipc
+      .invoke('subtitleMerge:recommendFonts', {
+        subtitlePath,
+        sampleText,
+        fontName,
+      })
+      .then(
+        (result) => {
+          if (stale) return;
+          setSearching(false);
+          setSearched(true);
+          if (result?.success && Array.isArray(result.data?.fonts))
+            setRecommended(result.data.fonts);
+        },
+        () => {
+          if (stale) return;
+          setSearching(false);
+          setSearched(true);
+        },
+      );
+    return () => {
+      stale = true;
+    };
+  }, [affected, reportKey, fontName, subtitlePath, sampleText]);
+  if (!affected) return null;
   const missing = report.missingGlyphs.slice(0, MAX_MISSING_CHARACTERS);
   return (
     <div
@@ -39,6 +96,32 @@ export default function FontFallbackNotice({
                 : '',
           })}
         </p>
+      )}
+      {searching && <p>{t('fontRecommendLoading')}</p>}
+      {searched && !recommended.length && missing.length > 0 && (
+        <p data-font-install-hint>{t('fontInstallHint')}</p>
+      )}
+      {recommended.length > 0 && (
+        <div
+          data-font-recommendations
+          className="flex flex-wrap items-center gap-1.5"
+        >
+          <span>{t('fontRecommendLabel')}</span>
+          {recommended.map((font) => (
+            <Button
+              key={font.name}
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-6 px-2 text-xs"
+              disabled={!onSelectFont}
+              title={font.displayName ? font.name : undefined}
+              onClick={() => onSelectFont?.(font.name)}
+            >
+              {font.displayName || font.name}
+            </Button>
+          ))}
+        </div>
       )}
     </div>
   );
