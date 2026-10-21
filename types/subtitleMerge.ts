@@ -17,6 +17,12 @@ export type SubtitleAlignment = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
  */
 export type BorderStyle = 1 | 3;
 
+/** Glyph fallbacks used for a subtitle, plus characters no installed font covers. */
+export interface FontFallbackSummary {
+  fallbacks: { from: string; to: string; sample: string }[];
+  missingGlyphs: string[];
+}
+
 /**
  * 字幕样式配置
  * 所有颜色使用 CSS 格式 (#RRGGBB 或 rgba)

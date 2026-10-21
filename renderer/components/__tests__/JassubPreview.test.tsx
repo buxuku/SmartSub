@@ -433,3 +433,39 @@ it('measures visible alpha bounds, ignores near-transparent pixels and handles e
   });
   expect(alphaBounds(new Uint8ClampedArray(), 0, 0)).toBeNull();
 });
+
+it('exposes the glyph fallback report from the main process', async () => {
+  const report = {
+    fallbacks: [
+      { from: 'Helvetica', to: 'Apple SD Gothic Neo', sample: '지금' },
+    ],
+    missingGlyphs: ['\u{10FFFF}'],
+  };
+  invoke.mockImplementation(async (channel, payload) =>
+    channel === 'subtitleMerge:buildPreviewAss'
+      ? {
+          success: true,
+          data: '[Script Info]\nPlayResY: 288\n',
+          fontName: payload.style.fontName,
+          fontNames: [payload.style.fontName],
+          fontSubstituted: false,
+          fontReport: report,
+        }
+      : {
+          success: true,
+          data: { fontName: payload.fontName, data: [1, 2, 3] },
+        },
+  );
+  const { result } = renderHook(useJassubPreview, { initialProps: options() });
+  await tick();
+  expect(result.current.fontReport).toEqual(report);
+});
+
+it('reports an empty fallback report when the main process sends none', async () => {
+  const { result } = renderHook(useJassubPreview, { initialProps: options() });
+  await tick();
+  expect(result.current.fontReport).toEqual({
+    fallbacks: [],
+    missingGlyphs: [],
+  });
+});

@@ -30,6 +30,8 @@ import {
   containsCJK,
   resolveBurnFontName,
   isFontAvailable,
+  newFontFallbackReport,
+  summarizeFontFallbackReport,
   embeddedFontContext,
 } from './fontResolver';
 import { probeVideoInfo } from './toolbox/videoTrimmer';
@@ -173,11 +175,24 @@ export function buildAssForSubtitle(
     format === 'ass'
       ? buildStyledAssDocument(subtitleContent, effectiveStyle)
       : { content: buildAssDocument(cues, effectiveStyle), translateY: 0 };
+  const fallbackReport = newFontFallbackReport();
   const resolved = resolveAssFonts(
     styled.content,
     effectiveStyle.fontName,
     fontContext,
+    fallbackReport,
   );
+  const fontReport = summarizeFontFallbackReport(fallbackReport);
+  for (const fallback of fontReport.fallbacks)
+    logMessage(
+      `字体「${fallback.from}」缺少部分字形（如「${fallback.sample}」），已使用「${fallback.to}」渲染`,
+      'warning',
+    );
+  if (fontReport.missingGlyphs.length)
+    logMessage(
+      `没有已安装字体包含这些字符，将显示为方块：${fontReport.missingGlyphs.join('')}。建议安装思源黑体（Noto Sans CJK）`,
+      'warning',
+    );
   const embeddedFonts = new Map<
     string,
     { fontNames: string[]; id: string; data: Uint8Array }
@@ -200,6 +215,7 @@ export function buildAssForSubtitle(
     fontNames: resolved.fontNames,
     effectiveStyle,
     fontSubstituted: !isFontAvailable(style.fontName, fontContext),
+    fontReport,
     embeddedFonts: Array.from(embeddedFonts.values()),
   };
 }

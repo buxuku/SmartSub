@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type JASSUB from 'jassub';
-import type { SubtitleStyle } from '../../../../types/subtitleMerge';
+import type {
+  FontFallbackSummary,
+  SubtitleStyle,
+} from '../../../../types/subtitleMerge';
 import { useSubtitleBounds } from './useSubtitleBounds';
 import {
   assEventPositionY,
@@ -26,6 +29,11 @@ interface PreviewSession {
   failed: boolean;
   removeWorkerListeners?: () => void;
 }
+
+const EMPTY_FONT_REPORT: FontFallbackSummary = {
+  fallbacks: [],
+  missingGlyphs: [],
+};
 
 function destroyPreview(session: PreviewSession) {
   session.removeWorkerListeners?.();
@@ -55,6 +63,8 @@ export function useJassubPreview({
   const [error, setError] = useState<string | null>(null);
   const [effectiveFont, setEffectiveFont] = useState<string | null>(null);
   const [fontSubstituted, setFontSubstituted] = useState(false);
+  const [fontReport, setFontReport] =
+    useState<FontFallbackSummary>(EMPTY_FONT_REPORT);
   const [attempt, setAttempt] = useState(0);
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
   const [translateY, setTranslateY] = useState(0);
@@ -109,6 +119,7 @@ export function useJassubPreview({
     setError(null);
     setEffectiveFont(null);
     setFontSubstituted(false);
+    setFontReport(EMPTY_FONT_REPORT);
     return () => {
       session.disposed = true;
       destroyPreview(session);
@@ -278,6 +289,7 @@ export function useJassubPreview({
           setFontSubstituted(
             response.fontSubstituted ?? fontName !== style.fontName,
           );
+          setFontReport(response.fontReport ?? EMPTY_FONT_REPORT);
           fontNames.forEach((name) => session.fonts.add(name.toLowerCase()));
           session.embeddedKey = embeddedKey;
           if (videoEl.videoWidth && videoEl.videoHeight) {
@@ -340,5 +352,6 @@ export function useJassubPreview({
     positionY,
     effectiveFont,
     fontSubstituted,
+    fontReport,
   };
 }
