@@ -161,7 +161,7 @@
   "vadMinSilenceDuration": "最小静音持续时间 (毫秒)",
   "vadMinSilenceDurationTip": "分割语音片段的最小静音持续时间",
   "vadMaxSpeechDuration": "最大语音持续时间 (秒)",
-  "vadMaxSpeechDurationTip": "单个语音片段的最大持续时间。使用 0 表示无限制",
+  "vadMaxSpeechDurationTip": "单个语音片段的最大持续时间。使用 0 表示无限制。例外：Qwen3-ASR 的 0 按 15 秒、最多 20 秒；FireRedASR 的 0 按 60 秒、最多 60 秒",
   "vadSpeechPad": "语音填充 (毫秒)",
   "vadSpeechPadTip": "在检测到的语音片段周围添加的填充",
   "vadSamplesOverlap": "样本重叠",
