@@ -64,6 +64,23 @@ function describeOverBudget(
   );
 }
 
+/** 硬切分的 info 日志正文：说明哪里多了字幕边界，并如实提示没有停顿时切点可能落在词中。 */
+function describeSplits(
+  splits: ReadonlyArray<{ start: number; end: number; pieces: number }>,
+  params: QwenAddonParams,
+): string {
+  const pieces = splits.reduce((sum, split) => sum + split.pieces, 0);
+  const longest = splits.reduce((a, b) =>
+    b.end - b.start > a.end - a.start ? b : a,
+  );
+  return (
+    `qwen(sherpa): split ${splits.length} VAD segment(s) longer than ${params.segment_hard_max_s}s ` +
+    `into ${pieces} pieces at the quietest points ` +
+    `(longest ${longest.start.toFixed(1)}s-${longest.end.toFixed(1)}s); ` +
+    `when the audio has no pause a cut can land inside a word.`
+  );
+}
+
 /**
  * 批次预热：在音频抽取的同时，让 worker 预加载 Qwen 四件套 + 共享 VAD 并写满识别器缓存，
  * 使首个 transcribe 直接命中。模型加载在 worker 线程进行，不阻塞主/UI 线程。失败非致命。
@@ -160,9 +177,14 @@ async function transcribeQwen(ctx: TranscribeContext): Promise<string> {
 
   if (signal?.aborted) throw new TaskCancelledError();
 
-  // 解码预算体检：超出 max_total_len 的 VAD 段，文本可能被静默截断或整段为空（sherpa 不报错）。
-  // 参数与上面的 worker 请求同源（buildQwenParams 是纯函数）；只记一条汇总日志，不改变结果。
+  // 参数与上面的 worker 请求同源（buildQwenParams 是纯函数）；下面两处都只记日志，不改变结果。
   const decodeBudget = buildQwenParams(settings);
+  // 硬切分：超出 segment_hard_max_s 的 VAD 段已由 worker 切成多片，这里说明字幕边界为何变多。
+  if (transcription?.splits?.length) {
+    logMessage(describeSplits(transcription.splits, decodeBudget), 'info');
+  }
+  // 解码预算体检：vadSegments 是 worker 实际解码的片；仍超出 max_total_len 的片，文本可能被
+  // 静默截断或整段为空（sherpa 不报错）——切分已经生效时它只剩兜底作用。
   const overBudget = findQwenOverBudgetSegments(
     decodeBudget,
     transcription?.vadSegments,

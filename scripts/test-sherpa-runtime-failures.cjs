@@ -292,6 +292,32 @@ async function main() {
     assert.equal(host.killed, false);
   });
 
+  await test('硬切分：worker 回报的 splits 原样交给调用方，没有时结果里不带这个键', async () => {
+    const runtime = freshRuntime();
+    const split = runtime.transcribe(senseVoiceModel(), 'long.wav');
+    const host = fixture.hosts[0];
+    const splits = [{ start: 10, end: 66, pieces: 4 }];
+    host.emit({
+      type: 'done',
+      id: split.id,
+      segments: [{ start: 10, end: 24, text: 'a' }],
+      vadSegments: [{ start: 10, end: 24 }],
+      splits,
+    });
+    assert.deepEqual((await split.result).splits, splits);
+    const plain = runtime.transcribe(senseVoiceModel(), 'short.wav');
+    host.emit({
+      type: 'done',
+      id: plain.id,
+      segments: [{ start: 0, end: 1, text: 'b' }],
+      vadSegments: [{ start: 0, end: 1 }],
+    });
+    assert.ok(
+      !('splits' in (await plain.result)),
+      'no splits key when the worker sent none',
+    );
+  });
+
   await test('只看本次请求开始之后新增的 `vad is nullptr`：之前的不连累后面的静音文件', async () => {
     const runtime = freshRuntime();
     const first = runtime.transcribe(senseVoiceModel(), 'a.wav');

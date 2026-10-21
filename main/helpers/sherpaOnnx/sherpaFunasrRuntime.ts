@@ -72,6 +72,8 @@ export interface Segment {
 interface TranscriptionResult {
   segments: Segment[];
   vadSegments?: Array<{ start: number; end: number }>;
+  /** worker 硬切分过的原 VAD 段（秒）与切成的片数；仅 params.segment_hard_max_s 生效时才可能非空。 */
+  splits?: Array<{ start: number; end: number; pieces: number }>;
 }
 
 /** 仅 VAD 边界检测参数（与 transcribe 用的 FunasrAddonParams 的 VAD 字段同名子集）。 */
@@ -198,7 +200,12 @@ class SherpaFunasrRuntime {
       entry.onProgress?.(msg.percent);
     } else if (msg.type === 'done') {
       this.pending.delete(msg.id);
-      const result = { segments: msg.segments, vadSegments: msg.vadSegments };
+      const result: TranscriptionResult = {
+        segments: msg.segments,
+        vadSegments: msg.vadSegments,
+        // 只在 worker 回报时带上，其他引擎的结果形状保持不变
+        ...(msg.splits ? { splits: msg.splits } : {}),
+      };
       if (entry.vad && !result.segments?.length) {
         this.settleEmptyResult(entry, entry.vad, result);
       } else {
