@@ -282,6 +282,20 @@ async function main() {
     zero,
     'prewarm builds the identical worker request as transcribe',
   );
+
+  // The worker request carries the hard split limit derived from the decoding budget.
+  assert.equal(
+    (await requestFor('hardmax-default', {})).params.segment_hard_max_s,
+    20,
+    'default settings ask the worker to cut segments at 20s',
+  );
+  storeSettings = { qwenMaxTotalLen: 256, qwenMaxNewTokens: 128 };
+  assert.equal(
+    (await requestFor('hardmax-small', {})).params.segment_hard_max_s,
+    8.6,
+    'a smaller budget (256/128) lowers the limit to 8.6s',
+  );
+  storeSettings = {};
   console.log('Qwen scaffold adapter regression tests passed');
 }
 
