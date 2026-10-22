@@ -396,17 +396,28 @@ sort_files_by_size() {
 }
 
 # PATCH release 描述（供 update_body 钩子调用）。
+# 描述只是附加信息，所有失败都只记日志、绝不让已经传完的同步以非 0 退出（set -e 下 exit 1 会让
+# 外层 wrapper 把整次同步当失败，重置并重传 GB 级产物）：
+#   - 预演模式：api_request 只打印不请求，get_release_id 必然拿不到结果，直接跳过；
+#   - 取不到 release id：GitCode 现在的 release 详情和列表都不再返回 id，或接口暂时失败；
+#   - PATCH 请求本身失败。
 patch_release_body() {
   local body="$1" release_id
-  release_id=$(get_release_id)
-  [ -n "$release_id" ] || return 0
   if [ "$GITCODE_DRY_RUN" = "1" ]; then log "[dry-run] would update release body"; return 0; fi
-  curl -sS -X PATCH \
+  release_id=$(get_release_id) || release_id=""
+  if [ -z "$release_id" ]; then
+    log "Skip updating release description (release id unavailable)"
+    return 0
+  fi
+  if curl -sS -X PATCH \
     -H "Authorization: Bearer ${GITCODE_TOKEN}" -H "Content-Type: application/json" \
     -d "$(jq -n --arg tag "$GITCODE_TAG" --arg name "${RELEASE_NAME}" --arg body "$body" \
       '{tag_name:$tag,name:$name,body:$body}')" \
-    "${GITCODE_API_URL}/repos/${GITCODE_OWNER}/${GITCODE_REPO}/releases/${release_id}" >/dev/null
-  log "Updated GitCode release description"
+    "${GITCODE_API_URL}/repos/${GITCODE_OWNER}/${GITCODE_REPO}/releases/${release_id}" >/dev/null; then
+    log "Updated GitCode release description"
+  else
+    log "Warning: failed to update release description (non-fatal)"
+  fi
 }
 
 # --- 通用步骤 -----------------------------------------------------------------
