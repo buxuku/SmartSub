@@ -458,6 +458,7 @@ yarn dev
 - [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) — FunASR / Qwen3-ASR / FireRedASR / Parakeet 与本地 TTS 的运行时
 - [FFmpeg](https://ffmpeg.org/) — 音视频处理与字幕烧录
 - [Bob](https://bobtranslate.com/) — 翻译服务申请文档
+- [LINUX DO](https://linux.do) — 新的理想型社区，感谢社区的交流与反馈
 
 ## 许可证
 

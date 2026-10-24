@@ -456,6 +456,7 @@ If this project helps you, a star is appreciated — or buy the author a coffee 
 - [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) — runtime for FunASR / Qwen3-ASR / FireRedASR / Parakeet and local TTS
 - [FFmpeg](https://ffmpeg.org/) — media processing and subtitle burn-in
 - [Bob](https://bobtranslate.com/) — documentation on translation service signup
+- [LINUX DO](https://linux.do) — "Where possible begins." Thanks for the discussions and feedback
 
 ## License
 

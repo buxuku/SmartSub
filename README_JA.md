@@ -455,6 +455,7 @@ yarn dev
 - [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) — FunASR / Qwen3-ASR / FireRedASR とローカル TTS のランタイム
 - [FFmpeg](https://ffmpeg.org/) — メディア処理と字幕焼き込み
 - [Bob](https://bobtranslate.com/) — 翻訳サービス申請のドキュメント
+- [LINUX DO](https://linux.do) — 新しい理想型コミュニティ（交流とフィードバックに感謝）
 
 ## ライセンス
 
