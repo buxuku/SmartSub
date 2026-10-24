@@ -1,3 +1,4 @@
+import { clearInactiveTaskStages } from '../../types/taskStages';
 import { TaskActivityReporter } from './taskActivity';
 import { runWithTaskContext } from './taskContext';
 import path from 'path';
@@ -369,6 +370,7 @@ async function processFileImpl(
       delete (file as any)[k];
     }
   }
+  if (!retryExport) clearInactiveTaskStages(file, formData || {});
   file.exportSubtitle = '';
   file.exportSubtitleError = undefined;
   // 摘要阶段不会运行时清掉旧正文、阶段状态和错误码。写成 undefined，

@@ -1,3 +1,7 @@
+import {
+  TASK_STAGE_KEYS as STAGE_KEYS,
+  hasStageEvidence,
+} from '../../types/taskStages';
 import type { IFiles, TaskProject } from '../../types';
 import type { ProofreadTask } from '../../types/proofread';
 import { deriveProofreadTaskStatus } from '../../types/proofread';
@@ -6,19 +10,6 @@ import {
   PIPELINE_WORK_ITEM_TYPES,
   type PipelineWorkItemType,
 } from '../../types/workItem';
-
-const STAGE_KEYS = [
-  'extractAudio',
-  'extractSubtitle',
-  'refineSubtitle',
-  'manuscriptMatch',
-  'translateSubtitle',
-  'prepareSubtitle',
-  'speakerDiarization',
-  'exportSubtitle',
-  'dubbing',
-  'composeVideo',
-] as const;
 
 type StageKey = (typeof STAGE_KEYS)[number];
 
@@ -52,9 +43,11 @@ export function derivePipelineWorkItemStatus(files: IFiles[]): WorkItemStatus {
     if (file.subtitleGate === 'review' || file.dubbingGate === 'review') {
       anyReview = true;
     }
+    let fileHasStage = false;
     for (const key of STAGE_KEYS) {
       const value = file[key as keyof IFiles];
-      if (value === undefined || value === false) continue;
+      if (!hasStageEvidence(value)) continue;
+      fileHasStage = true;
 
       hasAnyStage = true;
       if (value === 'loading') anyLoading = true;
@@ -66,6 +59,7 @@ export function derivePipelineWorkItemStatus(files: IFiles[]): WorkItemStatus {
       }
       if (value !== 'done') allStagesDone = false;
     }
+    if (!fileHasStage) allStagesDone = false;
   }
 
   if (anyLoading) return 'running';
