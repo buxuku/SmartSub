@@ -215,6 +215,13 @@ try {
     await page.setViewportSize({ width, height: 960 });
     const panel = page.getByTestId('task-config-sections');
     await expect(panel).toBeVisible();
+    // Let newly mounted select values and the resized viewport finish layout.
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
     await page.mouse.move(0, 0);
     await page.screenshot({
       path: path.join(root, `${state}-${width}.png`),
@@ -238,15 +245,40 @@ try {
             );
         }
       }
-      const toolbar = el.querySelector('[data-testid="task-inspector-core"]');
+      const toolbar =
+        el.querySelector('[data-testid="task-inspector-core"]') ||
+        el.querySelector('[role="tabpanel"][data-state="active"] fieldset');
       if (toolbar) {
         const rect = toolbar.getBoundingClientRect();
+        const rows = new Set();
         for (const item of toolbar.children) {
           const bounds = item.getBoundingClientRect();
-          if (bounds.width < 150)
+          rows.add(Math.round(bounds.top));
+          if (bounds.width < 72)
             problems.push(`cramped field: ${item.textContent}`);
+          if (bounds.width > 220)
+            problems.push(`stretched field: ${item.textContent}`);
           if (bounds.left < rect.left - 1 || bounds.right > rect.right + 1)
             problems.push(`toolbar overflow: ${item.textContent}`);
+          const control = item.querySelector('button, a');
+          if (control) {
+            const box = control.getBoundingClientRect();
+            if (Math.abs(box.height - 32) > 1)
+              problems.push(`inconsistent control height: ${item.textContent}`);
+            if (box.left < bounds.left - 1 || box.right > bounds.right + 1)
+              problems.push(`control overflow: ${item.textContent}`);
+          }
+        }
+        const maxRows = window.innerWidth >= 1200 ? 1 : 2;
+        if (rows.size > maxRows)
+          problems.push(`toolbar uses ${rows.size} rows (max ${maxRows})`);
+        if (toolbar.matches(':disabled')) {
+          for (const link of toolbar.querySelectorAll('a')) {
+            if (Number(getComputedStyle(link).opacity) > 0.5)
+              problems.push(
+                `locked link appears editable: ${link.textContent}`,
+              );
+          }
         }
         const model = toolbar.querySelector('#model');
         if (model) {
@@ -324,7 +356,7 @@ try {
   await expect(
     page.getByRole('combobox', { name: '导出画质', exact: true }),
   ).toContainText('标准');
-  for (const width of [1024, 1440, 1760, 1800, 1920]) {
+  for (const width of [1024, 1200, 1440, 1920]) {
     for (const [name, key] of [
       ['字幕与翻译', 'subtitle'],
       ['配音', 'dubbing'],

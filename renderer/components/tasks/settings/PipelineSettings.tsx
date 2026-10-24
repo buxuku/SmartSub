@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import SettingsFields from './SettingsFields';
 import DubbingLanguageSelect from '../../dubbing/DubbingLanguageSelect';
 import ComposeContentHint from '../wizard/ComposeContentHint';
 import { STYLE_PRESETS } from '../../subtitleMerge/constants';
@@ -38,12 +39,14 @@ function Choice({
   options,
   onChange,
   disabled,
+  width = 144,
 }: {
   label: string;
   value: string;
   options: Option[];
   onChange: (value: string) => void;
   disabled?: boolean;
+  width?: number;
 }) {
   const { t } = useTranslation('tasks');
   const choices =
@@ -58,7 +61,11 @@ function Choice({
         ]
       : options;
   return (
-    <div className="min-w-0 space-y-1">
+    <div
+      className="min-w-0 space-y-1"
+      style={{ flexBasis: width }}
+      title={choices.find((option) => option.value === value)?.label}
+    >
       <div className="text-xs text-muted-foreground">{label}</div>
       <Select
         value={value}
@@ -86,25 +93,6 @@ function Choice({
         </SelectContent>
       </Select>
     </div>
-  );
-}
-
-function Fields({
-  disabled,
-  children,
-}: {
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <fieldset
-      key={disabled ? 'locked' : 'editable'}
-      disabled={disabled}
-      aria-disabled={disabled}
-      className="grid min-w-0 grid-cols-1 gap-3 border-0 p-0 sm:grid-cols-2 lg:grid-cols-4"
-    >
-      {children}
-    </fieldset>
   );
 }
 
@@ -143,9 +131,10 @@ export function DubbingSettings({
     if (!disabled) onChange({ ...value, ...patch });
   };
   return (
-    <div className="space-y-3">
-      <Fields disabled={disabled}>
+    <div className="space-y-2">
+      <SettingsFields disabled={disabled}>
         <Choice
+          width={160}
           label={t('wizard.dubEngine')}
           value={key}
           disabled={disabled}
@@ -165,6 +154,7 @@ export function DubbingSettings({
           }}
         />
         <Choice
+          width={160}
           label={t('wizard.dubVoice')}
           value={value.voice || ''}
           disabled={disabled || !engine?.ready}
@@ -174,11 +164,12 @@ export function DubbingSettings({
           }))}
           onChange={(voice) => change({ voice })}
         />
-        <div className="min-w-0 space-y-1">
+        <div className="min-w-0 space-y-1" style={{ flexBasis: 96 }}>
           <div className="text-xs text-muted-foreground">
             {common('ttsLanguage')}
           </div>
           <DubbingLanguageSelect
+            className="h-8 text-xs"
             value={value.language}
             resolved={automaticLanguage}
             disabled={disabled}
@@ -186,6 +177,7 @@ export function DubbingSettings({
           />
         </div>
         <Choice
+          width={72}
           label={t('wizard.dubSpeed')}
           value={String(value.globalSpeed ?? 1)}
           disabled={disabled}
@@ -225,6 +217,7 @@ export function DubbingSettings({
           />
         )}
         <Choice
+          width={160}
           label={dub('overflow')}
           value={value.overflow || 'truncate'}
           disabled={disabled}
@@ -237,6 +230,7 @@ export function DubbingSettings({
           }
         />
         <Choice
+          width={160}
           label={dub('overlapMode')}
           value={value.overlapMode || 'shift'}
           disabled={disabled}
@@ -250,22 +244,24 @@ export function DubbingSettings({
             })
           }
         />
-      </Fields>
-      {key && (!engine?.ready || !voice) && (
-        <p role="status" className="text-xs text-warning">
-          {t('stageSettings.dubbingUnavailable')}
-        </p>
-      )}
-      {languageError && (
-        <p role="status" className="text-xs text-warning">
-          {common('ttsLanguageUnsupported', { language: languageError })}
-        </p>
-      )}
-      {engine?.kind === 'cloud' && (
-        <p className="text-xs text-muted-foreground">
-          {t('wizard.dubBillingHint')}
-        </p>
-      )}
+      </SettingsFields>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
+        {key && (!engine?.ready || !voice) && (
+          <p role="status" className="text-xs text-warning">
+            {t('stageSettings.dubbingUnavailable')}
+          </p>
+        )}
+        {languageError && (
+          <p role="status" className="text-xs text-warning">
+            {common('ttsLanguageUnsupported', { language: languageError })}
+          </p>
+        )}
+        {engine?.kind === 'cloud' && (
+          <p className="text-xs text-muted-foreground">
+            {t('wizard.dubBillingHint')}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -309,9 +305,10 @@ export function ComposeSettings({
       label: value.styleName || value.styleId,
     });
   return (
-    <div className="space-y-3">
-      <Fields disabled={disabled}>
+    <div className="space-y-2">
+      <SettingsFields disabled={disabled}>
         <Choice
+          width={160}
           label={t('wizard.composeSubtitle')}
           value={value.subtitle}
           disabled={disabled}
@@ -331,6 +328,7 @@ export function ComposeSettings({
         {value.subtitle === 'hard' && (
           <>
             <Choice
+              width={160}
               label={t('wizard.composeStyle')}
               value={value.styleId || ''}
               disabled={disabled}
@@ -343,6 +341,7 @@ export function ComposeSettings({
               }}
             />
             <Choice
+              width={104}
               label={t('wizard.composeQuality')}
               value={effective.videoQuality}
               disabled={disabled}
@@ -359,6 +358,7 @@ export function ComposeSettings({
               }
             />
             <Choice
+              width={104}
               label={t('wizard.composeEncoder')}
               value={effective.encoderMode}
               disabled={disabled}
@@ -379,35 +379,37 @@ export function ComposeSettings({
             />
           </>
         )}
-      </Fields>
-      {value.subtitle === 'hard' && value.style && (
-        <p className="text-xs text-muted-foreground">
-          {t('stageSettings.styleSnapshot')}
-        </p>
-      )}
-      {value.subtitle === 'hard' &&
-        effective.encoderMode === 'hardware' &&
-        options.loaded &&
-        !options.hwInfo?.available && (
-          <p className="text-xs text-warning">
-            {t('wizard.composeEncoderUnavailable')}
+      </SettingsFields>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
+        {value.subtitle === 'hard' && value.style && (
+          <p className="text-xs text-muted-foreground">
+            {t('stageSettings.styleSnapshot')}
           </p>
         )}
-      {options.error && (
-        <p role="status" className="text-xs text-warning">
-          {t('stageSettings.composeOptionsUnavailable')}
-        </p>
-      )}
-      {dubEnabled && (
-        <p className="text-xs text-muted-foreground">
-          {t('wizard.composeAudioHint')}
-        </p>
-      )}
-      <ComposeContentHint
-        translateOn={translateOn}
-        composeSubtitle={value.subtitle}
-        translateContent={translateContent}
-      />
+        {value.subtitle === 'hard' &&
+          effective.encoderMode === 'hardware' &&
+          options.loaded &&
+          !options.hwInfo?.available && (
+            <p className="text-xs text-warning">
+              {t('wizard.composeEncoderUnavailable')}
+            </p>
+          )}
+        {options.error && (
+          <p role="status" className="text-xs text-warning">
+            {t('stageSettings.composeOptionsUnavailable')}
+          </p>
+        )}
+        {dubEnabled && (
+          <p className="text-xs text-muted-foreground">
+            {t('wizard.composeAudioHint')}
+          </p>
+        )}
+        <ComposeContentHint
+          translateOn={translateOn}
+          composeSubtitle={value.subtitle}
+          translateContent={translateContent}
+        />
+      </div>
     </div>
   );
 }
