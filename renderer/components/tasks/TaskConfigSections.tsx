@@ -146,20 +146,22 @@ function PipelineSections({
       <Tabs value={active} onValueChange={setSection} className="min-w-0">
         <TabsList
           aria-label={t('stageSettings.label')}
-          className="grid h-auto w-full grid-cols-2 gap-1 bg-transparent p-0 lg:flex lg:flex-wrap"
+          className="grid h-auto w-full grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] items-stretch gap-2 bg-transparent p-0"
         >
           {groups.map((group) => (
             <TabsTrigger
               key={group.key}
               value={group.key}
               aria-label={group.label}
-              className="min-w-0 justify-start gap-2 rounded-md border px-3 py-2 text-left data-[state=active]:border-primary/40 lg:flex-1"
+              className="h-auto min-h-14 min-w-0 justify-start gap-2 rounded-md border px-3 py-2 text-left data-[state=active]:border-primary/40"
             >
               <group.icon className="h-4 w-4 shrink-0" />
               <span className="min-w-0">
-                <span className="block text-xs">{group.label}</span>
+                <span className="block whitespace-normal text-xs leading-4">
+                  {group.label}
+                </span>
                 <span
-                  className="block max-w-full truncate text-[11px] font-normal text-muted-foreground"
+                  className="block max-w-full truncate text-[11px] font-normal leading-4 text-muted-foreground"
                   title={group.summary}
                 >
                   {group.summary}
