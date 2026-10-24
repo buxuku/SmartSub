@@ -190,7 +190,10 @@
     "docs:automation": "tsx scripts/generate-automation-reference.ts",
     "test:automation:regressions": "node scripts/test-automation-regressions.cjs && node scripts/test-mcp-config.cjs",
     "test:assistant": "tsx scripts/test-assistant.ts",
-    "test:e2e:assistant": "node scripts/e2e/assistant.mjs"
+    "test:e2e:assistant": "node scripts/e2e/assistant.mjs",
+    "test:stage-artifacts": "node --import tsx --test scripts/stage-artifacts/*.test.ts",
+    "test:stage-cache": "node --import tsx --test scripts/stage-cache/*.test.ts",
+    "test:e2e:task-runs": "node scripts/e2e/task-runs.mjs"
   },
   "dependencies": {
     "@alicloud/alimt20181012": "^1.3.0",

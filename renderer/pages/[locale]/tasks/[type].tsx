@@ -105,6 +105,9 @@ import { getProofreadSourcePath } from '../../../../types/subtitleOutput';
 import { correctedSourceSrtSaveOption } from '../../../../types/sourceSrtSave';
 import { useTranslation } from 'next-i18next';
 import { toast } from 'sonner';
+import { useTaskRuns } from 'hooks/useTaskRuns';
+import { TaskRunHistory } from '@/components/tasks/TaskRunHistory';
+import { isRunLocked } from '../../../../types/taskRun';
 
 export default function TaskPage() {
   const router = useRouter();
@@ -118,6 +121,8 @@ export default function TaskPage() {
   const confirmOrUndo = useConfirmOrUndo();
   const [files, setFiles] = useState([]);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const { runs, currentRun } = useTaskRuns(projectId);
+  const [draftRevision, setDraftRevision] = useState(0);
   const [projectName, setProjectName] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
@@ -157,6 +162,13 @@ export default function TaskPage() {
   });
   /** 列表/横幅的有效配置：固定任务用快照，否则使用当前表单。 */
   const listFormData = configSnapshot ?? formData;
+  useEffect(() => {
+    if (!currentRun) return;
+    setConfigSnapshot(currentRun.config);
+    hydrateSnapshot(currentRun.config);
+    setTaskStatus(currentRun.status);
+    setSettingsOpen(false);
+  }, [currentRun?.runId]);
   /** 来自加载（而非用户/任务事件）的 files 引用，避免回写存储 */
   const loadedFilesRef = useRef<any[] | null>(null);
   const projectIdRef = useRef<string | null>(null);
@@ -220,9 +232,10 @@ export default function TaskPage() {
       configLoaded,
   );
   const projectPayload: TaskProjectSave | null =
-    projectReady && typeDef
+    projectReady && typeDef && !(currentRun && configSnapshot)
       ? {
           id: projectId!,
+          ...(currentRun ? { runId: currentRun.runId, draftRevision } : {}),
           taskType: typeDef.taskType,
           files,
           ...(configSnapshot
@@ -248,7 +261,7 @@ export default function TaskPage() {
       ? projectPayload
       : null,
     (saved) => {
-      setProjectName(saved.name || null);
+      if (saved.name) setProjectName(saved.name);
     },
   );
   useNavigationGuard('task-project-save', {
@@ -515,7 +528,7 @@ export default function TaskPage() {
         const workItem = await window?.ipc?.invoke('getWorkItem', q);
         if (!workItem) throw new Error('TASK_PROJECT_NOT_FOUND');
         rawSnap = workItem.configSnapshot;
-        if (isPinnedTaskConfigSnapshot(rawSnap)) snapshot = rawSnap;
+        if (workItem.currentRunId || isPinnedTaskConfigSnapshot(rawSnap)) snapshot = rawSnap;
         if (!snapshot && workItem.taskDraft) {
           rawSnap = workItem.taskDraft.config;
           savedManuscripts = workItem.taskDraft.manuscripts;
@@ -752,9 +765,7 @@ export default function TaskPage() {
   }, []);
 
   const handleTaskDispatched = useCallback((effectiveFormData: any) => {
-    if (isPinnedTaskConfigSnapshot(effectiveFormData)) {
-      setConfigSnapshot({ ...effectiveFormData });
-    }
+    setConfigSnapshot({ ...effectiveFormData });
   }, []);
 
   const handleViewModeChange = useCallback((mode: 'list' | 'grid') => {
@@ -767,6 +778,10 @@ export default function TaskPage() {
     async (retryFiles: any[]) => {
       if (retrySubmission.starting) return;
       try {
+        if (currentRun && ['failed', 'interrupted'].includes(currentRun.status)) {
+          await window.ipc.invoke('taskRuns:command', { projectId, expectedRunId: currentRun.runId, requestId: uuidv4(), command: 'retry' });
+          return;
+        }
         if (
           typeDef?.accepts === 'subtitle' &&
           retryFiles.some(
@@ -782,7 +797,8 @@ export default function TaskPage() {
         const outcome = await retrySubmission.submit(
           {
             projectId,
-            files: retryFiles,
+            files: currentRun ? files : retryFiles,
+            resumeLegacy: !currentRun,
             typeDef,
             formData: { ...snapshot, taskType: typeDef.taskType },
           },
@@ -799,7 +815,7 @@ export default function TaskPage() {
         toast.error(error instanceof Error ? error.message : String(error));
       }
     },
-    [listFormData, projectId, typeDef, retrySubmission, t],
+    [listFormData, projectId, typeDef, retrySubmission, t, currentRun, files],
   );
 
   const handleRetry = useCallback(
@@ -960,6 +976,7 @@ export default function TaskPage() {
 
   // 任务运行/取消中禁止破坏性列表操作（删行/清空），避免主进程仍处理已移除文件
   const queueBusy =
+    isRunLocked(currentRun) ||
     taskStatus === 'running' ||
     taskStatus === 'paused' ||
     taskStatus === 'cancelling';
@@ -1824,7 +1841,7 @@ export default function TaskPage() {
             ready={
               projectReady &&
               dependencies.loaded &&
-              (Boolean(configSnapshot) || Boolean(readiness?.valid))
+              (Boolean(currentRun) || Boolean(configSnapshot) || Boolean(readiness?.valid))
             }
             beforeStart={persistence.save}
             promptEmbeddedSubtitles={!configSnapshot}
@@ -1853,6 +1870,15 @@ export default function TaskPage() {
         </div>
       </div>
 
+      <TaskRunHistory runs={runs} editing={!configSnapshot} onEdit={async () => {
+        if (!currentRun || isRunLocked(currentRun)) return;
+        const draft = await window.ipc.invoke('taskRuns:getDraft', projectId);
+        setDraftRevision(draft?.revision || 0);
+        hydrateSnapshot(draft?.config || currentRun.config);
+        setFiles(draft?.files || currentRun.files.map(file => file.input));
+        setConfigSnapshot(null);
+        setTaskStatus('idle');
+      }} />
       <LogPanel className="flex-shrink-0" projectId={projectId} />
       {retrySubmission.dialog}
 

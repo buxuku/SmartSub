@@ -151,6 +151,7 @@ export async function validateTaskStart(
     TaskReadinessInput,
     'files' | 'typeDef' | 'formData' | 'translateOn'
   >,
+  options: { deferResourceValidation?: boolean } = {},
 ): Promise<ValidationReadyResult> {
   const [systemInfo, providers, asrProviders, settings] = await Promise.all([
     window.ipc.invoke('getSystemInfo'),
@@ -196,7 +197,7 @@ export async function validateTaskStart(
     whisperCommand: settings?.whisperCommand,
   });
   const dub = input.formData.dub;
-  if (dub) {
+  if (dub && !options.deferResourceValidation) {
     const engines = await loadTtsEngineOptions();
     const selected =
       dub.engine?.kind === 'local'
@@ -225,6 +226,7 @@ export async function validateTaskStart(
     )
       missing.push('tts_language_unsupported');
   }
-  const errors = Array.from(new Set([...missing, ...result.errors]));
+  const resourceErrors = new Set(['model_unavailable', 'speaker_diarization_unavailable', 'provider_required', 'refine_provider_required', 'local_command_required']);
+  const errors = Array.from(new Set([...missing, ...result.errors.filter(error => !options.deferResourceValidation || !resourceErrors.has(error))]));
   return { ...result, errors, valid: errors.length === 0 };
 }

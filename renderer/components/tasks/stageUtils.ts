@@ -30,6 +30,8 @@ export function getFileStages(
 }
 
 export function getStageStatus(file: any, key: StageKey): StageStatus {
+  const stage = file?.stageRuns?.[key];
+  if (stage) return stage.status === 'succeeded' ? 'done' : stage.status === 'running' ? 'loading' : ['failed', 'interrupted'].includes(stage.status) ? 'error' : 'pending';
   const value = file?.[key];
   if (value === 'loading') return 'loading';
   if (value === 'done') return 'done';
@@ -172,7 +174,7 @@ export function getFilePercent(file: any, stages: StageDef[]): number {
     if (status === 'done') {
       total += 1;
     } else if (status === 'loading' || status === 'error') {
-      const progress = Number(file?.[`${stage.key}Progress`] || 0);
+      const progress = Number(file?.stageRuns?.[stage.key]?.progress ?? file?.[`${stage.key}Progress`] ?? 0);
       total += Math.min(Math.max(progress, 0), 100) / 100;
     }
   }

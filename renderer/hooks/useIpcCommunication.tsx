@@ -4,6 +4,7 @@ import {
 } from '../../types/taskActivity';
 import { useCallback, useEffect, useRef } from 'react';
 import { IFiles } from '../../types';
+import { projectRunFiles, type TaskRun } from '../../types/taskRun';
 
 export default function useIpcCommunication(
   setFiles,
@@ -11,6 +12,7 @@ export default function useIpcCommunication(
   projectId?: string | null,
 ) {
   const projectRef = useRef(projectId);
+  const latestRun = useRef<TaskRun | null>(null);
   // 始终调用最新的 appendFiles（含去重逻辑），避免事件订阅闭包过期
   const appendFilesRef = useRef(appendFiles);
   appendFilesRef.current = appendFiles;
@@ -21,7 +23,7 @@ export default function useIpcCommunication(
   // 的 files 持久化回写会把主进程镜像里的正确状态覆盖掉（进度永远缺一段）。
   // 这里将找不到文件的事件按 uuid 暂存为补丁，hydrateFiles 加载时合并回放。
   const pendingEventsRef = useRef<Map<string, Record<string, any>>>(new Map());
-  if (projectRef.current !== projectId) pendingEventsRef.current.clear();
+  if (projectRef.current !== projectId) { pendingEventsRef.current.clear(); latestRun.current = null; }
   projectRef.current = projectId;
 
   useEffect(() => {
@@ -208,6 +210,14 @@ export default function useIpcCommunication(
     };
 
     const cleanups = [
+      window?.ipc?.on('taskRunChange', (run: TaskRun) => {
+        if (run.projectId !== projectRef.current) return;
+        const previous = latestRun.current;
+        if (previous && (previous.createdAt > run.createdAt || (previous.runId === run.runId && previous.revision >= run.revision))) return;
+        latestRun.current = run;
+        pendingEventsRef.current.clear();
+        setFiles(projectRunFiles(run));
+      }),
       cleanupFileSelected,
       window?.ipc?.on('taskActivityChange', handleActivityChange),
       window?.ipc?.on('taskStatusChange', handleTaskStatusChange),
@@ -226,6 +236,10 @@ export default function useIpcCommunication(
    */
   const hydrateFiles = useCallback(
     (loaded: IFiles[]): IFiles[] => {
+      if (latestRun.current?.projectId === projectRef.current && (!loaded[0]?.taskRunId || latestRun.current.runId === loaded[0].taskRunId)) {
+        const projected = projectRunFiles(latestRun.current);
+        setFiles(projected); return projected;
+      }
       const pending = pendingEventsRef.current;
       pendingEventsRef.current = new Map();
       const merged = pending.size

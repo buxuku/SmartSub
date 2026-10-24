@@ -161,9 +161,11 @@ export async function extractAudioFromVideo(event, file) {
   logMessage(`tempDir: ${tempDir}`, 'info');
   // 缓存键含文件大小与 mtime：同路径换了视频不会再命中旧音频（issue #510）。
   // 读不到文件状态（null）就无法证明缓存仍对应当前文件：不复用，直接重新抽取。
-  const cacheKey = getAudioCacheKey(filePath);
+  const cacheKey = file.taskRunId ? null : getAudioCacheKey(filePath);
   const md5FileName = cacheKey ?? getMd5(filePath);
-  const tempAudioFile = path.join(tempDir, `${md5FileName}.wav`);
+  const tempAudioFile = file.taskRunId
+    ? path.join(file.directory, 'extracted-audio.wav')
+    : path.join(tempDir, `${md5FileName}.wav`);
   file.tempAudioFile = tempAudioFile;
 
   if (cacheKey && fs.existsSync(tempAudioFile)) {

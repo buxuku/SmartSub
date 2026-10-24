@@ -1,15 +1,20 @@
 /** Shared stage vocabulary. Empty legacy fields are not evidence of execution. */
 export const TASK_STAGE_LABELS = {
+  prepareInput: 'runs.stages.prepareInput',
   extractAudio: 'stage.extract',
   extractSubtitle: 'stage.transcribe',
   prepareSubtitle: 'stage.extract',
   refineSubtitle: 'stage.refine',
   manuscriptMatch: 'stage.manuscript',
+  normalizeSubtitle: 'runs.stages.normalizeSubtitle',
   summarizeEpisode: 'stage.summarize',
   translateSubtitle: 'stage.translate',
   speakerDiarization: 'stage.speakerDiarization',
+  annotateSpeakers: 'runs.stages.annotateSpeakers',
+  prepareProofread: 'runs.stages.prepareProofread',
   exportSubtitle: 'stage.export',
   dubbing: 'stage.dubbing',
+  dubbingTrack: 'runs.stages.dubbingTrack',
   composeVideo: 'stage.compose',
 } as const;
 
@@ -31,6 +36,10 @@ export function getTaskFileStageKeys(
   config?: Record<string, any> | null,
   taskType = config?.taskType || 'generateAndTranslate',
 ): TaskStageKey[] {
+  if (file?.stageRuns)
+    return Object.keys(file.stageRuns).filter(
+      (id): id is TaskStageKey => id in TASK_STAGE_LABELS,
+    );
   const stages: TaskStageKey[] = [];
   const subtitle = isTaskSubtitleInput(file?.filePath);
   const supplied = Boolean(file?.providedSubtitlePath);

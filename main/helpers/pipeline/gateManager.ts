@@ -13,6 +13,9 @@ import {
   type GateKind,
 } from './gateLogic';
 import type { IFiles } from '../../../types';
+import { taskRunService } from '../taskRuns/access';
+import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 
 /** 到闸通知聚合窗口（同任务同闸门在窗口内合并为一条） */
 const NOTIFY_DEBOUNCE_MS = 5000;
@@ -111,6 +114,23 @@ export function releaseGate(
   const releasedFiles = updatedFiles.filter((file) =>
     targetUuids.has(file.uuid),
   );
+  const service = taskRunService();
+  const run = service?.get(projectId);
+  if (run) {
+    for (const file of releasedFiles) {
+      const stageId = gate === 'subtitle' ? 'subtitleReview' : 'dubbingReview';
+      const stage = run.files.find(entry => entry.fileId === file.uuid)?.stages[stageId];
+      if (!stage?.approvalRevision) return { error: 'TASK_REVIEW_NOT_READY' };
+      if (file.proofreadDataFile) {
+        const raw = fs.readFileSync(file.proofreadDataFile, 'utf8');
+        const data = JSON.parse(raw);
+        file.translationFailures = (data.cues || []).filter(cue => cue.translationStatus === 'failed' || /^\[翻译失败:/.test(cue.target || '')).map(cue => ({ subtitleId: cue.id, error: cue.translationError }));
+        (file as any).approvedProofreadDigest = createHash('sha256').update(raw).digest('hex');
+      }
+      try { service!.releaseReview({ projectId, runId: run.runId, fileId: file.uuid, stageId, revision: stage.approvalRevision, projection: file }); }
+      catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
+    }
+  }
   const dispatched = enqueueProjectFiles(projectId, releasedFiles, snapshot);
   if (!dispatched) return { error: 'TASK_GATE_SUBMISSION_FAILED' };
   logMessage(

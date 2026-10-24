@@ -11,6 +11,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { logMessage } from './storeManager';
 import { TaskCancelledError } from './taskContext';
+import { assertTaskRunEditable } from './taskRuns/access';
 import {
   acquireTaskPowerSaveBlocker,
   releaseTaskPowerSaveBlocker,
@@ -495,6 +496,7 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
       const key = loadKey(owner, leaseId);
       if (pendingLoads.has(key))
         return { success: false, error: 'Dubbing editor is already loading' };
+      if (existingId) assertTaskRunEditable({ sessionId: existingId });
       if (existingId && !ownership.acquire(existingId, owner, leaseId))
         return { success: true, data: { locked: true, sessionId: existingId } };
       const pending = { cancelled: false, owner, leaseId };

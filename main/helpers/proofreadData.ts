@@ -107,6 +107,8 @@ function hashId(input: string): string {
 }
 
 export function getProofreadDataPath(file: IFiles): string {
+  // Managed run adapters provide an independent attempt directory.
+  if (file.taskRunId) return path.join(file.directory, 'proofread.json');
   const dir = file.directory || path.dirname(file.filePath);
   const baseName = safeFileNamePart(
     file.fileName || path.basename(file.filePath),

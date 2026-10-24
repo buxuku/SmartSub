@@ -11,6 +11,7 @@ import { useTaskSubmission } from 'hooks/useTaskSubmission';
 import { buildTaskSnapshotFromConfig } from 'hooks/useUnifiedTaskConfig';
 import { getRefineValidationErrorMessage } from 'lib/subtitleRefineValidation';
 import { validateSummaryProvider } from '../../types/summaryProvider';
+import type { TaskRun } from '../../types/taskRun';
 
 interface TaskControlsProps {
   files: any[];
@@ -58,6 +59,7 @@ const TaskControls = ({
   const { starting } = submission;
   // 首次状态同步是否已完成:autostart 必须等它,否则迟到的 'idle' 会覆盖乐观 'running'
   const [statusSynced, setStatusSynced] = useState(false);
+  const currentRunRef = useRef<TaskRun | null>(null);
   const { t } = useTranslation(['home', 'common', 'tasks']);
 
   const setTaskStatus = (status: string) => {
@@ -88,10 +90,18 @@ const TaskControls = ({
         if (status) setTaskStatus(status);
       },
     );
+    void window.ipc.invoke('taskRuns:get', { projectId }).then(run => { if (!disposed) { currentRunRef.current = run; if (run) setTaskStatus(run.status); } }).catch(() => {});
+    const cleanupRun = window.ipc.on('taskRunChange', (run: TaskRun) => {
+      if (run.projectId !== projectId) return;
+      const previous = currentRunRef.current;
+      if (previous && (previous.createdAt > run.createdAt || (previous.runId === run.runId && previous.revision >= run.revision))) return;
+      currentRunRef.current = run; setTaskStatus(run.status);
+    });
 
     return () => {
       disposed = true;
       cleanup?.();
+      cleanupRun?.();
     };
   }, [projectId]);
 
@@ -113,16 +123,14 @@ const TaskControls = ({
         return;
       }
       // 只派发未完成的文件（error 不算完成，可重跑；已完成文件不重做）
-      const pendingFiles = files.filter(
-        (file) => !isFileDone(file, getFileStages(file, typeDef, formData)),
-      );
+      const pendingFiles = files;
       if (!pendingFiles.length) {
         toast(t('common:notification'), {
           description: t('home:allFilesProcessed'),
         });
         return;
       }
-      if (typeDef.hasTranslate && formData?.generateSummary === true) {
+      if (!currentRunRef.current && typeDef.hasTranslate && formData?.generateSummary === true) {
         const summaryProviders =
           (await window?.ipc?.invoke('getTranslationProviders')) || [];
         const summaryBlock = validateSummaryProvider(
@@ -223,17 +231,29 @@ const TaskControls = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStart, files, taskStatus, statusSynced, ready]);
 
-  const handlePause = () => {
+  const commandRun = async (command: 'pause' | 'resume' | 'cancel' | 'retry') => {
+    const run = currentRunRef.current;
+    if (!run) return false;
+    try {
+      const result = await window.ipc.invoke('taskRuns:command', { projectId, expectedRunId: run.runId, requestId: crypto.randomUUID(), command });
+      if (!currentRunRef.current || currentRunRef.current.runId !== result.runId || currentRunRef.current.revision <= result.revision) { currentRunRef.current = result; setTaskStatus(result.status); }
+    } catch (error) { toast.error(String(error)); }
+    return true;
+  };
+  const handlePause = async () => {
+    if (await commandRun('pause')) return;
     window?.ipc?.send('pauseTask', projectId);
     setTaskStatus('paused');
   };
 
-  const handleResume = () => {
+  const handleResume = async () => {
+    if (await commandRun('resume')) return;
     window?.ipc?.send('resumeTask', projectId);
     setTaskStatus('running');
   };
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
+    if (await commandRun('cancel')) return;
     window?.ipc?.send('cancelTask', projectId);
     setTaskStatus('cancelling');
   };
@@ -241,6 +261,7 @@ const TaskControls = ({
   const showStart =
     taskStatus === 'idle' ||
     taskStatus === 'completed' ||
+    taskStatus === 'succeeded' || taskStatus === 'failed' || taskStatus === 'interrupted' ||
     taskStatus === 'cancelled';
 
   // Cmd/Ctrl+Enter 等价点击「开始任务」（仅可开始状态下生效）
@@ -278,7 +299,7 @@ const TaskControls = ({
             : t('home:startTask')}
         </Button>
       )}
-      {taskStatus === 'running' && (
+      {['queued', 'running', 'preparing'].includes(taskStatus) && (
         <>
           <Button
             className="gap-1.5"
@@ -306,6 +327,8 @@ const TaskControls = ({
           </Button>
         </>
       )}
+      {['pausing', 'waiting_review'].includes(taskStatus) && <><span className="text-xs text-muted-foreground">{t(`tasks:runs.status.${taskStatus}`)}</span><Button onClick={handleCancel}>{t('home:cancelTask')}</Button></>}
+      {['failed', 'interrupted'].includes(taskStatus) && currentRunRef.current && <Button variant="outline" onClick={() => commandRun('retry')}>{t('tasks:runs.retry')}</Button>}
       {taskStatus === 'cancelling' && (
         <Button className="gap-1.5" disabled>
           <Loader2 className="h-4 w-4 animate-spin" />

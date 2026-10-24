@@ -728,5 +728,61 @@
       "interrupted": "Interrupted; waiting to retry",
       "paused": "Paused; waiting to resume"
     }
+  },
+  "runs": {
+    "current": "Current run",
+    "history": "Run history",
+    "editNext": "Edit next run",
+    "retry": "Retry failed stages",
+    "readOnly": "Historical result (read only)",
+    "configuration": "Execution configuration",
+    "lockedHint": "Configuration and files are locked for this run. Pausing releases processing resources after the current stage.",
+    "draftHint": "Editing the next-run draft. Starting reevaluates every file and reuses valid unchanged stage results.",
+    "resultHint": "This run’s results and configuration are preserved. Edit the next-run draft or start again with the same configuration. Previous manual edits are not inherited.",
+    "stages": {
+      "prepareInput": "Verify input",
+      "extractAudio": "Extract audio",
+      "extractSubtitle": "Acquire subtitles",
+      "refineSubtitle": "Refine subtitles",
+      "manuscriptMatch": "Match manuscript",
+      "normalizeSubtitle": "Normalize subtitles",
+      "summarizeEpisode": "Summarize",
+      "translateSubtitle": "Translate",
+      "speakerDiarization": "Identify speakers",
+      "annotateSpeakers": "Annotate speakers",
+      "prepareProofread": "Prepare review",
+      "exportSubtitle": "Export subtitles",
+      "subtitleReview": "Subtitle review",
+      "dubbing": "Dubbing",
+      "dubbingTrack": "Build audio track",
+      "dubbingReview": "Dubbing review",
+      "composeVideo": "Compose video"
+    },
+    "status": {
+      "preparing": "Preparing",
+      "queued": "Queued",
+      "running": "Running",
+      "pausing": "Pausing after this stage",
+      "paused": "Paused",
+      "waiting_review": "Waiting for review",
+      "cancelling": "Cancelling",
+      "cancelled": "Cancelled",
+      "succeeded": "Completed",
+      "failed": "Failed",
+      "interrupted": "Interrupted"
+    },
+    "outcome": {
+      "executed": "Executed",
+      "reused": "Reused",
+      "not_applicable": "Not applicable",
+      "degraded": "Completed with warnings",
+      "pending": "Pending",
+      "running": "Running",
+      "succeeded": "Completed",
+      "failed": "Failed",
+      "interrupted": "Interrupted",
+      "waiting_review": "Awaiting review",
+      "cancelled": "Cancelled"
+    }
   }
 }

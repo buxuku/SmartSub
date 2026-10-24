@@ -94,6 +94,7 @@ function sidecarPathsOf(files: unknown): string[] {
 export function collectProofreadDataFiles(item: WorkItem): string[] {
   const snapshot = item?.configSnapshot?.proofreadDataFile;
   return [
+    ...(item.historicalProofreadFiles || []),
     ...sidecarPathsOf(item?.pipelineFiles),
     ...sidecarPathsOf(item?.proofreadEntries),
     ...sidecarPathsOf(item?.taskDraft?.manuscripts),
