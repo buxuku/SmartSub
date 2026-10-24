@@ -300,6 +300,51 @@ it('keeps one fixed status slot through ordinary stages, gates and terminal stat
   }
 });
 
+it('preserves edited inputs on the first same-run event after reopening a completed task', () => {
+  const listeners = new Map<string, (...args: any[]) => void>();
+  (window as any).ipc = {
+    on: (channel, cb) => {
+      listeners.set(channel, cb);
+      return () => listeners.delete(channel);
+    },
+  };
+  function Harness() {
+    const [files, setFiles] = React.useState<any[]>([
+      { uuid: 'new', filePath: '/new.mp4' },
+    ]);
+    useIpcCommunication(setFiles, undefined, 'a', 'existing');
+    return <div data-testid="draft-state">{JSON.stringify(files)}</div>;
+  }
+  render(<Harness />);
+  const run: any = {
+    projectId: 'a',
+    runId: 'existing',
+    revision: 2,
+    createdAt: 1,
+    files: [
+      {
+        fileId: 'old',
+        input: { uuid: 'old', filePath: '/old.mp4' },
+        projection: { uuid: 'old', filePath: '/old.mp4' },
+        stages: {},
+      },
+    ],
+  };
+  act(() => listeners.get('taskRunChange')!(run));
+  expect(screen.getByTestId('draft-state')).toHaveTextContent('/new.mp4');
+  expect(screen.getByTestId('draft-state')).not.toHaveTextContent('/old.mp4');
+  act(() =>
+    listeners.get('taskRunChange')!({
+      ...run,
+      runId: 'next',
+      revision: 1,
+      createdAt: 2,
+    }),
+  );
+  expect(screen.getByTestId('draft-state')).toHaveTextContent('/old.mp4');
+  expect(screen.getByTestId('draft-state')).not.toHaveTextContent('/new.mp4');
+});
+
 it('shows translation receipt, saving, retries and seconds without reanimating the clock', () => {
   render(
     <TaskActivityDetails

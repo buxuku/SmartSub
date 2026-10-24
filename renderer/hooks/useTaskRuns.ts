@@ -33,5 +33,6 @@ export function useTaskRuns(projectId?: string | null) {
       cleanup?.();
     };
   }, [projectId]);
-  return { runs, currentRun: runs[0] || null };
+  const projectRuns = runs.filter((run) => run.projectId === projectId);
+  return { runs: projectRuns, currentRun: projectRuns[0] || null };
 }

@@ -56,6 +56,7 @@ interface TaskGridListProps {
   typeDef: TaskTypeDef;
   formData: any;
   taskStatus: string;
+  inputsLocked?: boolean;
   manuscriptPool?: any[];
   onProofread: (file: any) => void;
   onDelete: (uuid: string) => void;
@@ -144,6 +145,7 @@ function Cover({ file }: { file: any }) {
 }
 
 const TaskGridList: React.FC<TaskGridListProps> = ({
+  inputsLocked = false,
   files,
   typeDef,
   formData,
@@ -159,6 +161,7 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
 }) => {
   const { t } = useTranslation('tasks');
   const queueBusy =
+    inputsLocked ||
     taskStatus === 'running' ||
     taskStatus === 'paused' ||
     taskStatus === 'cancelling';
@@ -293,13 +296,13 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
                 count: file.translationFailures.length,
               })
             : '';
-        const displayWarning = [
-          warningMsg,
-          missedSpeechWarning,
-          translationFailureWarning,
-        ]
-          .filter(Boolean)
-          .join(' · ');
+        const displayWarning = Array.from(
+          new Set(
+            [warningMsg, missedSpeechWarning, translationFailureWarning].filter(
+              Boolean,
+            ),
+          ),
+        ).join(' · ');
         const tone = getRowTone(status.state, failed, Boolean(displayWarning));
         const started = stages.some(
           (s) => getStageStatus(file, s.key) !== 'pending',

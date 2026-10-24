@@ -3,12 +3,34 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 const workspace = process.cwd();
 const require = createRequire(path.join(workspace, 'package.json'));
-const { _electron } = require('@playwright/test');
+const { _electron, expect } = require('@playwright/test');
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'smartsub-review-'));
+const media = path.join(root, 'source.mp4');
 const subtitle = path.join(root, 'source.srt');
+execFileSync(require('ffmpeg-static'), [
+  '-hide_banner',
+  '-loglevel',
+  'error',
+  '-f',
+  'lavfi',
+  '-i',
+  'color=c=black:s=160x90:r=10:d=2',
+  '-f',
+  'lavfi',
+  '-i',
+  'anullsrc=r=16000:cl=mono',
+  '-t',
+  '2',
+  '-c:v',
+  'mpeg4',
+  '-c:a',
+  'aac',
+  media,
+]);
 await fs.writeFile(
   subtitle,
   '1\n00:00:00,000 --> 00:00:02,000\nHello world.\n\n',
@@ -32,7 +54,9 @@ try {
     env: { ...process.env, NODE_ENV: 'production' },
   });
   const page = await app.firstWindow();
+  page.setDefaultTimeout(20000);
   await page.waitForFunction(() => Boolean(window.ipc?.invoke));
+  await page.getByRole('button', { name: '跳过', exact: true }).click();
   const invoke = (channel, payload) =>
     page.evaluate(
       ({ channel, payload }) => window.ipc.invoke(channel, payload),
@@ -53,14 +77,15 @@ try {
   const initial = await invoke('getUserConfig');
   const file = {
     uuid: 'f',
-    filePath: subtitle,
+    filePath: media,
     fileName: 'source',
-    fileExtension: '.srt',
+    fileExtension: '.mp4',
+    providedSubtitlePath: subtitle,
     directory: root,
   };
   const config = {
     ...initial,
-    taskType: 'translateOnly',
+    taskType: 'generateAndTranslate',
     translateProvider: 'controlled',
     sourceLanguage: 'en',
     targetLanguage: 'zh-CN',
@@ -163,6 +188,23 @@ try {
     beforeSave,
     afterSave,
   };
+  // Editing the next task's mode must not change how the last result is opened.
+  await page.evaluate(() =>
+    window.next.router.push('/zh/tasks/generate-translate/?project=review'),
+  );
+  await page.getByRole('tab', { name: '视频 → 原文字幕', exact: true }).click();
+  await expect(page).toHaveURL(/tasks\/generate\//);
+  await expect
+    .poll(
+      async () =>
+        (await invoke('taskRuns:getDraft', 'review'))?.config.taskType,
+    )
+    .toBe('generateOnly');
+  await page.getByRole('button', { name: '校对', exact: true }).first().click();
+  await expect(
+    page.getByText(rows[0].targetContent, { exact: true }).first(),
+  ).toBeVisible();
+  result.nextModeKeepsTranslatedResult = true;
   await fs.writeFile(
     path.join(root, 'result.json'),
     JSON.stringify(result, null, 2),
@@ -178,6 +220,9 @@ try {
     assert.equal(result.proofreadSave.punctuationAfter, false);
   }
 } finally {
-  if (app) await app.close();
+  if (app) {
+    await app.evaluate(({ app }) => app.exit(0)).catch(() => {});
+    await app.close().catch(() => {});
+  }
   await new Promise((resolve) => server.close(resolve));
 }

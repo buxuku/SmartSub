@@ -1,4 +1,5 @@
 import React from 'react';
+import { randomUUID } from 'node:crypto';
 import {
   act,
   fireEvent,
@@ -156,6 +157,37 @@ test('editing the draft never writes defaults through the controls', async () =>
   await screen.findByRole('button', { name: 'home:startTask' });
   view.rerender(controls({}, { ...draft, maxContext: 9 }));
   expect(defaultsWrites()).toEqual([]);
+});
+
+test('retry waits for the next configuration to finish loading', async () => {
+  Object.defineProperty(window.crypto, 'randomUUID', {
+    value: randomUUID,
+    configurable: true,
+  });
+  const fallback = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+    if (channel === 'getTaskStatus') return 'failed';
+    if (channel === 'taskRuns:get') {
+      return { projectId: 'project-1', runId: 'failed-run', status: 'failed' };
+    }
+    if (channel === 'taskRuns:command') return { success: true };
+    return fallback(channel, ...args);
+  });
+  const view = render(controls({ ready: false }));
+  const retry = await screen.findByRole('button', { name: 'tasks:runs.retry' });
+  expect(retry).toBeDisabled();
+  fireEvent.click(retry);
+  expect(invoke).not.toHaveBeenCalledWith(
+    'taskRuns:command',
+    expect.anything(),
+  );
+  view.rerender(controls({ ready: true }));
+  expect(retry).toBeEnabled();
+  await act(async () => fireEvent.click(retry));
+  expect(invoke).toHaveBeenCalledWith(
+    'taskRuns:command',
+    expect.objectContaining({ command: 'retry' }),
+  );
 });
 
 test.each([

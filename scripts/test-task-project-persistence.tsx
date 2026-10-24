@@ -169,6 +169,46 @@ async function main() {
   await act(async () => {
     root!.unmount();
   });
+  const revisions: number[] = [];
+  (globalThis as any).window.ipc.invoke = async (
+    _channel: string,
+    request: any,
+  ) => {
+    revisions.push(request.expectedDraftRevision);
+    return { revision: request.expectedDraftRevision + 1 };
+  };
+  const managed = (type: string, revision: number): TaskProjectSave => ({
+    ...payload(type),
+    runId: 'run',
+    taskType: type,
+    draftRevision: revision,
+  });
+  await act(async () => {
+    root = create(<Harness value={managed('generateOnly', 0)} />);
+  });
+  await act(async () => {
+    assert.equal(await hook!.save(), true);
+  });
+  await act(async () => {
+    root!.update(<Harness value={managed('generateAndTranslate', 2)} />);
+  });
+  await act(async () => {
+    assert.equal(await hook!.save(), true);
+  });
+  await act(async () => {
+    root!.update(<Harness value={managed('generateOnly', 4)} />);
+  });
+  await act(async () => {
+    assert.equal(await hook!.save(), true);
+  });
+  assert.deepEqual(
+    revisions,
+    [0, 2, 4],
+    'returning to an earlier mode uses its freshly loaded draft revision',
+  );
+  await act(async () => {
+    root!.unmount();
+  });
   console.log(
     'Task project persistence: serialized saves, latest revision, failures, retry, initial-value revert, and cross-project response isolation passed',
   );

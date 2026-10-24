@@ -785,5 +785,10 @@
       "cancelled": "已取消"
     },
     "legacyHint": "旧版运行记录：部分有效配置缺失，未使用当前默认值补写历史。"
+  },
+  "processing": {
+    "processAgain": "重新处理",
+    "configLocked": "处理中，参数暂不可修改。取消后可调整参数重新处理。",
+    "adjustAndRepeat": "可以直接调整参数后重新处理，未变化的步骤会自动复用。"
   }
 }

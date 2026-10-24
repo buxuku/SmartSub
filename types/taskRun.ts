@@ -107,6 +107,7 @@ export interface TaskRun {
 }
 export interface TaskDraft {
   revision: number;
+  basedOnRunId?: string;
   config: Record<string, any>;
   files: IFiles[];
 }

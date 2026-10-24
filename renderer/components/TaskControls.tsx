@@ -29,6 +29,7 @@ interface TaskControlsProps {
   onTaskDispatched?: (snapshot: any) => void;
   autoStart?: boolean;
   ready?: boolean;
+  allowRetry?: boolean;
   beforeStart?: () => Promise<boolean>;
   /**
    * 开始前是否允许询问「使用内封字幕还是语音识别」。配置已固定的任务（只读快照页）
@@ -51,6 +52,7 @@ const TaskControls = ({
   onTaskDispatched,
   autoStart,
   ready = true,
+  allowRetry = true,
   beforeStart,
   promptEmbeddedSubtitles = true,
 }: TaskControlsProps) => {
@@ -136,7 +138,7 @@ const TaskControls = ({
         toast.error(t('tasks:subtitleFilesRequired'));
         return;
       }
-      // 只派发未完成的文件（error 不算完成，可重跑；已完成文件不重做）
+      // A new submission reevaluates every file and reuses eligible stage results.
       const pendingFiles = files;
       if (!pendingFiles.length) {
         toast(t('common:notification'), {
@@ -252,6 +254,7 @@ const TaskControls = ({
   const commandRun = async (
     command: 'pause' | 'resume' | 'cancel' | 'retry',
   ) => {
+    if (command === 'retry' && (!ready || !allowRetry)) return false;
     const run = currentRunRef.current;
     if (!run) return false;
     try {
@@ -330,9 +333,11 @@ const TaskControls = ({
           disabled={!files.length || starting || !ready}
         >
           <Play className="h-4 w-4" />
-          {taskStatus === 'cancelled'
-            ? t('home:restartTask')
-            : t('home:startTask')}
+          {currentRunRef.current
+            ? t('tasks:processing.processAgain')
+            : taskStatus === 'cancelled'
+              ? t('home:restartTask')
+              : t('home:startTask')}
         </Button>
       )}
       {['queued', 'running', 'preparing'].includes(taskStatus) && (
@@ -371,10 +376,15 @@ const TaskControls = ({
           <Button onClick={handleCancel}>{t('home:cancelTask')}</Button>
         </>
       )}
-      {['failed', 'interrupted'].includes(taskStatus) &&
+      {allowRetry &&
+        ['failed', 'interrupted'].includes(taskStatus) &&
         currentRunRef.current &&
         !currentRunRef.current.legacy && (
-          <Button variant="outline" onClick={() => commandRun('retry')}>
+          <Button
+            variant="outline"
+            disabled={!ready}
+            onClick={() => commandRun('retry')}
+          >
             {t('tasks:runs.retry')}
           </Button>
         )}

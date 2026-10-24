@@ -785,5 +785,10 @@
       "cancelled": "Cancelled"
     },
     "legacyHint": "Legacy run: some effective configuration is unavailable. Current defaults have not been substituted for historical settings."
+  },
+  "processing": {
+    "processAgain": "Process again",
+    "configLocked": "Settings are locked while processing. Cancel to change settings and start again.",
+    "adjustAndRepeat": "Adjust settings and process again. Unchanged steps are reused automatically."
   }
 }

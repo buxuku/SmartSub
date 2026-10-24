@@ -187,6 +187,8 @@ function simulate({
     },
     projectId: 'test-project',
     currentRun: null,
+    configLocked: false,
+    draftLoadError: null,
     currentRunRef: { current: null },
     cachedProviders: [],
     onOpenRefine: undefined,
@@ -378,6 +380,23 @@ async function main() {
         assert.equal(state.errors.length, 1);
         assert.match(state.errors[0], /subtitleFilesRequired$/);
         assert.equal(state.dispatched.length, 0);
+      },
+    );
+  }
+
+  for (const lock of [
+    { configLocked: true },
+    { draftLoadError: 'Load failed' },
+  ]) {
+    await check(
+      `Retry waits for editable configuration: ${JSON.stringify(lock)}`,
+      async () => {
+        const state = simulate();
+        taskContext(state, 'translate', ['/clip.SRT']);
+        Object.assign(state.context, lock);
+        await vm.runInContext('handleRetryFiles(files)', state.context);
+        assert.equal(state.dispatched.length, 0);
+        assert.equal(state.submitOptions.length, 0);
       },
     );
   }

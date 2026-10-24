@@ -12,6 +12,10 @@ export function formatTaskMessage(
   translationFailureCount = 0,
 ): string {
   switch (message) {
+    case 'TRANSLATION_INCOMPLETE':
+      return t('row.translationFailureWarning', {
+        count: translationFailureCount,
+      });
     case 'AI_SEGMENTATION_FALLBACK':
       return t('activity.fallbackWarning');
     case 'TASK_INTERRUPTED':

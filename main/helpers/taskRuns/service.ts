@@ -274,6 +274,7 @@ export function createTaskRunService(
         throw new Error('TASK_DRAFT_CONFLICT');
       const draft = structuredClone({
         revision: input.expectedDraftRevision + 1,
+        basedOnRunId: get(input.projectId)?.runId,
         config: input.config,
         files: input.files,
       });

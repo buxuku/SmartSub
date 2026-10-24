@@ -58,16 +58,26 @@ export function useTaskProjectPersistence(
           let saved: any;
           try {
             if (current.payload.runId) {
-              if (!draftRevisions.current.has(current.payload.id)) {
-                draftRevisions.current.set(current.payload.id, current.payload.draftRevision || 0);
+              const draftKey = `${current.payload.id}:${current.payload.runId}:${current.payload.taskType}:${current.payload.draftRevision || 0}`;
+              if (!draftRevisions.current.has(draftKey)) {
+                draftRevisions.current.set(
+                  draftKey,
+                  current.payload.draftRevision || 0,
+                );
               }
-              const draft = await window.ipc.invoke('taskRuns:saveDraft', { projectId: current.payload.id, expectedDraftRevision: draftRevisions.current.get(current.payload.id), config: current.payload.taskDraft?.config || {}, files: current.payload.files });
-              draftRevisions.current.set(current.payload.id, draft.revision);
+              const draft = await window.ipc.invoke('taskRuns:saveDraft', {
+                projectId: current.payload.id,
+                expectedDraftRevision: draftRevisions.current.get(draftKey),
+                config: current.payload.taskDraft?.config || {},
+                files: current.payload.files,
+              });
+              draftRevisions.current.set(draftKey, draft.revision);
               saved = { id: current.payload.id };
-            } else saved = await window.ipc.invoke(
-              'saveTaskProject',
-              structuredClone(current.payload),
-            );
+            } else
+              saved = await window.ipc.invoke(
+                'saveTaskProject',
+                structuredClone(current.payload),
+              );
           } catch (cause) {
             if (
               version !==
