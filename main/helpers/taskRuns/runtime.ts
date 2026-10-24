@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import { createTaskRunStore } from './store';
-import { createTaskRunService } from './service';
+import { assertValidRunInput, createTaskRunService } from './service';
 import { captureEffectiveConfiguration } from './configuration';
 import { configurationManager } from '../../service/configurationManager';
 import { store } from '../store';
@@ -15,6 +15,8 @@ import {
   setManagedTaskAcceptance,
   setTaskRunEditGuard,
   setTaskRunDeletion,
+  isLegacyTaskBusy,
+  assertTaskResultsSaved,
 } from './access';
 import type {
   TaskSubmission,
@@ -62,7 +64,7 @@ export function projectRun(run: TaskRun, durable = true) {
       historicalSessionIds: [
         ...new Set([
           ...(old?.historicalSessionIds || []),
-          ...(old?.currentRunId && old.currentRunId !== run.runId
+          ...(old && old.currentRunId !== run.runId
             ? (old.pipelineFiles || []).flatMap((file) =>
                 file.dubbingSessionId ? [file.dubbingSessionId] : [],
               )
@@ -72,7 +74,7 @@ export function projectRun(run: TaskRun, durable = true) {
       historicalProofreadFiles: [
         ...new Set([
           ...(old?.historicalProofreadFiles || []),
-          ...(old?.currentRunId && old.currentRunId !== run.runId
+          ...(old && old.currentRunId !== run.runId
             ? (old.pipelineFiles || []).flatMap((file) =>
                 file.proofreadDataFile ? [file.proofreadDataFile] : [],
               )
@@ -126,12 +128,18 @@ export function initializeTaskRuns() {
             (file) => file.projection.dubbingSessionId === input.sessionId,
           )
         : input.path &&
-          path
-            .resolve(input.path)
-            .startsWith(
-              path.dirname(getRunStore().runPath(run.projectId, run.runId)) +
-                path.sep,
-            );
+          (run.files.some(
+            (file) =>
+              file.projection.proofreadDataFile &&
+              path.resolve(file.projection.proofreadDataFile) ===
+                path.resolve(input.path!),
+          ) ||
+            path
+              .resolve(input.path)
+              .startsWith(
+                path.dirname(getRunStore().runPath(run.projectId, run.runId)) +
+                  path.sep,
+              ));
       if (!owns) continue;
       if (getRunService().get(run.projectId)?.runId !== run.runId)
         throw new Error('TASK_HISTORY_READ_ONLY');
@@ -155,7 +163,7 @@ export function initializeTaskRuns() {
       latest.get(run.projectId)!.createdAt < run.createdAt
     )
       latest.set(run.projectId, run);
-  for (const run of latest.values()) projectRun(run);
+  for (const run of latest.values()) if (!run.legacy) projectRun(run);
 }
 /** An accepted input binding excludes all mutable legacy output/status fields. */
 export function taskInput(file: IFiles): IFiles {
@@ -180,9 +188,15 @@ export function acceptManagedTask(
   | { result: Extract<TaskSubmissionResult, { success: true }>; run: TaskRun }
   | undefined {
   const existing = getWorkItemById(input.projectId);
+  assertTaskResultsSaved(
+    (existing?.pipelineFiles || []).map((file) => file.proofreadDataFile),
+  );
+  if (!existing?.currentRunId && isLegacyTaskBusy(input.projectId))
+    throw new Error('TASK_RUN_BUSY');
   if (input.resumeLegacy && existing && !existing.currentRunId)
     return undefined;
   const service = getRunService();
+  const previousRun = service.get(input.projectId);
   for (const file of existing?.pipelineFiles || [])
     if (
       file.dubbingSessionId &&
@@ -211,13 +225,49 @@ export function acceptManagedTask(
     oldIdentity?.model === identity.model
       ? oldIdentity
       : identity;
-  const receipt = service.accept({
+  const submission = {
     projectId: input.projectId,
     requestId: input.requestId,
     config,
     resolvedConfig,
-    files: input.files.map(taskInput),
-  });
+    files: input.files.map((file) => {
+      const original = previousRun?.files.find(
+        (old) => old.fileId === file.uuid,
+      );
+      const binding = { ...file };
+      for (const key of ['providedSubtitlePath', 'manuscriptPath'] as const) {
+        if (original && binding[key] === original.projection[key])
+          binding[key] = original.input[key];
+      }
+      return taskInput(binding);
+    }),
+  };
+  assertValidRunInput(submission);
+  if (
+    !existing?.currentRunId &&
+    existing?.pipelineFiles?.some(
+      (file) =>
+        Object.values(file).some(
+          (value) => value === 'done' || value === 'error',
+        ) ||
+        file.proofreadDataFile ||
+        file.dubbingSessionId,
+    )
+  ) {
+    service.importLegacyResult({
+      projectId: input.projectId,
+      config: existing.configSnapshot || { taskType: existing.type },
+      files: existing.pipelineFiles,
+      createdAt: existing.createdAt,
+      status:
+        existing.status === 'done'
+          ? 'succeeded'
+          : existing.status === 'error'
+            ? 'failed'
+            : 'interrupted',
+    });
+  }
+  const receipt = service.accept(submission);
   const run = service.get(input.projectId, receipt.runId)!;
   return {
     result: {

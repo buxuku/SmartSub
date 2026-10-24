@@ -179,3 +179,96 @@ test('degraded results, force policy, missing files, changed stage versions and 
   fs.unlinkSync(old.artifacts[0].path);
   assert.equal((await check()).reason, 'ARTIFACT_INVALID');
 });
+
+test('recognition hints and every task VAD parameter participate in the ASR fingerprint', async (t) => {
+  const { TASK_VAD_SPECS } = await import('../../types/subtitleOutcome');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'asr-fingerprint-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const service = createTaskRunService(createTaskRunStore(root));
+  service.accept({
+    projectId: 'p',
+    requestId: 'r',
+    config: {
+      taskType: 'generateOnly',
+      transcriptionEngine: 'builtin',
+      model: 'tiny',
+      prompt: 'one',
+    },
+    resolvedConfig: { settings: { vadThreshold: 0.5 } },
+    files: [
+      {
+        uuid: 'f',
+        filePath: '/v.mp4',
+        directory: '/',
+        fileName: 'v',
+        fileExtension: '.mp4',
+      },
+    ],
+  });
+  const run = service.get('p')!;
+  const baseline = stageFingerprint(run, run.files[0], 'extractSubtitle');
+  for (const [key, value] of [
+    ['prompt', 'two'],
+    ...TASK_VAD_SPECS.map((spec) => [
+      spec.key,
+      spec.min + (spec.max - spec.min) / 2,
+    ]),
+  ]) {
+    const changed = structuredClone(run);
+    changed.config[key as string] = value;
+    assert.notEqual(
+      stageFingerprint(changed, changed.files[0], 'extractSubtitle'),
+      baseline,
+      String(key),
+    );
+  }
+});
+
+test('translation presentation does not change paid-stage fingerprints; refine uses glossary selection and target language', () => {
+  const run: any = {
+    config: {
+      taskType: 'generateAndTranslate',
+      translateProvider: 'p',
+      sourceLanguage: 'zh',
+      targetLanguage: 'en',
+      translateContent: 'onlyTranslate',
+      glossaryIds: ['a'],
+    },
+    resolvedConfig: { settings: {}, glossaries: [{ id: 'a' }, { id: 'b' }] },
+  };
+  const file: any = {
+    projection: {},
+    stages: {
+      translateSubtitle: { version: 1, dependencies: [] },
+      refineSubtitle: { version: 1, dependencies: [] },
+    },
+  };
+  const translation = stageFingerprint(run, file, 'translateSubtitle');
+  for (const change of [
+    { translateContent: 'sourceAndTranslate' },
+    { removeChinesePunctuation: true },
+    { subtitleLayout: 'two-line', subtitleLineWidth: 12 },
+  ])
+    assert.equal(
+      stageFingerprint(
+        { ...run, config: { ...run.config, ...change } },
+        file,
+        'translateSubtitle',
+      ),
+      translation,
+    );
+  const refine = stageFingerprint(run, file, 'refineSubtitle');
+  for (const change of [
+    { glossaryIds: ['b'] },
+    { targetLanguage: 'ja' },
+    { preserveSpeechPauses: true },
+  ])
+    assert.notEqual(
+      stageFingerprint(
+        { ...run, config: { ...run.config, ...change } },
+        file,
+        'refineSubtitle',
+      ),
+      refine,
+    );
+});

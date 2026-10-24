@@ -1,9 +1,29 @@
 import { isRunLocked } from '../../../types/taskRun';
+import path from 'node:path';
 import type { TaskRunService } from './service';
 import type { TaskSubmission } from '../../../types/taskSubmission';
 import type { acceptManagedTask } from './runtime';
 
 let resolveService: (() => TaskRunService) | undefined;
+const resultWrites = new Set<string>();
+const editKey = (target: string) => path.resolve(target).toLowerCase();
+export function assertTaskResultsSaved(paths: Array<string | undefined>) {
+  if (paths.some((target) => target && resultWrites.has(editKey(target))))
+    throw new Error('TASK_RESULT_SAVE_IN_PROGRESS');
+}
+export function beginTaskResultWrite(target: string) {
+  assertTaskResultsSaved([target]);
+  const key = editKey(target);
+  resultWrites.add(key);
+  return () => {
+    resultWrites.delete(key);
+  };
+}
+let legacyBusy: (projectId: string) => boolean = () => false;
+export function setLegacyTaskBusyResolver(resolve: typeof legacyBusy) {
+  legacyBusy = resolve;
+}
+export const isLegacyTaskBusy = (projectId: string) => legacyBusy(projectId);
 let accept: typeof acceptManagedTask | undefined;
 let assertEdit:
   | ((input: { path?: string; sessionId?: string }) => void)
@@ -44,6 +64,7 @@ export function requireTaskRunService(): TaskRunService {
   return service;
 }
 export function assertLegacyTaskWriteAllowed(projectId: string): void {
+  if (legacyBusy(projectId)) throw new Error('TASK_CONFIG_BUSY');
   const run = taskRunService()?.get(projectId);
   if (isRunLocked(run)) throw new Error('TASK_CONFIG_BUSY');
   if (run) throw new Error('TASK_RUN_READ_ONLY_USE_DRAFT');

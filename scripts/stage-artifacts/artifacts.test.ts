@@ -39,6 +39,28 @@ test('committed artifacts are independent of attempt inputs and reject later cor
   fs.writeFileSync(committed.patch.srtFile, 'corrupt');
   assert.equal(await artifacts.validate(committed.artifacts), false);
 });
+
+test('bundles preserve distinct same-named files and deduplicate repeated references', async (t) => {
+  const { artifacts, workspace } = setup(t);
+  const source = path.join(workspace, 'source', 'subtitles.srt');
+  const target = path.join(workspace, 'target', 'subtitles.srt');
+  fs.mkdirSync(path.dirname(source), { recursive: true });
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(source, 'source text');
+  fs.writeFileSync(target, 'target text');
+  const committed = await artifacts.commit(token, workspace, 'fingerprint', {
+    source,
+    target,
+    copies: [source, target, target],
+    deliveries: [{ source: target }],
+  });
+  assert.notEqual(committed.patch.source, committed.patch.target);
+  assert.equal(fs.readFileSync(committed.patch.source, 'utf8'), 'source text');
+  assert.equal(fs.readFileSync(committed.patch.target, 'utf8'), 'target text');
+  assert.equal(committed.patch.copies[1], committed.patch.target);
+  assert.equal(committed.artifacts.length, 3);
+  assert.ok(await artifacts.validate(committed.artifacts));
+});
 test('cancel before publication produces no committed artifact and preserves the previous output', async (t) => {
   const { artifacts, workspace } = setup(t);
   const source = path.join(workspace, 'source.srt');
@@ -80,4 +102,22 @@ test('hashing supports cancellation during a large read', async (t) => {
   await assert.rejects(
     hashFile(target, controller.signal, () => controller.abort()),
   );
+});
+
+test('delivery rendering leaves canonical translation unchanged and applies bilingual/punctuation choices', async () => {
+  const { renderTranslationDelivery } = await import(
+    '../../main/helpers/taskRuns/deliveryText'
+  );
+  const source = '1\n00:00:00,000 --> 00:00:01,000\nHello.\n\n';
+  const target = '1\n00:00:00,000 --> 00:00:01,000\n你好，世界！\n\n';
+  const rendered = renderTranslationDelivery(source, target, {
+    taskType: 'generateAndTranslate',
+    sourceLanguage: 'en',
+    targetLanguage: 'zh',
+    translateContent: 'sourceAndTranslate',
+    removeChinesePunctuation: true,
+  });
+  assert.ok(rendered.content.includes('Hello.\n你好 世界'));
+  assert.ok(target.includes('，'));
+  assert.equal(rendered.bilingual[0].source, 'Hello.');
 });

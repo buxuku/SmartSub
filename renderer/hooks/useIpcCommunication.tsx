@@ -13,6 +13,7 @@ export default function useIpcCommunication(
 ) {
   const projectRef = useRef(projectId);
   const latestRun = useRef<TaskRun | null>(null);
+  const legacyBlocked = useRef(false);
   // 始终调用最新的 appendFiles（含去重逻辑），避免事件订阅闭包过期
   const appendFilesRef = useRef(appendFiles);
   appendFilesRef.current = appendFiles;
@@ -23,7 +24,11 @@ export default function useIpcCommunication(
   // 的 files 持久化回写会把主进程镜像里的正确状态覆盖掉（进度永远缺一段）。
   // 这里将找不到文件的事件按 uuid 暂存为补丁，hydrateFiles 加载时合并回放。
   const pendingEventsRef = useRef<Map<string, Record<string, any>>>(new Map());
-  if (projectRef.current !== projectId) { pendingEventsRef.current.clear(); latestRun.current = null; }
+  if (projectRef.current !== projectId) {
+    pendingEventsRef.current.clear();
+    latestRun.current = null;
+    legacyBlocked.current = false;
+  }
   projectRef.current = projectId;
 
   useEffect(() => {
@@ -50,6 +55,7 @@ export default function useIpcCommunication(
     );
 
     const handleActivityChange = (res: IFiles, activity: TaskActivity) => {
+      if (legacyBlocked.current) return;
       if (res.taskProjectId && res.taskProjectId !== projectRef.current) return;
       setFiles((files) => {
         let matched = false;
@@ -77,6 +83,7 @@ export default function useIpcCommunication(
       key: string,
       status: string,
     ) => {
+      if (legacyBlocked.current) return;
       if (res.taskProjectId && res.taskProjectId !== projectRef.current) return;
       setFiles((prevFiles) => {
         let matched = false;
@@ -98,6 +105,7 @@ export default function useIpcCommunication(
       key: string,
       progress: number,
     ) => {
+      if (legacyBlocked.current) return;
       if (res.taskProjectId && res.taskProjectId !== projectRef.current) return;
       // 验证进度值的合理性
       const normalizedProgress = Math.min(Math.max(progress || 0, 0), 100);
@@ -139,6 +147,7 @@ export default function useIpcCommunication(
       key: string,
       errorMsg: string,
     ) => {
+      if (legacyBlocked.current) return;
       if (res.taskProjectId && res.taskProjectId !== projectRef.current) return;
       setFiles((prevFiles) => {
         const errorKey = `${key}Error`;
@@ -157,6 +166,7 @@ export default function useIpcCommunication(
     };
 
     const handleFileChange = (res: IFiles) => {
+      if (legacyBlocked.current) return;
       if (res.taskProjectId && res.taskProjectId !== projectRef.current) return;
       setFiles((prevFiles) => {
         let matched = false;
@@ -213,8 +223,14 @@ export default function useIpcCommunication(
       window?.ipc?.on('taskRunChange', (run: TaskRun) => {
         if (run.projectId !== projectRef.current) return;
         const previous = latestRun.current;
-        if (previous && (previous.createdAt > run.createdAt || (previous.runId === run.runId && previous.revision >= run.revision))) return;
+        if (
+          previous &&
+          (previous.createdAt > run.createdAt ||
+            (previous.runId === run.runId && previous.revision >= run.revision))
+        )
+          return;
         latestRun.current = run;
+        legacyBlocked.current = true;
         pendingEventsRef.current.clear();
         setFiles(projectRunFiles(run));
       }),
@@ -236,9 +252,18 @@ export default function useIpcCommunication(
    */
   const hydrateFiles = useCallback(
     (loaded: IFiles[]): IFiles[] => {
-      if (latestRun.current?.projectId === projectRef.current && (!loaded[0]?.taskRunId || latestRun.current.runId === loaded[0].taskRunId)) {
+      if (loaded.some((file) => file.taskRunId)) {
+        legacyBlocked.current = true;
+        pendingEventsRef.current.clear();
+      }
+      if (
+        latestRun.current?.projectId === projectRef.current &&
+        (!loaded[0]?.taskRunId ||
+          latestRun.current.runId === loaded[0].taskRunId)
+      ) {
         const projected = projectRunFiles(latestRun.current);
-        setFiles(projected); return projected;
+        setFiles(projected);
+        return projected;
       }
       const pending = pendingEventsRef.current;
       pendingEventsRef.current = new Map();

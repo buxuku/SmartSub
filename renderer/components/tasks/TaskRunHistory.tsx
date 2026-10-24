@@ -29,6 +29,7 @@ export function TaskRunHistory({
         <label className="flex items-center gap-2">
           {t('runs.history')}
           <select
+            aria-label={t('runs.history')}
             className="rounded border bg-background p-1"
             value={selected}
             onChange={(event) => setSelected(event.target.value)}
@@ -65,6 +66,11 @@ export function TaskRunHistory({
             {new Date(historical.createdAt).toLocaleString()}
           </summary>
           <div className="max-h-72 overflow-auto mt-2 space-y-3">
+            {historical.legacy && (
+              <p className="text-xs text-muted-foreground">
+                {t('runs.legacyHint')}
+              </p>
+            )}
             {historical.files.map((file) => (
               <div key={file.fileId}>
                 <strong>{file.input.fileName}</strong>

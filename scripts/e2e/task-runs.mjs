@@ -4,46 +4,237 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { _electron } from '@playwright/test';
+import { _electron, expect } from '@playwright/test';
 const require = createRequire(import.meta.url);
-const root = await fs.mkdtemp(path.join(os.tmpdir(), 'smartsub-task-runs-e2e-'));
+const root = await fs.mkdtemp(
+  path.join(os.tmpdir(), 'smartsub-task-runs-e2e-'),
+);
 const media = path.join(root, 'clip.mp4');
 const subtitle = path.join(root, 'provided.srt');
-await fs.writeFile(subtitle, '1\n00:00:00,000 --> 00:00:01,000\nHello world.\n\n');
-execFileSync(require('ffmpeg-static'), ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=black:s=160x90:r=10:d=2', '-f', 'lavfi', '-i', 'anullsrc=r=16000:cl=mono', '-t', '2', '-c:v', 'mpeg4', '-c:a', 'aac', media]);
+await fs.writeFile(
+  subtitle,
+  '1\n00:00:00,000 --> 00:00:01,000\nHello world.\n\n',
+);
+execFileSync(require('ffmpeg-static'), [
+  '-hide_banner',
+  '-loglevel',
+  'error',
+  '-f',
+  'lavfi',
+  '-i',
+  'color=c=black:s=160x90:r=10:d=2',
+  '-f',
+  'lavfi',
+  '-i',
+  'anullsrc=r=16000:cl=mono',
+  '-t',
+  '2',
+  '-c:v',
+  'mpeg4',
+  '-c:a',
+  'aac',
+  media,
+]);
 let app;
 try {
- app = await _electron.launch({ args: ['.', `--user-data-dir=${path.join(root, 'profile')}`], env: { ...process.env, NODE_ENV: 'production' } });
- const page = await app.firstWindow(); page.setDefaultTimeout(20000); await page.waitForLoadState('domcontentloaded');
- await page.waitForFunction(() => Boolean(window.ipc?.invoke));
- const invoke = (channel, payload) => page.evaluate(({ channel, payload }) => window.ipc.invoke(channel, payload), { channel, payload });
- const initial = await invoke('getUserConfig');
- const file = { uuid: 'media', filePath: media, fileName: 'clip', fileExtension: '.mp4', directory: root, providedSubtitlePath: subtitle };
- const formData = { ...initial, taskType: 'generateOnly', translateProvider: '-1', aiCorrection: false, aiSegmentation: false, speakerDiarization: false, generateSummary: false, sourceSrtSaveOption: 'fileName', subtitleOutputFormats: ['srt'] };
- const projectId = 'task-runtime-e2e';
- const get = () => invoke('taskRuns:get', { projectId });
- const wait = async predicate => { for (let n = 0; n < 200; n++) { const run = await get(); if (predicate(run)) return run; await new Promise(resolve => setTimeout(resolve, 50)); } throw new Error(`Run timed out: ${JSON.stringify(await get())}`); };
- const first = await invoke('submitTask', { projectId, requestId: 'first', files: [file], formData }); assert.equal(first.success, true, JSON.stringify(first));
- const done = await wait(run => ['succeeded', 'failed'].includes(run?.status)); assert.equal(done.status, 'succeeded', JSON.stringify(done));
- assert.equal(done.files[0].stages.prepareInput.status, 'succeeded');
- const sidecar = done.files[0].projection.proofreadDataFile; assert.ok(sidecar.includes('/edits/'));
- const before = await fs.readFile(sidecar, 'utf8'); const data = JSON.parse(before); data.cues[0].source = 'Manually edited'; await fs.writeFile(sidecar, JSON.stringify(data));
- const second = await invoke('submitTask', { projectId, requestId: 'second', files: [file], formData }); assert.equal(second.success, true, JSON.stringify(second));
- const again = await wait(run => run?.runId === second.runId && ['succeeded', 'failed'].includes(run.status)); assert.equal(again.status, 'succeeded', JSON.stringify(again));
- assert.equal(again.files[0].stages.extractSubtitle.outcome, 'reused');
- assert.notEqual(again.files[0].projection.proofreadDataFile, sidecar);
- assert.equal(JSON.parse(await fs.readFile(again.files[0].projection.proofreadDataFile, 'utf8')).cues[0].source, 'Hello world.');
- assert.equal(JSON.parse(await fs.readFile(sidecar, 'utf8')).cues[0].source, 'Manually edited');
- assert.equal((await invoke('taskRuns:list', projectId)).length, 2);
- const oldEdit = await invoke('saveProofreadDataAndRender', { proofreadDataFile: sidecar, subtitles: [], outputs: [] }); assert.ok(oldEdit.error?.includes('TASK_HISTORY_READ_ONLY'), JSON.stringify(oldEdit));
- const third = await invoke('submitTask', { projectId, requestId: 'third', files: [file], formData });
- await invoke('taskRuns:command', { projectId, expectedRunId: third.runId, requestId: 'pause', command: 'pause' });
- await wait(run => run?.status === 'paused');
- await assert.rejects(invoke('taskRuns:saveDraft', { projectId, expectedDraftRevision: 0, config: {}, files: [] }), /TASK_CONFIG_BUSY/);
- await assert.rejects(invoke('saveTaskProject', { id: projectId, files: [file], taskDraft: { config: {}, manuscripts: [] } }), /TASK_CONFIG_BUSY/);
- await invoke('taskRuns:command', { projectId, expectedRunId: third.runId, requestId: 'cancel', command: 'cancel' });
- await wait(run => run?.status === 'cancelled');
- await assert.rejects(invoke('taskRuns:command', { projectId, expectedRunId: first.runId, requestId: 'old', command: 'resume' }), /TASK_RUN_CONFLICT/);
- await page.screenshot({ path: path.join(root, 'desktop.png') });
- console.log(`Task run Electron acceptance passed. Evidence: ${root}`);
-} finally { if (app) await app.close(); }
+  app = await _electron.launch({
+    args: ['.', `--user-data-dir=${path.join(root, 'profile')}`],
+    env: { ...process.env, NODE_ENV: 'production' },
+  });
+  const page = await app.firstWindow();
+  page.setDefaultTimeout(20000);
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForFunction(() => Boolean(window.ipc?.invoke));
+  const invoke = (channel, payload) =>
+    page.evaluate(
+      ({ channel, payload }) => window.ipc.invoke(channel, payload),
+      { channel, payload },
+    );
+  const skip = page.getByRole('button', { name: '跳过', exact: true });
+  if (await skip.isVisible()) await skip.click();
+  const initial = await invoke('getUserConfig');
+  const file = {
+    uuid: 'media',
+    filePath: media,
+    fileName: 'clip',
+    fileExtension: '.mp4',
+    directory: root,
+    providedSubtitlePath: subtitle,
+  };
+  const formData = {
+    ...initial,
+    taskType: 'generateOnly',
+    translateProvider: '-1',
+    aiCorrection: false,
+    aiSegmentation: false,
+    speakerDiarization: false,
+    generateSummary: false,
+    sourceSrtSaveOption: 'fileName',
+    subtitleOutputFormats: ['srt'],
+  };
+  const projectId = 'task-runtime-e2e';
+  const get = () => invoke('taskRuns:get', { projectId });
+  const wait = async (predicate) => {
+    for (let n = 0; n < 200; n++) {
+      const run = await get();
+      if (predicate(run)) return run;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error(`Run timed out: ${JSON.stringify(await get())}`);
+  };
+  const first = await invoke('submitTask', {
+    projectId,
+    requestId: 'first',
+    files: [file],
+    formData,
+  });
+  assert.equal(first.success, true, JSON.stringify(first));
+  const done = await wait((run) =>
+    ['succeeded', 'failed'].includes(run?.status),
+  );
+  assert.equal(done.status, 'succeeded', JSON.stringify(done));
+  assert.equal(done.files[0].stages.prepareInput.status, 'succeeded');
+  const sidecar = done.files[0].projection.proofreadDataFile;
+  assert.ok(sidecar.includes('/edits/'));
+  const before = await fs.readFile(sidecar, 'utf8');
+  const rows = await invoke('readProofreadDataFile', {
+    filePath: sidecar,
+    strict: true,
+  });
+  rows.subtitles[0].sourceContent = 'Manually edited';
+  const saved = await invoke('saveProofreadDataAndRender', {
+    proofreadDataFile: sidecar,
+    subtitles: rows.subtitles,
+    outputs: [],
+  });
+  assert.equal(saved.success, true, JSON.stringify(saved));
+  const second = await invoke('submitTask', {
+    projectId,
+    requestId: 'second',
+    files: [done.files[0].projection],
+    formData,
+  });
+  assert.equal(second.success, true, JSON.stringify(second));
+  const again = await wait(
+    (run) =>
+      run?.runId === second.runId &&
+      ['succeeded', 'failed'].includes(run.status),
+  );
+  assert.equal(again.status, 'succeeded', JSON.stringify(again));
+  assert.equal(again.files[0].stages.extractSubtitle.outcome, 'reused');
+  assert.notEqual(again.files[0].projection.proofreadDataFile, sidecar);
+  assert.equal(
+    JSON.parse(
+      await fs.readFile(again.files[0].projection.proofreadDataFile, 'utf8'),
+    ).cues[0].source,
+    'Hello world.',
+  );
+  assert.equal(
+    JSON.parse(await fs.readFile(sidecar, 'utf8')).cues[0].source,
+    'Manually edited',
+  );
+  assert.equal((await invoke('taskRuns:list', projectId)).length, 2);
+  assert.equal(
+    again.files[0].input.providedSubtitlePath,
+    subtitle,
+    'rerun restores original input binding',
+  );
+  await page.evaluate(
+    (id) => window.next.router.push(`/zh/tasks/generate/?project=${id}`),
+    projectId,
+  );
+  await expect(
+    page.getByRole('button', { name: '编辑下一轮配置', exact: true }),
+  ).toBeVisible();
+  await page.getByLabel('历史运行', { exact: true }).selectOption(done.runId);
+  await expect(
+    page.getByText('历史结果（只读）', { exact: false }),
+  ).toBeVisible();
+  await page
+    .getByRole('button', { name: '编辑下一轮配置', exact: true })
+    .click();
+  await expect(
+    page.getByText('正在编辑下一轮草稿。', { exact: false }),
+  ).toBeVisible();
+  await page.screenshot({ path: path.join(root, 'history-and-draft.png') });
+  const oldEdit = await invoke('saveProofreadDataAndRender', {
+    proofreadDataFile: sidecar,
+    subtitles: [],
+    outputs: [],
+  });
+  assert.ok(
+    oldEdit.error?.includes('TASK_HISTORY_READ_ONLY'),
+    JSON.stringify(oldEdit),
+  );
+  const third = await invoke('submitTask', {
+    projectId,
+    requestId: 'third',
+    files: [file],
+    formData,
+  });
+  await invoke('taskRuns:command', {
+    projectId,
+    expectedRunId: third.runId,
+    requestId: 'pause',
+    command: 'pause',
+  });
+  await wait((run) => run?.status === 'paused');
+  await assert.rejects(
+    invoke('taskRuns:saveDraft', {
+      projectId,
+      expectedDraftRevision: 0,
+      config: {},
+      files: [],
+    }),
+    /TASK_CONFIG_BUSY/,
+  );
+  await assert.rejects(
+    invoke('saveTaskProject', {
+      id: projectId,
+      files: [file],
+      taskDraft: { config: {}, manuscripts: [] },
+    }),
+    /TASK_CONFIG_BUSY/,
+  );
+  await invoke('taskRuns:command', {
+    projectId,
+    expectedRunId: third.runId,
+    requestId: 'cancel',
+    command: 'cancel',
+  });
+  await wait((run) => run?.status === 'cancelled');
+  await assert.rejects(
+    invoke('taskRuns:command', {
+      projectId,
+      expectedRunId: first.runId,
+      requestId: 'old',
+      command: 'resume',
+    }),
+    /TASK_RUN_CONFLICT/,
+  );
+  await page.screenshot({ path: path.join(root, 'desktop.png') });
+  await page.evaluate(() => window.next.router.push('/zh/'));
+  assert.equal(await invoke('deleteWorkItem', projectId), true);
+  await app.close();
+  app = null;
+  app = await _electron.launch({
+    args: ['.', `--user-data-dir=${path.join(root, 'profile')}`],
+    env: { ...process.env, NODE_ENV: 'production' },
+  });
+  const restartedPage = await app.firstWindow();
+  await restartedPage.waitForFunction(() => Boolean(window.ipc?.invoke));
+  assert.equal(
+    await restartedPage.evaluate(
+      (id) => window.ipc.invoke('getWorkItem', id),
+      projectId,
+    ),
+    null,
+    'deleted tasks must not resurrect after startup',
+  );
+  console.log(`Task run Electron acceptance passed. Evidence: ${root}`);
+} finally {
+  if (app) await app.close();
+}
+
+await import('./task-runs-presentation.mjs');
+await import('./task-runs-review.mjs');

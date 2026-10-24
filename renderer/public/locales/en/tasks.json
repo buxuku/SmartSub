@@ -783,6 +783,7 @@
       "interrupted": "Interrupted",
       "waiting_review": "Awaiting review",
       "cancelled": "Cancelled"
-    }
+    },
+    "legacyHint": "Legacy run: some effective configuration is unavailable. Current defaults have not been substituted for historical settings."
   }
 }

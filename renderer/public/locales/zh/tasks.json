@@ -783,6 +783,7 @@
       "interrupted": "已中断",
       "waiting_review": "待确认",
       "cancelled": "已取消"
-    }
+    },
+    "legacyHint": "旧版运行记录：部分有效配置缺失，未使用当前默认值补写历史。"
   }
 }

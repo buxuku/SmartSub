@@ -45,6 +45,9 @@ export interface ProofreadDataMeta extends SubtitleOutputFiles {
   outputFormat?: string;
   subtitleLayout?: 'original' | 'two-line';
   subtitleLineWidth?: number;
+  /** Apply only to rendered deliveries; editable canonical text retains punctuation. */
+  removeSourceChinesePunctuation?: boolean;
+  removeTargetChinesePunctuation?: boolean;
   sourceFile?: string;
   targetFile?: string;
   finalTargetFile?: string;

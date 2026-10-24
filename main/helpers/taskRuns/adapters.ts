@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { IFiles, IFormData } from '../../../types';
 import type { StageOutcome } from '../../../types/taskRun';
 import { resolveSubtitleOutputFormats } from '../../../types/subtitleOutput';
-import { runWithTaskContext } from '../taskContext';
+import { runWithTaskContext, getTaskContext } from '../taskContext';
 import {
   extractAudioFromVideo,
   probeEmbeddedSubtitles,
@@ -53,10 +53,12 @@ import {
   createStageArtifactStore,
   copyIndependent,
   hashFile,
+  assertInputIdentity,
   type StageArtifactStore,
 } from './artifacts';
 import { getRunStore, getRunService } from './runtime';
 import { decideStageReuse, stageFingerprint } from './cache';
+import { renderTranslationDelivery } from './deliveryText';
 import {
   getSessionDir,
   readSessionMeta,
@@ -120,6 +122,7 @@ async function publish(
   const output = createComposeOutput(desired, inputs);
   try {
     await copyIndependent(source, output.staged);
+    await getTaskContext()?.verifyInput?.();
     return await output.publish(signal || new AbortController().signal);
   } finally {
     output.cleanup();
@@ -153,6 +156,17 @@ async function materializeReusedResult(
   ctx: StageExecutionContext,
   artifacts: StageArtifactStore,
 ) {
+  if (
+    ctx.stage.id === 'extractAudio' &&
+    ctx.run.config.saveAudio &&
+    file.tempAudioFile
+  )
+    file.audioFile = await publish(
+      file.tempAudioFile,
+      path.join(ctx.file.input.directory, `${file.fileName}.wav`),
+      [file.filePath],
+      ctx.signal,
+    );
   if (
     ['prepareProofread', 'exportSubtitle'].includes(ctx.stage.id) &&
     file.proofreadDataFile
@@ -252,6 +266,20 @@ async function materializeEditableProofread(
     file.translatedSrtFile = file.tempFinalSubtitleFile;
   const data = await readProofreadDataFile(editable);
   data.meta.targetFile = file.tempTranslatedSrtFile;
+  data.meta.translateContent = ctx.run.config.translateContent;
+  data.meta.outputFormat = resolveSubtitleOutputFormats(ctx.run.config)[0];
+  data.meta.subtitleLayout = ctx.run.config.subtitleLayout;
+  data.meta.subtitleLineWidth = ctx.run.config.subtitleLineWidth;
+  data.meta.removeTargetChinesePunctuation = Boolean(
+    ctx.run.config.removeChinesePunctuation &&
+      getDesiredChineseScript(ctx.run.config.targetLanguage),
+  );
+  data.meta.removeSourceChinesePunctuation = Boolean(
+    ctx.run.config.removeChinesePunctuation &&
+      getDesiredChineseScript(ctx.run.config.sourceLanguage) &&
+      !subtitleInput(ctx.file.input) &&
+      !ctx.file.input.providedSubtitlePath,
+  );
   await fs.promises.writeFile(editable, JSON.stringify(data));
   await updateProofreadDataOutputs(file, ctx.signal);
 }
@@ -268,6 +296,19 @@ async function exportSubtitles(
   const canonicalSource = file.srtFile;
   const canonicalTarget = file.translatedSrtFile;
   await writable(file, ['srtFile', 'translatedSrtFile'], workspace);
+  let bilingual: Array<{ source: string; target: string }> | undefined;
+  if (translationActive && file.translatedSrtFile) {
+    const rendered = renderTranslationDelivery(
+      await fs.promises.readFile(file.srtFile, 'utf8'),
+      await fs.promises.readFile(
+        file.tempTranslatedSrtFile || file.translatedSrtFile,
+        'utf8',
+      ),
+      config,
+    );
+    bilingual = rendered.bilingual;
+    await fs.promises.writeFile(file.translatedSrtFile, rendered.content);
+  }
   if (
     sourceOwned &&
     config.removeChinesePunctuation &&
@@ -298,9 +339,7 @@ async function exportSubtitles(
         request.kind === 'target' &&
         config.translateContent !== 'onlyTranslate'
       ) {
-        request.bilingual = (
-          await readProofreadDataFile(file.proofreadDataFile)
-        ).cues;
+        request.bilingual = bilingual;
         request.contentType = config.translateContent;
       }
     }
@@ -349,7 +388,7 @@ async function exportSubtitles(
     }
   }
   file.tempSrtFile = canonicalSource;
-  file.tempFinalSubtitleFile = canonicalTarget;
+  file.tempFinalSubtitleFile = file.translatedSrtFile || canonicalTarget;
   file.srtFile = file.sourceSubtitleFiles[0] || canonicalSource;
   file.translatedSrtFile = file.translatedSubtitleFiles[0] || canonicalTarget;
   if (file.proofreadDataFile)
@@ -366,6 +405,11 @@ export function createDesktopStageExecutor(sender: any) {
         runId: ctx.run.runId,
         fileUuid: ctx.file.fileId,
         attemptId: ctx.token.attemptId,
+        fileRunDirectory: artifacts.fileDirectory(
+          ctx.run.projectId,
+          ctx.run.runId,
+          ctx.file.fileId,
+        ),
         resolvedConfig: ctx.run.resolvedConfig,
         signal: ctx.signal,
       },
@@ -426,10 +470,12 @@ export function createDesktopStageExecutor(sender: any) {
           ctx.file.inputIdentity &&
           !subtitleInput(ctx.file.input)
         ) {
-          const now = await fs.promises.stat(ctx.file.input.filePath);
-          for (const key of ['size', 'mtimeMs', 'ctimeMs', 'ino'] as const)
-            if (now[key] !== ctx.file.inputIdentity[key])
-              throw new Error('TASK_INPUT_CHANGED');
+          getTaskContext()!.verifyInput = () =>
+            assertInputIdentity(
+              ctx.file.input.filePath,
+              ctx.file.inputIdentity!,
+            );
+          await getTaskContext()!.verifyInput!();
         }
         const decision = await decideStageReuse({
           run: ctx.run,
@@ -461,9 +507,11 @@ export function createDesktopStageExecutor(sender: any) {
           Date.now(),
           (state) => {
             file.taskActivity = state;
+            ctx.activity(state);
           },
           ctx.signal,
         );
+        getTaskContext()!.activity = activity;
         try {
           if (stageId === 'prepareInput') {
             const hashed = await hashFile(
@@ -622,15 +670,25 @@ export function createDesktopStageExecutor(sender: any) {
             const candidates = await providers(config);
             if (!candidates.length)
               throw new Error('TASK_TRANSLATION_PROVIDER_MISSING');
+            const translationActivity = activity.start(
+              'translateSubtitle',
+              'preparing',
+            );
             await translate(
               event,
               file,
-              config,
+              {
+                ...config,
+                translateContent: 'onlyTranslate',
+                removeChinesePunctuation: false,
+              },
               candidates[0],
               ctx.progress,
               undefined,
               candidates.slice(1),
+              translationActivity.update,
             );
+            translationActivity.finish();
             if (file.translationFailures?.length) {
               outcome = 'degraded';
               reason = 'TRANSLATION_INCOMPLETE';
@@ -761,6 +819,7 @@ export function createDesktopStageExecutor(sender: any) {
             );
           }
           ctx.signal?.throwIfAborted();
+          await getTaskContext()?.verifyInput?.();
           // Capture adapter outputs from legacy temp locations before acknowledging success.
           for (const key of pathFields)
             if (
@@ -798,6 +857,9 @@ export function createDesktopStageExecutor(sender: any) {
             patch,
             ctx.signal,
           );
+          if (file.manualProofreadRevision || file.manualDubbingRevision)
+            for (const artifact of committed.artifacts)
+              artifact.provenance = 'manual';
           const projection = {
             ...ctx.file.projection,
             ...committed.patch,

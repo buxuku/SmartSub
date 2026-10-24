@@ -1,6 +1,7 @@
 import type { FileRun, StageId, TaskRun } from '../../../types/taskRun';
 import { digestValue } from './service';
 import type { StageArtifactStore } from './artifacts';
+import { resolveEffectiveSettings } from '../../../types/subtitleOutcome';
 const pick = (source: Record<string, any> = {}, keys: string[]) =>
   Object.fromEntries(
     keys
@@ -31,6 +32,32 @@ const outputKeys = [
   'removeChinesePunctuation',
   'saveAudio',
 ];
+const nonRecognitionKeys = new Set([
+  ...outputKeys,
+  'taskType',
+  'targetLanguage',
+  'translateProvider',
+  'translateRetryTimes',
+  'subtitleTranslationStyle',
+  'aiSegmentation',
+  'aiCorrection',
+  'subtitleFillerPolicy',
+  'refineProvider',
+  'manuscriptPath',
+  'manuscriptName',
+  'glossaryIds',
+  'generateSummary',
+  'summaryProvider',
+  'speakerDiarization',
+  'speakerDiarizationCount',
+  'speakerDiarizationEmbedInSubtitle',
+  'dub',
+  'compose',
+  'gates',
+  'recipeName',
+  'maxConcurrentTasks',
+  'forceRerun',
+]);
 export function stageConfiguration(run: TaskRun, id: StageId) {
   const config = run.config;
   const settings = run.resolvedConfig.settings || {};
@@ -43,31 +70,12 @@ export function stageConfiguration(run: TaskRun, id: StageId) {
     ]);
   if (id === 'extractSubtitle')
     return {
-      config: pick(config, [
-        'transcriptionEngine',
-        'model',
-        'asrProviderId',
-        'sourceLanguage',
-        'useEmbeddedSubtitles',
-        'maxSubtitleChars',
-        'subtitleMaxDuration',
-        'subtitleMaxGap',
-        'preserveSpeechPauses',
-        'fasterWhisperBeamSize',
-        'fasterWhisperBestOf',
-        'fasterWhisperTemperature',
-        'fasterWhisperCompressionRatioThreshold',
-        'fasterWhisperLogProbThreshold',
-        'fasterWhisperNoSpeechThreshold',
-        'subtitleOutcome',
-        'maxContext',
-        'useVAD',
-        'reduceRepetition',
-        'speechReview',
-        'speechReviewMode',
-      ]),
+      // New recognition parameters are conservative cache misses unless explicitly owned downstream.
+      config: Object.fromEntries(
+        Object.entries(config).filter(([key]) => !nonRecognitionKeys.has(key)),
+      ),
       settings: Object.fromEntries(
-        Object.entries(settings).filter(
+        Object.entries(resolveEffectiveSettings(config, settings)).filter(
           ([key]) =>
             ![
               'language',
@@ -97,6 +105,9 @@ export function stageConfiguration(run: TaskRun, id: StageId) {
         'subtitleFillerPolicy',
         'refineProvider',
         'sourceLanguage',
+        'targetLanguage',
+        'glossaryIds',
+        'preserveSpeechPauses',
         'maxSubtitleChars',
         'subtitleMaxDuration',
         'subtitleMaxGap',
@@ -141,8 +152,6 @@ export function stageConfiguration(run: TaskRun, id: StageId) {
         'translateRetryTimes',
         'subtitleTranslationStyle',
         'glossaryIds',
-        'translateContent',
-        'removeChinesePunctuation',
       ]),
       languages: settings.customLanguages,
       glossaries: run.resolvedConfig.glossaries,
@@ -156,12 +165,7 @@ export function stageConfiguration(run: TaskRun, id: StageId) {
   if (id === 'annotateSpeakers')
     return pick(config, ['speakerDiarizationEmbedInSubtitle']);
   if (id === 'prepareProofread')
-    return pick(config, [
-      'sourceLanguage',
-      'targetLanguage',
-      'translateContent',
-      'glossaryIds',
-    ]);
+    return pick(config, ['sourceLanguage', 'targetLanguage', 'glossaryIds']);
   if (id === 'exportSubtitle') return pick(config, outputKeys);
   if (id === 'dubbing' || id === 'dubbingTrack')
     return {
@@ -217,6 +221,17 @@ export function stageFingerprint(
     config: stageConfiguration(run, id),
     inputBindings,
     dependencies,
+    manualInput: [
+      'exportSubtitle',
+      'dubbing',
+      'dubbingTrack',
+      'composeVideo',
+    ].includes(id)
+      ? {
+          proofread: (file.projection as any).manualProofreadRevision,
+          dubbing: (file.projection as any).manualDubbingRevision,
+        }
+      : undefined,
   });
 }
 export async function decideStageReuse(input: {
@@ -254,6 +269,8 @@ export async function decideStageReuse(input: {
   )?.stages[stageId];
   if (!old || old.status !== 'succeeded') return reject('NO_COMMITTED_RESULT');
   if (old.outcome === 'degraded') return reject('DEGRADED_RESULT');
+  if (old.artifacts.some((artifact) => artifact.provenance === 'manual'))
+    return reject('MANUAL_RESULT');
   if (old.fingerprint !== fingerprint) return reject('FINGERPRINT_CHANGED');
   if (!(await artifacts.validate(old.artifacts, signal)))
     return reject('ARTIFACT_INVALID');

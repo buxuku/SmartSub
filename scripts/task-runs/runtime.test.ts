@@ -5,6 +5,30 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { createTaskRunStore } from '../../main/helpers/taskRuns/store';
 import { createTaskRunService } from '../../main/helpers/taskRuns/service';
+import {
+  beginTaskResultWrite,
+  assertTaskResultsSaved,
+} from '../../main/helpers/taskRuns/access';
+
+test('review release and replacement runs cannot race an unfinished sidecar save', () => {
+  const finish = beginTaskResultWrite('/edits/proofread.json');
+  try {
+    assert.throws(
+      () => assertTaskResultsSaved(['/edits/proofread.json']),
+      /TASK_RESULT_SAVE_IN_PROGRESS/,
+    );
+    assert.throws(
+      () => beginTaskResultWrite('/edits/proofread.json'),
+      /TASK_RESULT_SAVE_IN_PROGRESS/,
+    );
+    assert.doesNotThrow(() =>
+      assertTaskResultsSaved(['/unrelated/proofread.json']),
+    );
+  } finally {
+    finish();
+  }
+  assert.doesNotThrow(() => assertTaskResultsSaved(['/edits/proofread.json']));
+});
 
 const input = () => ({
   projectId: 'project',
@@ -249,4 +273,133 @@ test('unknown newer manifest versions are rejected without being rewritten', (t)
     /TASK_RUN_VERSION_UNSUPPORTED/,
   );
   assert.equal(fs.readFileSync(target, 'utf8'), before);
+  assert.doesNotThrow(() => createTaskRunService(store).recover());
+  assert.equal(fs.readFileSync(target, 'utf8'), before);
+});
+
+test('legacy results retain historical locations without becoming trusted artifacts', (t) => {
+  const { service, changes } = harness(t);
+  const legacy = service.importLegacyResult({
+    projectId: 'project',
+    config: input().config,
+    files: [
+      {
+        ...input().files[0],
+        extractSubtitle: 'done',
+        proofreadDataFile: '/old/proofread.json',
+        dubbingSessionId: 'old-session',
+      },
+    ],
+    createdAt: 1,
+    status: 'succeeded',
+  })!;
+  assert.equal(
+    changes.length,
+    0,
+    'import alone must not replace the live legacy task',
+  );
+  assert.throws(
+    () =>
+      service.command({
+        projectId: 'project',
+        expectedRunId: legacy.runId,
+        requestId: 'retry-legacy',
+        command: 'retry',
+      }),
+    /TASK_HISTORY_READ_ONLY/,
+  );
+  assert.throws(
+    () => service.beginStage('project', legacy.runId, 'file', 'prepareInput'),
+    /TASK_HISTORY_READ_ONLY/,
+  );
+  const accepted = service.accept(input());
+  assert.equal(service.get('project')!.previousRunId, legacy.runId);
+  assert.notEqual(accepted.runId, legacy.runId);
+  const history = service.get('project', legacy.runId)!;
+  assert.equal(history.legacy?.configurationComplete, false);
+  assert.equal(
+    history.files[0].projection.proofreadDataFile,
+    '/old/proofread.json',
+  );
+  assert.equal(history.files[0].projection.dubbingSessionId, 'old-session');
+  assert.equal(history.files[0].stages.extractSubtitle.status, 'succeeded');
+  assert.equal(history.files[0].stages.extractSubtitle.version, 0);
+  assert.deepEqual(history.files[0].stages.extractSubtitle.artifacts, []);
+});
+
+test('retirement prevents startup resurrection and rollback keeps references recoverable', (t) => {
+  const { store, service } = harness(t);
+  const accepted = service.accept(input());
+  const retirement = store.prepareRetirement(['project']);
+  assert.deepEqual(store.all(), []);
+  assert.ok(store.read('project', accepted.runId));
+  retirement.rollback();
+  assert.equal(store.all().length, 1);
+  store.prepareRetirement(['project']).commit();
+  store.reconcileRetirements(['project']);
+  assert.equal(
+    store.all().length,
+    1,
+    'a failed WorkItem deletion recovers on restart',
+  );
+  store.prepareRetirement(['project']).commit();
+  store.reconcileRetirements([]);
+  assert.deepEqual(
+    store.all(),
+    [],
+    'a successful deletion stays retired on restart',
+  );
+});
+
+test('late activity cannot update a newer attempt or overwrite its committed projection', (t) => {
+  const { service } = harness(t);
+  const { runId } = service.accept(input());
+  const first = service.beginStage('project', runId, 'file', 'prepareInput');
+  service.failStage(first, 'failed');
+  service.command({
+    projectId: 'project',
+    expectedRunId: runId,
+    requestId: 'retry',
+    command: 'retry',
+  });
+  const second = service.beginStage('project', runId, 'file', 'prepareInput');
+  const activity = { phase: 'reading', startedAt: 1 } as any;
+  assert.equal(service.activity(first, activity), false);
+  assert.equal(service.activity(second, activity), true);
+  service.finishStage(second, {
+    outcome: 'executed',
+    artifacts: [],
+    projection: input().files[0],
+  });
+  assert.deepEqual(
+    service.get('project')!.files[0].projection.taskActivity,
+    activity,
+  );
+});
+
+test('same-run retry waits for manual repair persistence', (t) => {
+  const { service } = harness(t);
+  const { runId } = service.accept(input());
+  const attempt = service.beginStage('project', runId, 'file', 'prepareInput');
+  service.checkpoint(attempt, {
+    ...input().files[0],
+    proofreadDataFile: '/edits/retry.json',
+  });
+  service.failStage(attempt, 'failed');
+  const finish = beginTaskResultWrite('/edits/retry.json');
+  const command = {
+    projectId: 'project',
+    expectedRunId: runId,
+    requestId: 'retry',
+    command: 'retry' as const,
+  };
+  try {
+    assert.throws(
+      () => service.command(command),
+      /TASK_RESULT_SAVE_IN_PROGRESS/,
+    );
+  } finally {
+    finish();
+  }
+  assert.equal(service.command(command).status, 'queued');
 });
