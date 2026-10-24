@@ -20,6 +20,7 @@ import GlossarySelectControl from '@/components/tasks/GlossarySelectControl';
 import SummaryGenerateControl from '@/components/tasks/SummaryGenerateControl';
 import ScenarioPresetControl from '@/components/tasks/ScenarioPresetControl';
 import OutputFormatControl from '@/components/tasks/OutputFormatControl';
+import SettingsFields from './settings/SettingsFields';
 import type { TaskSettingsTab } from '@/components/tasks/settings/types';
 import { cn, supportedLanguage } from 'lib/utils';
 import { isProviderConfigured } from 'lib/providerUtils';
@@ -60,23 +61,24 @@ interface InlineConfigBarProps {
 }
 
 /**
- * 标签在上、控件在下。列宽和换行由参数栏的容器宽度决定，
- * 避免嵌入流程分组后仍按窗口宽度把所有控件挤在一行。
- * 标签的补充说明用 hint 承载，保持同一行控件对齐。
+ * 标签在上、控件在下。按内容保留紧凑宽度，空间不足时自然换行。
  */
 function ConfigItem({
   label,
   hint,
   children,
-  className,
+  width = 120,
 }: {
   label: string;
   hint?: string;
   children: React.ReactNode;
-  className?: string;
+  width?: number;
 }) {
   return (
-    <div className={cn('flex min-w-0 flex-col items-stretch gap-1', className)}>
+    <div
+      className="flex min-w-0 flex-col items-stretch gap-1"
+      style={{ flexBasis: width }}
+    >
       <div className="flex min-w-0 items-center gap-1">
         <span title={label} className="truncate text-xs text-muted-foreground">
           {label}
@@ -238,11 +240,9 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
       className="task-inspector flex min-w-0 flex-col gap-1.5 w-full"
       data-testid="task-inspector"
     >
-      <fieldset
-        key={disabled ? 'locked' : 'editable'}
+      <SettingsFields
         disabled={disabled}
-        aria-disabled={disabled}
-        className="inspector-sections min-w-0 border-0 bg-muted/30 px-3 py-3 w-full rounded-md"
+        data-testid="task-inspector-core"
         onClickCapture={(event) => {
           if (disabled) {
             event.preventDefault();
@@ -250,52 +250,165 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
           }
         }}
       >
-        <div
-          className={cn(
-            'inspector-fields grid min-w-0 w-full items-end gap-x-3 gap-y-3',
-            typeDef.needsModel &&
-              typeDef.hasTranslate &&
-              'inspector-fields-full',
-          )}
-          data-testid="task-inspector-core"
+        {typeDef.needsModel && (
+          <ConfigItem label={t('configBar.model')} width={160}>
+            {hasModels ||
+            formData.transcriptionEngine === 'parakeet' ||
+            (disabled && formData.model) ? (
+              <Models
+                compact
+                className={modelTriggerClass}
+                engine={formData.transcriptionEngine}
+                model={formData.model}
+                asrProviderId={formData.asrProviderId}
+                asrProviders={asrProviders as any}
+                onChange={(engine, model, asrProviderId) => {
+                  setValue('transcriptionEngine', engine);
+                  setValue('model', model);
+                  setValue('asrProviderId', asrProviderId ?? '');
+                }}
+                modelsInstalled={systemInfo?.modelsInstalled || []}
+                fasterWhisperModelsInstalled={
+                  systemInfo?.fasterWhisperModelsInstalled
+                }
+                funasrVadInstalled={systemInfo?.funasrVadInstalled}
+                funasrAsrModelsInstalled={systemInfo?.funasrAsrModelsInstalled}
+                pythonEngineStatus={systemInfo?.pythonEngineStatus}
+                funasrEngineInstalled={systemInfo?.funasrEngineInstalled}
+                qwenVadInstalled={systemInfo?.qwenVadInstalled}
+                qwenModelsInstalled={systemInfo?.qwenModelsInstalled}
+                qwenEngineInstalled={systemInfo?.qwenEngineInstalled}
+                fireRedVadInstalled={systemInfo?.fireRedVadInstalled}
+                fireRedModelsInstalled={systemInfo?.fireRedModelsInstalled}
+                fireRedEngineInstalled={systemInfo?.fireRedEngineInstalled}
+                parakeetVadInstalled={systemInfo?.parakeetVadInstalled}
+                parakeetModelsInstalled={systemInfo?.parakeetModelsInstalled}
+                parakeetEngineInstalled={systemInfo?.parakeetEngineInstalled}
+                includeLocalCli={includeLocalCli}
+              />
+            ) : (
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="h-8 w-full min-w-0 px-2 text-xs"
+              >
+                <Link href={`/${locale}/engines`} title={t('goDownloadModel')}>
+                  <span className="truncate">{t('goDownloadModel')}</span>
+                </Link>
+              </Button>
+            )}
+          </ConfigItem>
+        )}
+
+        <ConfigItem
+          width={80}
+          label={
+            typeDef.accepts === 'subtitle'
+              ? t('configBar.subtitleSourceLanguage')
+              : t('configBar.sourceLanguage')
+          }
         >
-          {typeDef.needsModel && (
-            <ConfigItem label={t('configBar.model')}>
-              {hasModels ||
-              formData.transcriptionEngine === 'parakeet' ||
-              (disabled && formData.model) ? (
-                <Models
-                  className={modelTriggerClass}
-                  engine={formData.transcriptionEngine}
-                  model={formData.model}
-                  asrProviderId={formData.asrProviderId}
-                  asrProviders={asrProviders as any}
-                  onChange={(engine, model, asrProviderId) => {
-                    setValue('transcriptionEngine', engine);
-                    setValue('model', model);
-                    setValue('asrProviderId', asrProviderId ?? '');
-                  }}
-                  modelsInstalled={systemInfo?.modelsInstalled || []}
-                  fasterWhisperModelsInstalled={
-                    systemInfo?.fasterWhisperModelsInstalled
-                  }
-                  funasrVadInstalled={systemInfo?.funasrVadInstalled}
-                  funasrAsrModelsInstalled={
-                    systemInfo?.funasrAsrModelsInstalled
-                  }
-                  pythonEngineStatus={systemInfo?.pythonEngineStatus}
-                  funasrEngineInstalled={systemInfo?.funasrEngineInstalled}
-                  qwenVadInstalled={systemInfo?.qwenVadInstalled}
-                  qwenModelsInstalled={systemInfo?.qwenModelsInstalled}
-                  qwenEngineInstalled={systemInfo?.qwenEngineInstalled}
-                  fireRedVadInstalled={systemInfo?.fireRedVadInstalled}
-                  fireRedModelsInstalled={systemInfo?.fireRedModelsInstalled}
-                  fireRedEngineInstalled={systemInfo?.fireRedEngineInstalled}
-                  parakeetVadInstalled={systemInfo?.parakeetVadInstalled}
-                  parakeetModelsInstalled={systemInfo?.parakeetModelsInstalled}
-                  parakeetEngineInstalled={systemInfo?.parakeetEngineInstalled}
-                  includeLocalCli={includeLocalCli}
-                />
+          <Select
+            value={formData.sourceLanguage}
+            onValueChange={(v) => setValue('sourceLanguage', v)}
+          >
+            <SelectTrigger
+              className={triggerClass}
+              aria-label={t('configBar.sourceLanguage')}
+            >
+              <SelectValue placeholder={tHome('pleaseSelect')} />
+            </SelectTrigger>
+            {languageItems(true)}
+          </Select>
+        </ConfigItem>
+
+        {typeDef.needsModel && (
+          <>
+            <ConfigItem label={t('configBar.scenario')} width={112}>
+              <ScenarioPresetControl
+                form={form}
+                formData={formData}
+                onOpenSettings={onOpenSettings}
+              />
+            </ConfigItem>
+            <ConfigItem label={t('refine.control.label')} width={112}>
+              <AiRefineControl
+                form={form}
+                formData={formData}
+                providers={providers}
+                typeDef={typeDef}
+                open={refineOpen}
+                onOpenChange={onRefineOpenChange}
+              />
+            </ConfigItem>
+          </>
+        )}
+
+        {typeDef.hasTranslate && (
+          <>
+            <ConfigItem label={t('configBar.targetLanguage')} width={80}>
+              <Select
+                value={formData.targetLanguage}
+                onValueChange={(v) => setValue('targetLanguage', v)}
+              >
+                <SelectTrigger
+                  className={triggerClass}
+                  aria-label={t('configBar.targetLanguage')}
+                >
+                  <SelectValue placeholder={tHome('pleaseSelect')} />
+                </SelectTrigger>
+                {languageItems(false)}
+              </Select>
+            </ConfigItem>
+
+            <ConfigItem
+              label={t('configBar.provider')}
+              hint={
+                formData.translateProvider === 'autoFree'
+                  ? tHome('freeTranslationNetworkHint')
+                  : undefined
+              }
+            >
+              {providers.length > 0 ? (
+                <Select
+                  value={formData.translateProvider}
+                  onValueChange={handleTranslateProviderChange}
+                >
+                  <SelectTrigger
+                    className={triggerClass}
+                    aria-label={t('configBar.provider')}
+                    title={selectedTranslateProviderName}
+                  >
+                    <SelectValue placeholder={tHome('pleaseSelect')}>
+                      {selectedTranslateProviderName}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {configuredProviders.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel className="flex items-center gap-1.5 pl-2 text-foreground">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                          {t('providerGroup.configured')}
+                        </SelectLabel>
+                        {configuredProviders.map((provider) =>
+                          renderProviderItem(provider, true),
+                        )}
+                      </SelectGroup>
+                    )}
+                    {unconfiguredProviders.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel className="flex items-center gap-1.5 pl-2 text-muted-foreground">
+                          <AlertCircle className="h-3.5 w-3.5" />
+                          {t('providerGroup.notConfigured')}
+                        </SelectLabel>
+                        {unconfiguredProviders.map((provider) =>
+                          renderProviderItem(provider, false),
+                        )}
+                      </SelectGroup>
+                    )}
+                  </SelectContent>
+                </Select>
               ) : (
                 <Button
                   asChild
@@ -304,189 +417,38 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                   className="h-8 w-full min-w-0 px-2 text-xs"
                 >
                   <Link
-                    href={`/${locale}/engines`}
-                    title={t('goDownloadModel')}
+                    href={`/${locale}/translation`}
+                    title={t('goConfigureProvider')}
                   >
-                    <span className="truncate">{t('goDownloadModel')}</span>
+                    <span className="truncate">{t('goConfigureProvider')}</span>
                   </Link>
                 </Button>
               )}
             </ConfigItem>
-          )}
+            <ConfigItem label={t('configBar.glossary')} width={96}>
+              <GlossarySelectControl form={form} formData={formData} />
+            </ConfigItem>
+            <ConfigItem label={t('configBar.generateSummary')} width={96}>
+              <SummaryGenerateControl
+                form={form}
+                formData={formData}
+                providers={providers}
+                open={summaryOpen}
+                onOpenChange={onSummaryOpenChange}
+              />
+            </ConfigItem>
+          </>
+        )}
 
-          <ConfigItem
-            label={
-              typeDef.accepts === 'subtitle'
-                ? t('configBar.subtitleSourceLanguage')
-                : t('configBar.sourceLanguage')
-            }
-          >
-            <Select
-              value={formData.sourceLanguage}
-              onValueChange={(v) => setValue('sourceLanguage', v)}
-            >
-              <SelectTrigger
-                className={triggerClass}
-                aria-label={t('configBar.sourceLanguage')}
-              >
-                <SelectValue placeholder={tHome('pleaseSelect')} />
-              </SelectTrigger>
-              {languageItems(true)}
-            </Select>
-          </ConfigItem>
-
-          {typeDef.needsModel && (
-            <>
-              <ConfigItem label={t('configBar.scenario')}>
-                <ScenarioPresetControl
-                  form={form}
-                  formData={formData}
-                  onOpenSettings={onOpenSettings}
-                />
-              </ConfigItem>
-              <ConfigItem label={t('refine.control.label')}>
-                <AiRefineControl
-                  form={form}
-                  formData={formData}
-                  providers={providers}
-                  typeDef={typeDef}
-                  open={refineOpen}
-                  onOpenChange={onRefineOpenChange}
-                />
-              </ConfigItem>
-            </>
-          )}
-
-          {typeDef.hasTranslate && (
-            <>
-              <ConfigItem label={t('configBar.targetLanguage')}>
-                <Select
-                  value={formData.targetLanguage}
-                  onValueChange={(v) => setValue('targetLanguage', v)}
-                >
-                  <SelectTrigger
-                    className={triggerClass}
-                    aria-label={t('configBar.targetLanguage')}
-                  >
-                    <SelectValue placeholder={tHome('pleaseSelect')} />
-                  </SelectTrigger>
-                  {languageItems(false)}
-                </Select>
-              </ConfigItem>
-
-              <ConfigItem
-                label={t('configBar.provider')}
-                hint={
-                  formData.translateProvider === 'autoFree'
-                    ? tHome('freeTranslationNetworkHint')
-                    : undefined
-                }
-              >
-                {providers.length > 0 ? (
-                  <Select
-                    value={formData.translateProvider}
-                    onValueChange={handleTranslateProviderChange}
-                  >
-                    <SelectTrigger
-                      className={triggerClass}
-                      aria-label={t('configBar.provider')}
-                    >
-                      <SelectValue placeholder={tHome('pleaseSelect')}>
-                        {selectedTranslateProviderName}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {configuredProviders.length > 0 && (
-                        <SelectGroup>
-                          <SelectLabel className="flex items-center gap-1.5 pl-2 text-foreground">
-                            <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                            {t('providerGroup.configured')}
-                          </SelectLabel>
-                          {configuredProviders.map((provider) =>
-                            renderProviderItem(provider, true),
-                          )}
-                        </SelectGroup>
-                      )}
-                      {unconfiguredProviders.length > 0 && (
-                        <SelectGroup>
-                          <SelectLabel className="flex items-center gap-1.5 pl-2 text-muted-foreground">
-                            <AlertCircle className="h-3.5 w-3.5" />
-                            {t('providerGroup.notConfigured')}
-                          </SelectLabel>
-                          {unconfiguredProviders.map((provider) =>
-                            renderProviderItem(provider, false),
-                          )}
-                        </SelectGroup>
-                      )}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Button
-                    asChild
-                    variant="outline"
-                    size="sm"
-                    className="h-8 w-full min-w-0 px-2 text-xs"
-                  >
-                    <Link
-                      href={`/${locale}/translation`}
-                      title={t('goConfigureProvider')}
-                    >
-                      <span className="truncate">
-                        {t('goConfigureProvider')}
-                      </span>
-                    </Link>
-                  </Button>
-                )}
-              </ConfigItem>
-              <ConfigItem label={t('configBar.glossary')}>
-                <GlossarySelectControl form={form} formData={formData} />
-              </ConfigItem>
-              <ConfigItem label={t('configBar.generateSummary')}>
-                <SummaryGenerateControl
-                  form={form}
-                  formData={formData}
-                  providers={providers}
-                  open={summaryOpen}
-                  onOpenChange={onSummaryOpenChange}
-                />
-              </ConfigItem>
-            </>
-          )}
-
-          <ConfigItem label={t('configBar.output')}>
-            <OutputFormatControl
-              form={form}
-              formData={formData}
-              typeDef={typeDef}
-            />
-          </ConfigItem>
-        </div>
-      </fieldset>
-      <style jsx>{`
-        .task-inspector {
-          container-type: inline-size;
-        }
-        .inspector-fields {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-        @container (min-width: 640px) {
-          .inspector-fields {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-        }
-        @container (min-width: 1200px) {
-          .inspector-fields {
-            grid-template-columns: repeat(5, minmax(0, 1fr));
-          }
-        }
-        @container (min-width: 1680px) {
-          .inspector-fields-full {
-            grid-template-columns:
-              minmax(0, 1.75fr) repeat(7, minmax(0, 1fr))
-              minmax(0, 1.5fr);
-          }
-        }
-      `}</style>
+        <ConfigItem label={t('configBar.output')} width={136}>
+          <OutputFormatControl
+            compact
+            form={form}
+            formData={formData}
+            typeDef={typeDef}
+          />
+        </ConfigItem>
+      </SettingsFields>
 
       {typeDef.needsModel &&
         formData.transcriptionEngine === 'parakeet' &&

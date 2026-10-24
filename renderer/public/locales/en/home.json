@@ -649,6 +649,7 @@
     "invalidTimecode": "Enter a valid timecode, e.g. 00:06:57.200. Minutes and seconds must be below 60."
   },
   "outputTranslationOnly": "Translation only",
+  "outputBilingual": "Bilingual",
   "outputTranslationFirst": "Bilingual · translation first",
   "outputSourceFirst": "Bilingual · source first",
   "outputExample": "Layout example (actual languages follow task settings)",

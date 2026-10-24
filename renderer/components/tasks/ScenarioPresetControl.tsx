@@ -82,6 +82,7 @@ export default function ScenarioPresetControl({
           variant="outline"
           size="sm"
           data-testid="scenario-preset-trigger"
+          title={displayName}
           className={cn(
             'h-8 w-full min-w-0 text-xs gap-1 px-2.5 font-normal justify-between',
             isCustom

@@ -649,6 +649,7 @@
     "invalidTimecode": "请输入有效时间码，例如 00:06:57.200。分钟和秒应小于 60。"
   },
   "outputTranslationOnly": "仅译文",
+  "outputBilingual": "双语",
   "outputTranslationFirst": "双语 · 译文在上",
   "outputSourceFirst": "双语 · 原文在上",
   "outputExample": "排版示例（实际语言以任务设置为准）",
