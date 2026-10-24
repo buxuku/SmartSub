@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { projectRunFiles } from '../../types/taskRun';
 import {
   editableRunState,
   mergeDraftFiles,
@@ -68,4 +69,26 @@ test('background result updates preserve draft additions, removals and input cho
   assert.equal(merged[0].manuscriptPath, '/new.txt');
   assert.equal(merged[0].translatedSrtFile, '/repaired.srt');
   assert.equal(taskDraftInput(merged[0]).translatedSrtFile, undefined);
+});
+
+test('cancelled review tasks project an editable result without live review gates', () => {
+  const waiting: any = {
+    ...run,
+    status: 'waiting_review',
+    files: [
+      {
+        ...run.files[0],
+        projection: { ...run.files[0].projection, subtitleGate: 'review' },
+        stages: {
+          subtitleReview: { id: 'subtitleReview', status: 'waiting_review' },
+          dubbing: { id: 'dubbing', status: 'pending' },
+        },
+      },
+    ],
+  };
+  assert.equal(projectRunFiles(waiting)[0].subtitleGate, 'review');
+  const projected = projectRunFiles({ ...waiting, status: 'cancelled' })[0];
+  assert.notEqual(projected.subtitleGate, 'review');
+  assert.equal(projected.taskActivity?.status, 'cancelled');
+  assert.equal(waiting.files[0].projection.subtitleGate, 'review');
 });

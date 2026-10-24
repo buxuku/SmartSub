@@ -40,8 +40,6 @@ import {
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Panel, PanelHeader } from '@/components/ui/panel';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import {
   Dialog,
@@ -54,9 +52,7 @@ import {
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -95,7 +91,22 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
 } from '@/components/ui/alert-dialog';
-import { useTtsEngineOptions, parseEngineKey } from 'hooks/useTtsEngineOptions';
+import { useTtsEngineOptions } from 'hooks/useTtsEngineOptions';
+import useComposeOptions from 'hooks/useComposeOptions';
+import {
+  DubbingSettings,
+  ComposeSettings,
+  ReviewSettings,
+} from '../settings/PipelineSettings';
+import {
+  dubbingConfigFromSelection,
+  dubbingEngineKey,
+  initialComposeConfig,
+  withComposeDefaults,
+  resolveDubbingSelection,
+  selectComposeStyle,
+  type DubbingSelection,
+} from 'lib/pipelineSettings';
 import {
   BUILTIN_RECIPES,
   recipeToWizardPrefill,
@@ -106,29 +117,21 @@ import {
   pairMediaWithManuscriptsManual,
   pairMediaWithSubtitlesManual,
 } from 'lib/filePairing';
-import {
-  STYLE_PRESETS,
-  getDefaultStyle,
-  getPlatformDefaultFont,
-} from '@/components/subtitleMerge/constants';
 import { useTranslation } from 'next-i18next';
 import type { TranscriptionEngine } from '../../../../types/engine';
 import type {
   IFiles,
   IFormData,
+  PipelineDubConfig,
   PipelineComposeConfig,
 } from '../../../../types';
 import type { TaskRecipe } from '../../../../types/recipe';
 import type {
   EncoderMode,
-  HwAccelInfo,
-  UserStylePreset,
   VideoQuality,
 } from '../../../../types/subtitleMerge';
 import { enforceSpeakerDiarizationTaskBoundary } from '../../../../types/speakerDiarization';
 import { correctedSourceSrtSaveOption } from '../../../../types/sourceSrtSave';
-import DubbingLanguageSelect from '../../dubbing/DubbingLanguageSelect';
-import ComposeContentHint from './ComposeContentHint';
 import {
   localTtsLanguageError,
   resolveTtsLanguage,
@@ -160,17 +163,7 @@ const isVideoMediaPath = (filePath: string): boolean => {
   return Boolean(extension && VIDEO_MEDIA_EXTENSIONS.has(extension));
 };
 
-/** 工作台同款配音记忆配置（同 key 共享，向导改动同步为工作台默认） */
-interface PersistedDubbing {
-  engineKey: string;
-  language?: string;
-  voice: string;
-  globalSpeed: number;
-  cloneQuality?: 'standard' | 'high';
-  localConcurrency?: number;
-}
-
-const SPEED_OPTIONS = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
+type PersistedDubbing = DubbingSelection;
 
 export default function TaskWizard() {
   const router = useRouter();
@@ -713,8 +706,7 @@ export default function TaskWizard() {
     form.reset({});
     setSubtitleGateOn(true);
     setDubbingGateOn(false);
-    setComposeSubtitle('hard');
-    setComposeStyleId('classic');
+    setComposeConfig(initialComposeConfig(tMerge));
     setAppliedRecipeName(null);
   }, [form]);
   const [refinePopoverOpen, setRefinePopoverOpen] = useState(false);
@@ -812,23 +804,20 @@ export default function TaskWizard() {
     cloneQuality: 'standard',
     localConcurrency: 1,
   } as PersistedDubbing);
-  const activeEngine = useMemo(() => {
-    const ready = engineOptions.filter((o) => o.ready);
-    return (
-      engineOptions.find((o) => o.key === dubPersisted.engineKey && o.ready) ??
-      ready[0] ??
-      null
-    );
-  }, [engineOptions, dubPersisted.engineKey]);
-  const activeVoice = useMemo(() => {
-    if (!activeEngine) return '';
-    return (
-      activeEngine.voices.find((v) => v.id === dubPersisted.voice)?.id ??
-      activeEngine.defaultVoiceId ??
-      activeEngine.voices[0]?.id ??
-      ''
-    );
-  }, [activeEngine, dubPersisted.voice]);
+  const selectedDubbing = resolveDubbingSelection(dubPersisted, engineOptions);
+  const activeEngine = engineOptions.find(
+    (option) => option.key === selectedDubbing.engineKey && option.ready,
+  );
+  const activeVoice = selectedDubbing.voice;
+  const pipelineDub = dubbingConfigFromSelection(selectedDubbing);
+  const updateDubbing = (next: Partial<PipelineDubConfig>) => {
+    const { engine, ...fields } = next;
+    setDubPersisted({
+      ...fields,
+      engineKey: dubbingEngineKey(engine),
+      voice: fields.voice || '',
+    });
+  };
 
   const automaticDubLanguage = resolveTtsLanguage({
     subtitleLanguage: translateOn
@@ -848,114 +837,31 @@ export default function TaskWizard() {
         )
       : undefined;
 
-  // ── 合成配置 ──────────────────────────────────────────────────────────────
-  const [composeSubtitle, setComposeSubtitle] = useState<
-    'hard' | 'soft' | 'none'
-  >('hard');
-  // 烧录样式/画质/编码（仅 hard 生效）：样式候选 = 系统预设 + 我的样式；
-  // 画质/编码默认沿用合成工作台偏好，配方带值时以配方为准
-  const [composeStyleId, setComposeStyleId] = useState('classic');
-  const [composeQuality, setComposeQuality] =
-    useState<VideoQuality>('original');
-  const [composeEncoder, setComposeEncoder] = useState<EncoderMode>('cpu');
-  const [userStylePresets, setUserStylePresets] = useState<UserStylePreset[]>(
-    [],
+  // Shared editors consume the actual task config; metadata cannot replace saved choices.
+  const [composeConfig, setComposeConfig] = useState<PipelineComposeConfig>(
+    () => initialComposeConfig(tMerge),
   );
-  const [mergeHwInfo, setMergeHwInfo] = useState<HwAccelInfo | null>(null);
-  /** 画质/编码已被配方或用户显式设定：合成偏好加载不再覆盖 */
-  const composeMetaTouchedRef = useRef(false);
-  const composeMetaLoadedRef = useRef(false);
-
-  // 勾选成品视频后按需加载：我的样式清单、合成偏好默认值、硬件编码探测
+  const composeOptions = useComposeOptions(videoOn);
+  const composeSubtitle = composeConfig.subtitle;
+  const composeStyleId = composeConfig.styleId || '';
+  const composeQuality = composeConfig.videoQuality || 'original';
+  const composeEncoder = composeConfig.encoderMode || 'cpu';
   useEffect(() => {
-    if (!videoOn || composeMetaLoadedRef.current) return;
-    composeMetaLoadedRef.current = true;
-    (async () => {
-      try {
-        const presets = await window?.ipc?.invoke(
-          'subtitleMerge:listStylePresets',
-        );
-        if (presets?.success && Array.isArray(presets.data)) {
-          setUserStylePresets(presets.data);
-        }
-      } catch {
-        /* ignore */
-      }
-      try {
-        const prefs = await window?.ipc?.invoke('subtitleMerge:getPreferences');
-        if (prefs?.success && prefs.data && !composeMetaTouchedRef.current) {
-          if (prefs.data.videoQuality) {
-            setComposeQuality(prefs.data.videoQuality);
-          }
-          if (prefs.data.encoderMode) {
-            setComposeEncoder(prefs.data.encoderMode);
-          }
-        }
-      } catch {
-        /* ignore */
-      }
-      try {
-        const hw = await window?.ipc?.invoke('subtitleMerge:getHwAccelInfo');
-        if (hw?.success && hw.data) setMergeHwInfo(hw.data);
-      } catch {
-        /* ignore */
-      }
-    })();
-  }, [videoOn]);
-
-  /** 选中样式失效（我的样式被删/配方引用失效）时回落经典预设 */
-  const effectiveComposeStyleId = useMemo(() => {
-    if (STYLE_PRESETS.some((p) => p.id === composeStyleId)) {
-      return composeStyleId;
-    }
-    if (userStylePresets.some((p) => p.id === composeStyleId)) {
-      return composeStyleId;
-    }
-    return 'classic';
-  }, [composeStyleId, userStylePresets]);
-
-  /** 生效编码方式：选了硬件但本机不可用时按 CPU（与合成工作台同语义） */
-  const effectiveComposeEncoder: EncoderMode =
-    composeEncoder === 'hardware' && mergeHwInfo?.available
-      ? 'hardware'
-      : 'cpu';
-
-  /** 解析选中样式为可执行的样式对象 + 展示名（写入任务快照） */
-  const resolveComposeStyle = () => {
-    const userPreset = userStylePresets.find(
-      (p) => p.id === effectiveComposeStyleId,
+    if (!composeOptions.loaded || composeConfig.style || !composeConfig.styleId)
+      return;
+    const next = selectComposeStyle(
+      composeConfig,
+      composeConfig.styleId,
+      composeOptions.styles,
+      tMerge,
     );
-    if (userPreset) {
-      return {
-        style: { ...getDefaultStyle(), ...userPreset.style },
-        name: userPreset.name,
-      };
-    }
-    const system =
-      STYLE_PRESETS.find((p) => p.id === effectiveComposeStyleId) ??
-      STYLE_PRESETS.find((preset) => preset.id === 'classic')!;
-    return {
-      style:
-        system.id === 'classic'
-          ? { ...system.style, fontName: getPlatformDefaultFont() }
-          : system.style,
-      name: tMerge(system.nameKey) || system.name,
-    };
+    if (next !== composeConfig) setComposeConfig(next);
+  }, [composeOptions.loaded, composeOptions.styles, composeConfig, tMerge]);
+  const updateCompose = (next: PipelineComposeConfig) => {
+    setComposeConfig(next);
   };
-
-  /** 组装合成配置（任务 payload 与配方共用）：soft/none 无烧录参数 */
-  const buildComposePayload = (): PipelineComposeConfig => {
-    if (composeSubtitle !== 'hard') return { subtitle: composeSubtitle };
-    const resolved = resolveComposeStyle();
-    return {
-      subtitle: 'hard',
-      styleId: effectiveComposeStyleId,
-      styleName: resolved.name,
-      style: resolved.style,
-      videoQuality: composeQuality,
-      encoderMode: effectiveComposeEncoder,
-    };
-  };
+  const buildComposePayload = () =>
+    withComposeDefaults(composeConfig, composeOptions.preferences);
 
   // ── 人工把关（下游有成本型阶段时显示；字幕校对默认开，配音确认默认关）────
   const gatesVisible = dubOn || videoOn;
@@ -1019,34 +925,11 @@ export default function TaskWizard() {
       ...subtitleFields
     } = pendingRecipeConfig;
     form.reset({ ...form.getValues(), ...subtitleFields });
-    if (dub) {
-      setDubPersisted((prev: PersistedDubbing) => ({
-        ...prev,
-        engineKey:
-          dub.engine.kind === 'local'
-            ? `local:${dub.engine.modelId}`
-            : `cloud:${dub.engine.providerId}`,
-        voice: dub.voice,
-        language: dub.language || 'auto',
-        globalSpeed: dub.globalSpeed || 1,
-        cloneQuality: dub.cloneQuality ?? prev.cloneQuality,
-        localConcurrency: dub.localConcurrency ?? prev.localConcurrency,
-      }));
-    }
-    if (compose?.subtitle) setComposeSubtitle(compose.subtitle);
-    // 配方带的烧录参数优先于合成偏好默认值（touched 标记阻止偏好覆盖）；
-    // styleId 若已失效（我的样式被删）由 effectiveComposeStyleId 回落经典
-    if (compose?.styleId) {
-      setComposeStyleId(compose.styleId);
-      composeMetaTouchedRef.current = true;
-    }
-    if (compose?.videoQuality) {
-      setComposeQuality(compose.videoQuality);
-      composeMetaTouchedRef.current = true;
-    }
-    if (compose?.encoderMode) {
-      setComposeEncoder(compose.encoderMode);
-      composeMetaTouchedRef.current = true;
+    if (dub) updateDubbing(dub);
+    if (compose) {
+      const next = { ...initialComposeConfig(tMerge), ...compose };
+      if (compose.styleId && !compose.style) delete next.style;
+      updateCompose(next);
     }
     setPendingRecipeConfig(null);
   }, [pendingRecipeConfig, formLoaded, form, setDubPersisted]);
@@ -1067,11 +950,14 @@ export default function TaskWizard() {
     if (draft.pipeline) {
       const pipeline = draft.pipeline;
       setDubPersisted(pipeline.dubbing as PersistedDubbing);
-      setComposeSubtitle(pipeline.subtitle);
-      setComposeStyleId(pipeline.styleId);
-      setComposeQuality(pipeline.quality as VideoQuality);
-      setComposeEncoder(pipeline.encoder as EncoderMode);
-      composeMetaTouchedRef.current = true;
+      setComposeConfig(
+        pipeline.compose || {
+          subtitle: pipeline.subtitle,
+          styleId: pipeline.styleId,
+          videoQuality: pipeline.quality as VideoQuality,
+          encoderMode: pipeline.encoder as EncoderMode,
+        },
+      );
       setSubtitleGateOn(pipeline.subtitleGate);
       setDubbingGateOn(pipeline.dubbingGate);
       setAppliedRecipeName(pipeline.recipeName);
@@ -1137,6 +1023,7 @@ export default function TaskWizard() {
       config: formData,
       pipeline: {
         dubbing: dubPersisted,
+        compose: composeConfig,
         subtitle: composeSubtitle,
         styleId: composeStyleId,
         quality: composeQuality,
@@ -1158,6 +1045,7 @@ export default function TaskWizard() {
     formLoaded,
     recoveryDraft,
     dubPersisted,
+    composeConfig,
     composeSubtitle,
     composeStyleId,
     composeQuality,
@@ -1365,7 +1253,11 @@ export default function TaskWizard() {
         });
       }
     }
-    if (dubOn && (!activeEngine || !activeVoice)) {
+    if (
+      dubOn &&
+      (!activeEngine ||
+        !activeEngine.voices.some((voice) => voice.id === activeVoice))
+    ) {
       list.push({
         key: 'tts',
         text: t('wizard.blockNoTts'),
@@ -1556,6 +1448,7 @@ export default function TaskWizard() {
   const canStart =
     formLoaded &&
     dependencies.loaded &&
+    (!videoOn || composeOptions.loaded) &&
     files.length > 0 &&
     blockers.length === 0;
 
@@ -1568,8 +1461,6 @@ export default function TaskWizard() {
     if (!name || savingRecipe) return;
     setSavingRecipe(true);
     try {
-      const dubEngine =
-        dubOn && activeEngine ? parseEngineKey(activeEngine.key) : null;
       const config: Partial<IFormData> = {
         ...formData,
       };
@@ -1580,18 +1471,8 @@ export default function TaskWizard() {
       // 参考文稿属于单次任务输入，不写入可复用配方，避免下次误用旧文件路径。
       delete config.manuscriptPath;
       delete config.manuscriptName;
-      if (dubOn && dubEngine) {
-        config.dub = {
-          engine: dubEngine,
-          voice: activeVoice,
-          language: dubPersisted.language || 'auto',
-          globalSpeed: dubPersisted.globalSpeed || 1,
-          cloneQuality: dubPersisted.cloneQuality ?? 'standard',
-          localConcurrency: dubPersisted.localConcurrency ?? 1,
-          overflow: 'truncate',
-          overlapMode: 'shift',
-        };
-      }
+      if (dubOn && pipelineDub.engine)
+        config.dub = pipelineDub as PipelineDubConfig;
       if (videoOn) config.compose = buildComposePayload();
       if (gatesVisible) {
         config.gates = {
@@ -1665,7 +1546,6 @@ export default function TaskWizard() {
                 return m;
               });
       const projectId = draftProjectIdRef.current;
-      const dubEngine = dubOn ? parseEngineKey(activeEngine!.key) : null;
       // 「更多设置」把仅生成字幕任务的 noSave 显示为「文件名」，提交的就是显示的那个值，否则
       // 字幕会落成 `<视频名>_temp.srt`。只改提交的配置、不改表单：同一份表单还会被切到「翻译」，
       // 那时不保存源字幕才是对的（任务页没有这个问题：每种任务一页，页上直接改表单）。
@@ -1683,19 +1563,8 @@ export default function TaskWizard() {
         ...(appliedRecipeName ? { recipeName: appliedRecipeName } : {}),
         ...(sourceDownloadWorkItemId ? { sourceDownloadWorkItemId } : {}),
         translateProvider: translateOn ? formData?.translateProvider : '-1',
-        ...(dubOn && dubEngine
-          ? {
-              dub: {
-                engine: dubEngine,
-                voice: activeVoice,
-                language: dubPersisted.language || 'auto',
-                globalSpeed: dubPersisted.globalSpeed || 1,
-                cloneQuality: dubPersisted.cloneQuality ?? 'standard',
-                localConcurrency: dubPersisted.localConcurrency ?? 1,
-                overflow: 'truncate',
-                overlapMode: 'shift',
-              },
-            }
+        ...(dubOn && pipelineDub.engine
+          ? { dub: pipelineDub as PipelineDubConfig }
           : {}),
         ...(videoOn ? { compose: buildComposePayload() } : {}),
         ...(gatesVisible
@@ -2445,312 +2314,53 @@ export default function TaskWizard() {
       {dubOn && (
         <Panel className="flex-none">
           <PanelHeader title={t('wizard.dubConfigTitle')} />
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 p-2.5">
-            <div className="flex items-center gap-1.5">
-              <Label className="text-xs text-muted-foreground">
-                {t('wizard.dubEngine')}
-              </Label>
-              <Select
-                value={activeEngine?.key ?? ''}
-                onValueChange={(v) =>
-                  setDubPersisted((prev: PersistedDubbing) => ({
-                    ...prev,
-                    engineKey: v,
-                    voice: '',
-                  }))
-                }
-              >
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder={t('wizard.dubEnginePlaceholder')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {engineOptions.map((option) => (
-                    <SelectItem
-                      key={option.key}
-                      value={option.key}
-                      disabled={!option.ready}
-                    >
-                      {option.label}
-                      {!option.ready ? ` (${t('wizard.notReady')})` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Label className="text-xs text-muted-foreground">
-                {t('wizard.dubVoice')}
-              </Label>
-              <Select
-                value={activeVoice}
-                onValueChange={(v) =>
-                  setDubPersisted((prev: PersistedDubbing) => ({
-                    ...prev,
-                    voice: v,
-                  }))
-                }
-                disabled={!activeEngine}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder={t('wizard.dubVoicePlaceholder')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {(activeEngine?.voices ?? []).map((voice) => (
-                    <SelectItem key={voice.id} value={voice.id}>
-                      {voice.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Label className="text-xs text-muted-foreground">
-                {commonT('ttsLanguage')}
-              </Label>
-              <div className="w-[180px] max-w-full">
-                <DubbingLanguageSelect
-                  value={dubPersisted.language}
-                  resolved={automaticDubLanguage}
-                  onChange={(language) =>
-                    setDubPersisted((prev: PersistedDubbing) => ({
-                      ...prev,
-                      language,
-                    }))
-                  }
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Label className="text-xs text-muted-foreground">
-                {t('wizard.dubSpeed')}
-              </Label>
-              <Select
-                value={String(dubPersisted.globalSpeed || 1)}
-                onValueChange={(v) =>
-                  setDubPersisted((prev: PersistedDubbing) => ({
-                    ...prev,
-                    globalSpeed: Number(v),
-                  }))
-                }
-              >
-                <SelectTrigger className="w-[88px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SPEED_OPTIONS.map((speed) => (
-                    <SelectItem key={speed} value={String(speed)}>
-                      {speed}x
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {activeEngine?.kind === 'cloud' && (
-              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                <Info className="h-3 w-3" />
-                {t('wizard.dubBillingHint')}
-              </span>
-            )}
+          <div className="p-3">
+            <DubbingSettings
+              value={pipelineDub}
+              onChange={updateDubbing}
+              engines={engineOptions}
+              subtitleLanguage={
+                translateOn
+                  ? formData?.targetLanguage
+                  : formData?.sourceLanguage
+              }
+              disabled={starting}
+            />
           </div>
         </Panel>
       )}
-
-      {/* 合成配置 */}
       {videoOn && (
         <Panel className="flex-none">
           <PanelHeader title={t('wizard.composeConfigTitle')} />
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 p-2.5">
-            <div className="flex items-center gap-1.5">
-              <Label className="text-xs text-muted-foreground">
-                {t('wizard.composeSubtitle')}
-              </Label>
-              <Select
-                value={composeSubtitle}
-                onValueChange={(v) =>
-                  setComposeSubtitle(v as 'hard' | 'soft' | 'none')
-                }
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="hard">
-                    {t('wizard.composeHard')}
-                  </SelectItem>
-                  <SelectItem value="soft">
-                    {t('wizard.composeSoft')}
-                  </SelectItem>
-                  <SelectItem value="none" disabled={!dubOn}>
-                    {t('wizard.composeNone')}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {/* 烧录参数：样式（系统预设 + 我的样式）/ 画质 / 编码，仅硬字幕生效 */}
-            {composeSubtitle === 'hard' && (
-              <>
-                <div className="flex items-center gap-1.5">
-                  <Label className="text-xs text-muted-foreground">
-                    {t('wizard.composeStyle')}
-                  </Label>
-                  <Select
-                    value={effectiveComposeStyleId}
-                    onValueChange={(v) => setComposeStyleId(v)}
-                  >
-                    <SelectTrigger className="w-[170px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectLabel>
-                          {t('wizard.composeStyleGroupSystem')}
-                        </SelectLabel>
-                        {STYLE_PRESETS.map((preset) => (
-                          <SelectItem key={preset.id} value={preset.id}>
-                            {tMerge(preset.nameKey) || preset.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                      {userStylePresets.length > 0 && (
-                        <SelectGroup>
-                          <SelectLabel>
-                            {t('wizard.composeStyleGroupMine')}
-                          </SelectLabel>
-                          {userStylePresets.map((preset) => (
-                            <SelectItem key={preset.id} value={preset.id}>
-                              {preset.name}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Label className="text-xs text-muted-foreground">
-                    {t('wizard.composeQuality')}
-                  </Label>
-                  <Select
-                    value={composeQuality}
-                    onValueChange={(v) => {
-                      composeMetaTouchedRef.current = true;
-                      setComposeQuality(v as VideoQuality);
-                    }}
-                  >
-                    <SelectTrigger className="w-[110px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="original">
-                        {tMerge('videoQualityOriginal')}
-                      </SelectItem>
-                      <SelectItem value="high">
-                        {tMerge('videoQualityHigh')}
-                      </SelectItem>
-                      <SelectItem value="standard">
-                        {tMerge('videoQualityStandard')}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {mergeHwInfo?.platformSupported !== false && (
-                  <div className="flex items-center gap-1.5">
-                    <Label className="text-xs text-muted-foreground">
-                      {t('wizard.composeEncoder')}
-                    </Label>
-                    <Select
-                      value={effectiveComposeEncoder}
-                      onValueChange={(v) => {
-                        composeMetaTouchedRef.current = true;
-                        setComposeEncoder(v as EncoderMode);
-                      }}
-                    >
-                      <SelectTrigger className="w-[130px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="cpu">
-                          {tMerge('encoderModeCpu')}
-                        </SelectItem>
-                        <SelectItem
-                          value="hardware"
-                          disabled={!mergeHwInfo?.available}
-                        >
-                          {tMerge('encoderModeHardware')}
-                          {mergeHwInfo?.encoderLabel
-                            ? ` (${mergeHwInfo.encoderLabel})`
-                            : ''}
-                          {mergeHwInfo && !mergeHwInfo.available
-                            ? ` ${t('wizard.composeEncoderUnavailable')}`
-                            : ''}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </>
-            )}
-            {dubOn && (
-              <span className="text-[11px] text-muted-foreground">
-                {t('wizard.composeAudioHint')}
-              </span>
-            )}
-            <ComposeContentHint
+          <div className="p-3">
+            <ComposeSettings
+              value={composeConfig}
+              onChange={updateCompose}
+              options={composeOptions}
+              dubEnabled={dubOn}
               translateOn={translateOn}
-              composeSubtitle={composeSubtitle}
               translateContent={formData?.translateContent}
+              disabled={starting}
             />
-            {composeSubtitle === 'hard' && (
-              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                <Info className="h-3 w-3" />
-                {t('wizard.composeStyleHint')}
-                <Link
-                  href={`/${locale}/subtitleMerge`}
-                  className="text-primary hover:underline"
-                >
-                  {t('wizard.composeStyleLink')}
-                </Link>
-              </span>
-            )}
           </div>
         </Panel>
       )}
-
-      {/* 人工把关：字幕校对 / 配音确认 */}
       {gatesVisible && (
         <Panel className="flex-none">
           <PanelHeader title={t('wizard.gatesTitle')} />
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 p-2.5">
-            <label className="flex cursor-pointer items-center gap-2">
-              <Switch
-                checked={subtitleGateOn}
-                onCheckedChange={setSubtitleGateOn}
-              />
-              <span className="text-xs font-medium">
-                {t('wizard.gateSubtitle')}
-              </span>
-              <span className="text-[11px] text-muted-foreground">
-                {t('wizard.gateSubtitleDesc')}
-              </span>
-            </label>
-            {dubOn && (
-              <label className="flex cursor-pointer items-center gap-2">
-                <Switch
-                  checked={dubbingGateOn}
-                  onCheckedChange={setDubbingGateOn}
-                />
-                <span className="text-xs font-medium">
-                  {t('wizard.gateDubbing')}
-                </span>
-                <span className="text-[11px] text-muted-foreground">
-                  {t('wizard.gateDubbingDesc')}
-                </span>
-              </label>
-            )}
-            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Info className="h-3 w-3" />
-              {t('wizard.gatesHint')}
-            </span>
+          <div className="p-3">
+            <ReviewSettings
+              value={{
+                subtitle: subtitleGateOn ? 'manual' : 'auto',
+                dubbing: dubbingGateOn ? 'manual' : 'auto',
+              }}
+              onChange={(next) => {
+                setSubtitleGateOn(next.subtitle === 'manual');
+                setDubbingGateOn(next.dubbing === 'manual');
+              }}
+              dubEnabled={dubOn}
+              disabled={starting}
+            />
           </div>
         </Panel>
       )}

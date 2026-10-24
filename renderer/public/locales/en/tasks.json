@@ -790,5 +790,19 @@
     "processAgain": "Process again",
     "configLocked": "Settings are locked while processing. Cancel to change settings and start again.",
     "adjustAndRepeat": "Adjust settings and process again. Unchanged steps are reused automatically."
+  },
+  "stageSettings": {
+    "label": "Processing settings",
+    "subtitle": "Subtitles",
+    "subtitleTranslate": "Subtitles & translation",
+    "dubbing": "Dubbing",
+    "compose": "Video composition",
+    "review": "Workflow",
+    "automatic": "Continue automatically",
+    "savedValue": "Saved selection",
+    "choose": "Choose",
+    "dubbingUnavailable": "The saved engine and voice are currently unavailable. Check the service settings or choose another voice.",
+    "styleSnapshot": "This task uses its saved subtitle style. Select a style to update it.",
+    "composeOptionsUnavailable": "Some composition options could not be loaded. Task settings were preserved. Reopen the page to retry."
   }
 }
