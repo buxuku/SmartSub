@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { createTaskRunStore } from '../../main/helpers/taskRuns/store';
 import { createTaskRunService } from '../../main/helpers/taskRuns/service';
 import { executeFileRun } from '../../main/helpers/taskRuns/execution';
+import { assertTaskRunResultEditable } from '../../main/helpers/taskRuns/access';
 function setup(t: any, config: any = {}, count = 1) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stage-execution-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -105,6 +106,59 @@ test('manual review releases the worker but keeps the run locked and binds appro
     projection: ctx.service.get('p')!.files[0].projection,
   });
   assert.equal(await executeFileRun({ ...ctx, execute }), 'completed');
+});
+
+test('a file at review can save edits while other files are queued or running', async (t) => {
+  const ctx = setup(t, { dub: {}, gates: { subtitle: 'manual' } }, 2);
+  const execute = async ({ stage, file }: any) =>
+    stage.id === 'subtitleReview'
+      ? { reviewRevision: 'review-0', projection: file.projection }
+      : { outcome: 'executed' as const, artifacts: [] };
+  await executeFileRun({ ...ctx, execute });
+  const edit = (fileId = '0') =>
+    ctx.service.recordProofreadEdit({
+      projectId: 'p',
+      runId: ctx.runId,
+      fileId,
+      digest: 'saved-review',
+      translationFailures: [],
+    });
+  assert.equal(ctx.service.get('p')!.status, 'queued');
+  assert.doesNotThrow(() => edit());
+  const other = ctx.service.beginStage('p', ctx.runId, '1', 'prepareInput');
+  const run = ctx.service.get('p')!;
+  assert.equal(run.status, 'running');
+  assert.doesNotThrow(() => assertTaskRunResultEditable(run, run.files[0]));
+  assert.doesNotThrow(() => edit());
+  assert.throws(() => edit('1'), /TASK_RESULT_BUSY/);
+  assert.throws(
+    () => assertTaskRunResultEditable(run, run.files[1]),
+    /TASK_RESULT_BUSY/,
+  );
+  assert.throws(() => assertTaskRunResultEditable(run), /TASK_RESULT_BUSY/);
+  assert.throws(
+    () =>
+      ctx.service.saveDraft({
+        projectId: 'p',
+        expectedDraftRevision: 0,
+        config: {},
+        files: [],
+      }),
+    /TASK_CONFIG_BUSY/,
+  );
+  ctx.service.releaseReview({
+    ...ctx,
+    stageId: 'subtitleReview',
+    revision: 'review-0',
+    projection: ctx.service.get('p')!.files[0].projection,
+  });
+  assert.throws(() => edit(), /TASK_RESULT_BUSY/);
+  ctx.service.finishStage(other, { outcome: 'executed', artifacts: [] });
+  await executeFileRun({ ...ctx, execute });
+  assert.equal(
+    ctx.service.get('p')!.files[0].stages.dubbing.status,
+    'succeeded',
+  );
 });
 
 test('dubbing review completes before track construction so saved edits reach final audio', async (t) => {

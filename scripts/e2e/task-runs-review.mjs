@@ -55,10 +55,20 @@ execFileSync(require('ffmpeg-static'), [
 ]);
 const audio = await fs.readFile(wav);
 const requests = [];
+let releaseSlow;
+let slowRequestStarted = false;
+const slowAudio = new Promise((resolve) => {
+  releaseSlow = resolve;
+});
 const server = http.createServer(async (request, response) => {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
-  requests.push(JSON.parse(Buffer.concat(chunks).toString()));
+  const payload = JSON.parse(Buffer.concat(chunks).toString());
+  requests.push(payload);
+  if (payload.input === 'Hold second file.') {
+    slowRequestStarted = true;
+    await slowAudio;
+  }
   response.writeHead(200, { 'Content-Type': 'audio/wav' });
   response.end(audio);
 });
@@ -202,8 +212,119 @@ try {
     'track construction must not synthesize speech again',
   );
   await page.screenshot({ path: path.join(root, 'review-completed.png') });
+
+  // A review gate belongs to its file: another file's paid request must not
+  // block saving the ready file, or unlock the task configuration.
+  const slowMedia = path.join(root, 'slow.mp4');
+  const slowSubtitle = path.join(root, 'slow.srt');
+  await fs.copyFile(media, slowMedia);
+  await fs.writeFile(
+    slowSubtitle,
+    '1\n00:00:00,000 --> 00:00:01,500\nHold second file.\n\n',
+  );
+  const mixedId = 'mixed-review';
+  const mixedReceipt = await invoke('submitTask', {
+    projectId: mixedId,
+    requestId: mixedId,
+    formData: { ...formData, maxConcurrentTasks: 2 },
+    files: [
+      {
+        uuid: 'ready',
+        filePath: media,
+        fileName: 'clip',
+        fileExtension: '.mp4',
+        directory: root,
+        providedSubtitlePath: subtitle,
+      },
+      {
+        uuid: 'slow',
+        filePath: slowMedia,
+        fileName: 'slow',
+        fileExtension: '.mp4',
+        directory: root,
+        providedSubtitlePath: slowSubtitle,
+      },
+    ],
+  });
+  assert.equal(mixedReceipt.success, true, JSON.stringify(mixedReceipt));
+  const getMixed = () => invoke('taskRuns:get', { projectId: mixedId });
+  await expect
+    .poll(async () => (await getMixed())?.status, { timeout: 20000 })
+    .toBe('waiting_review');
+  const mixed = await getMixed();
+  const slowRelease = await invoke('pipeline:releaseGate', {
+    projectId: mixedId,
+    gate: 'subtitle',
+    fileUuids: ['slow'],
+    expectedRunId: mixed.runId,
+    approvalRevisions: {
+      slow: mixed.files[1].stages.subtitleReview.approvalRevision,
+    },
+  });
+  assert.equal(slowRelease.success, true, JSON.stringify(slowRelease));
+  await expect
+    .poll(async () => slowRequestStarted && (await getMixed())?.status, {
+      timeout: 20000,
+    })
+    .toBe('running');
+  const sidecar = mixed.files[0].projection.proofreadDataFile;
+  const rows = await invoke('readProofreadDataFile', {
+    filePath: sidecar,
+    strict: true,
+  });
+  rows.subtitles[0].sourceContent = 'Saved while another file is running.';
+  const saved = await invoke('saveProofreadDataAndRender', {
+    proofreadDataFile: sidecar,
+    subtitles: rows.subtitles,
+    outputs: [],
+  });
+  assert.equal(saved.success, true, JSON.stringify(saved));
+  const updated = await getMixed();
+  assert.equal(updated.status, 'running');
+  assert.ok(updated.files[0].projection.manualProofreadRevision);
+  assert.equal(updated.files[1].stages.dubbing.status, 'running');
+  const busyWrite = await invoke('saveSubtitleFile', {
+    filePath: updated.files[1].projection.tempSrtFile,
+    subtitles: rows.subtitles,
+  });
+  assert.ok(
+    busyWrite.error?.includes('TASK_RESULT_BUSY'),
+    JSON.stringify(busyWrite),
+  );
+  const artifactWrite = await invoke('saveSubtitleFile', {
+    filePath: updated.files[0].projection.providedSubtitlePath,
+    subtitles: rows.subtitles,
+  });
+  assert.ok(
+    artifactWrite.error?.includes('TASK_ARTIFACT_READ_ONLY'),
+    JSON.stringify(artifactWrite),
+  );
+  await assert.rejects(
+    () =>
+      invoke('taskRuns:saveDraft', {
+        projectId: mixedId,
+        expectedDraftRevision: 0,
+        config: formData,
+        files: [],
+      }),
+    /TASK_CONFIG_BUSY/,
+  );
+  await invoke('taskRuns:command', {
+    projectId: mixedId,
+    expectedRunId: mixed.runId,
+    requestId: 'cancel-mixed',
+    command: 'cancel',
+  });
+  releaseSlow();
+  await expect
+    .poll(async () => (await getMixed())?.status, { timeout: 20000 })
+    .toBe('cancelled');
   console.log(`Task run manual review acceptance passed. Evidence: ${root}`);
 } finally {
-  if (app) await app.close();
+  releaseSlow();
+  if (app) {
+    await app.evaluate(({ app }) => app.exit(0)).catch(() => {});
+    await app.close().catch(() => {});
+  }
   await new Promise((resolve) => server.close(resolve));
 }

@@ -239,6 +239,106 @@ const deferred = () => {
   return { promise, resolve };
 };
 async function main() {
+  const { setTaskRunServiceResolver } = load(
+    definition('main/helpers/taskRuns/access.ts'),
+  );
+  const projectId = 'mixed-review';
+  const reviewRun = {
+    projectId,
+    runId: 'mixed-run',
+    status: 'running',
+    revision: 1,
+    files: [
+      {
+        fileId: 'ready',
+        projection: { uuid: 'ready', subtitleGate: 'review' },
+        stages: {
+          subtitleReview: {
+            id: 'subtitleReview',
+            status: 'waiting_review',
+            progress: 0,
+          },
+        },
+      },
+      {
+        fileId: 'working',
+        projection: { uuid: 'working' },
+        stages: {
+          extractSubtitle: {
+            id: 'extractSubtitle',
+            status: 'running',
+            progress: 30,
+          },
+        },
+      },
+    ],
+  };
+  setTaskRunServiceResolver(() => ({
+    get: (id) => (id === projectId ? reviewRun : null),
+  }));
+  items.set(projectId, {
+    id: projectId,
+    type: 'generateOnly',
+    status: 'running',
+    currentRunId: reviewRun.runId,
+    pipelineFiles: [],
+  });
+  const held = deferred();
+  let cancelled = false;
+  const reviewJob = service.jobs.submit('pipeline.run', {}, async (ctx) => {
+    ctx.setCancel(() => {
+      cancelled = true;
+      held.resolve({ cancelled: true });
+    });
+    return held.promise;
+  });
+  reviewJob.projectId = projectId;
+  try {
+    await until(() => reviewJob.status === 'running');
+    const result = await service.call('tasks.wait', {
+      id: reviewJob.id,
+      timeoutMs: 0,
+    });
+    assert.equal(result.status, 'review');
+    assert.equal(result.result.files[0].subtitleGate, 'review');
+    assert.equal(
+      result.progress[1].stageRuns.extractSubtitle.status,
+      'running',
+    );
+    assert.equal(
+      reviewJob.status,
+      'running',
+      'attention state must not end the background job',
+    );
+    assert.equal(service.jobs.isActive(reviewJob.id), true);
+    assert.equal(
+      (await service.call('tasks.get', { id: projectId })).status,
+      'review',
+    );
+    reviewRun.files[0].stages.subtitleReview.status = 'succeeded';
+    assert.equal(
+      (await service.call('tasks.get', { id: reviewJob.id })).status,
+      'running',
+    );
+    reviewRun.files[0].stages.subtitleReview.status = 'waiting_review';
+    reviewRun.status = 'paused';
+    assert.notEqual(
+      (await service.call('tasks.get', { id: reviewJob.id })).status,
+      'review',
+    );
+    reviewRun.status = 'running';
+    await service.call('tasks.cancel', { id: reviewJob.id });
+    assert.equal(
+      cancelled,
+      true,
+      'partial review must retain the running files cancellation hook',
+    );
+  } finally {
+    held.resolve({ cancelled: true });
+    await service.jobs.wait(reviewJob.id, 1000);
+    items.delete(projectId);
+    setTaskRunServiceResolver(() => undefined);
+  }
   const ai = {
     id: 'chat-ai',
     name: 'Chat AI',

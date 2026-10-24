@@ -302,6 +302,35 @@ test('unknown newer manifest versions are rejected without being rewritten', (t)
   assert.equal(fs.readFileSync(target, 'utf8'), before);
 });
 
+test('proofread edits distinguish a stale run from read-only legacy results', (t) => {
+  const { service } = harness(t);
+  const old = service.importLegacyResult({
+    projectId: 'project',
+    config: input().config,
+    files: input().files,
+    createdAt: 1,
+    status: 'succeeded',
+  })!;
+  const edit = {
+    projectId: 'project',
+    runId: old.runId,
+    fileId: 'file',
+    digest: 'edit',
+    translationFailures: [],
+  };
+  assert.throws(
+    () => service.recordProofreadEdit(edit),
+    /TASK_HISTORY_READ_ONLY/,
+  );
+  service.accept(input());
+  assert.throws(() => service.recordProofreadEdit(edit), /TASK_RUN_CONFLICT/);
+  assert.equal(
+    (service.get('project', old.runId)!.files[0].projection as any)
+      .manualProofreadRevision,
+    undefined,
+  );
+});
+
 test('legacy results retain historical locations without becoming trusted artifacts', (t) => {
   const { service, changes } = harness(t);
   const legacy = service.importLegacyResult({

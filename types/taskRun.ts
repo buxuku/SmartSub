@@ -126,6 +126,20 @@ export const TERMINAL_RUN_STATUSES: readonly RunStatus[] = [
 ];
 export const isRunLocked = (run?: Pick<TaskRun, 'status'> | null): boolean =>
   !!run && !TERMINAL_RUN_STATUSES.includes(run.status);
+
+/** Review attention is independent of other files still running in the batch. */
+export function hasPendingTaskReview(run?: TaskRun | null): boolean {
+  return (
+    !!run &&
+    ['queued', 'preparing', 'running', 'waiting_review'].includes(run.status) &&
+    run.files.some((file) =>
+      Object.values(file.stages).some(
+        (stage) => stage.status === 'waiting_review',
+      ),
+    )
+  );
+}
+
 export function projectRunFiles(run: TaskRun): IFiles[] {
   return run.files.map((file) => ({
     ...file.projection,

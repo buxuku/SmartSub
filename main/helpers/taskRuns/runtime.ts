@@ -10,6 +10,7 @@ import { buildTaskName } from '../workItemMigration';
 import { withValidTranslateContent } from '../../../types/translateContent';
 import { enforceSpeakerDiarizationTaskBoundary } from '../../../types/speakerDiarization';
 import { projectRunFiles, type TaskRun } from '../../../types/taskRun';
+import { subtitleOutputFilesToSave } from '../../../types/subtitleOutput';
 import {
   setTaskRunServiceResolver,
   setManagedTaskAcceptance,
@@ -17,6 +18,7 @@ import {
   setTaskRunDeletion,
   isLegacyTaskBusy,
   assertTaskResultsSaved,
+  assertTaskRunResultEditable,
 } from './access';
 import type {
   TaskSubmission,
@@ -123,36 +125,39 @@ export function initializeTaskRuns() {
     )
       throw new Error('TASK_ARTIFACT_READ_ONLY');
     for (const run of all) {
-      const owns = input.sessionId
-        ? run.files.some(
+      const file = input.sessionId
+        ? run.files.find(
             (file) => file.projection.dubbingSessionId === input.sessionId,
           )
-        : input.path &&
-          (run.files.some(
+        : run.files.find(
             (file) =>
-              file.projection.proofreadDataFile &&
-              path.resolve(file.projection.proofreadDataFile) ===
-                path.resolve(input.path!),
-          ) ||
-            path
-              .resolve(input.path)
-              .startsWith(
-                path.dirname(getRunStore().runPath(run.projectId, run.runId)) +
-                  path.sep,
-              ));
+              input.path &&
+              [
+                file.projection.proofreadDataFile,
+                file.projection.srtFile,
+                file.projection.translatedSrtFile,
+                file.projection.tempTranslatedSrtFile,
+                ...subtitleOutputFilesToSave(file.projection).map(
+                  (output) => output.filePath,
+                ),
+              ].some(
+                (target) =>
+                  target && path.resolve(target) === path.resolve(input.path!),
+              ),
+          );
+      const owns =
+        file ||
+        (input.path &&
+          path
+            .resolve(input.path)
+            .startsWith(
+              path.dirname(getRunStore().runPath(run.projectId, run.runId)) +
+                path.sep,
+            ));
       if (!owns) continue;
       if (getRunService().get(run.projectId)?.runId !== run.runId)
         throw new Error('TASK_HISTORY_READ_ONLY');
-      if (
-        ![
-          'succeeded',
-          'failed',
-          'interrupted',
-          'cancelled',
-          'waiting_review',
-        ].includes(run.status)
-      )
-        throw new Error('TASK_RESULT_BUSY');
+      assertTaskRunResultEditable(run, file);
     }
   });
   getRunService().recover();

@@ -13,7 +13,7 @@ import {
   type StageArtifact,
 } from '../../../types/taskRun';
 import type { TaskRunStore } from './store';
-import { assertTaskResultsSaved } from './access';
+import { assertTaskResultsSaved, assertTaskRunResultEditable } from './access';
 
 export function stableJson(value: any): string {
   if (Array.isArray(value))
@@ -454,19 +454,10 @@ export function createTaskRunService(
     }) {
       const run = get(input.projectId);
       if (!run || run.runId !== input.runId)
-        throw new Error('TASK_HISTORY_READ_ONLY');
-      if (
-        ![
-          'succeeded',
-          'failed',
-          'interrupted',
-          'cancelled',
-          'waiting_review',
-        ].includes(run.status)
-      )
-        throw new Error('TASK_RESULT_BUSY');
+        throw new Error('TASK_RUN_CONFLICT');
       const file = run.files.find((file) => file.fileId === input.fileId);
       if (!file) throw new Error('TASK_FILE_NOT_FOUND');
+      assertTaskRunResultEditable(run, file);
       file.projection.translationFailures = structuredClone(
         input.translationFailures,
       );
