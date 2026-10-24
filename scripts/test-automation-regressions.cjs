@@ -31,6 +31,8 @@ function stub(relative, value) {
 const real = new Set(
   [
     'main/automation/service.ts',
+    'main/helpers/taskRuns/access.ts',
+    'types/taskRun.ts',
     'main/automation/pipelineConfig.ts',
     'types/provider.ts',
     'types/asrProvider.ts',

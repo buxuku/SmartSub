@@ -31,7 +31,7 @@ export async function releasePipelineGate(
   if (!ids.length || confirmed(before)) return;
   const request = Promise.resolve()
     .then(() =>
-      window.ipc.invoke('pipeline:releaseGate', { ...payload, fileUuids: ids }),
+      window.ipc.invoke('pipeline:releaseGate', { ...payload, fileUuids: ids, ...(before.currentRunId ? { expectedRunId: before.currentRunId, approvalRevisions: Object.fromEntries(before.pipelineFiles.filter(file => ids.includes(file.uuid)).map(file => [file.uuid, file.stageRuns?.[payload.gate === 'subtitle' ? 'subtitleReview' : 'dubbingReview']?.approvalRevision])) } : {}) }),
     )
     .then(
       (result) => ({ kind: 'result' as const, result }),

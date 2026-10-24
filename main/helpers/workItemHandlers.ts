@@ -24,7 +24,7 @@ import {
 import { logMessage } from './storeManager';
 import type { WorkItem } from '../../types/workItem';
 import { isTaskProjectBusy } from './taskProcessor';
-import { assertLegacyTaskWriteAllowed } from './taskRuns/access';
+import { assertLegacyTaskWriteAllowed, retireTaskRuns } from './taskRuns/access';
 
 export function setupWorkItemHandlers(): void {
   setWorkItemDeletionHandler((items: WorkItem[]) => {
@@ -53,9 +53,14 @@ export function setupWorkItemHandlers(): void {
     // 只回收托管目录里不再被剩余工作项引用的校对 sidecar；旧邻居目录不碰
     const proofreadFiles = planManagedDeletion(items, remaining);
     const staged = stageSessionDeletion(ids);
+    let runDeletion: ReturnType<typeof retireTaskRuns>;
+    try { runDeletion = retireTaskRuns(items.map(item => item.id)); }
+    catch (error) { staged.rollback(); throw error; }
     return {
-      rollback: staged.rollback,
+      rollback: () => { runDeletion?.rollback(); staged.rollback(); },
       commit: () => {
+        // Retain referenced history on disk, but never reconstruct a deleted project at startup.
+        runDeletion?.commit();
         // 工作项列表已落盘才会走到这里；删除失败只记日志，留下的文件不影响本次删除
         removeManagedProofreadData(proofreadFiles, {
           onError: (message) => logMessage(message, 'warning'),

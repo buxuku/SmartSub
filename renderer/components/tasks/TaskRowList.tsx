@@ -213,6 +213,7 @@ export function RailChips({
               file.speechReviewStage
                 ? t('row.speechReviewing')
                 : t(stage.labelKey)}
+              {file.stageRuns?.[stage.key]?.outcome && <span className="text-[10px] text-muted-foreground" title={file.stageRuns[stage.key].reason}>{t(`runs.outcome.${file.stageRuns[stage.key].outcome}`)}</span>}
               {stage.key === 'extractSubtitle' && status === 'done' ? (
                 <SpeechReviewBadge file={file} />
               ) : null}

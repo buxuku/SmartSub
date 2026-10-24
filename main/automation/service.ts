@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
 import { createHash, randomUUID } from 'crypto';
+import { taskRunService } from '../helpers/taskRuns/access';
 import {
   operations,
   operationMap,
@@ -351,8 +352,11 @@ export class AutomationService {
     const executionSignal = getTaskProjectSignal(projectId);
     while (isTaskProjectBusy(projectId)) {
       const item = getWorkItemById(projectId);
+      const run = taskRunService()?.get(projectId);
+      if (run?.status === 'waiting_review') break;
       const job = ctx.jobId && this.jobs.get(ctx.jobId);
       if (job) {
+        if (run) job.status = run.status === 'paused' || run.status === 'pausing' ? 'paused' : 'running';
         job.progress = redact(
           item?.pipelineFiles?.map((f) => ({
             uuid: f.uuid,
@@ -371,6 +375,7 @@ export class AutomationService {
         activity: f.taskActivity,
       }));
     const cancelled =
+      item.runStatus === 'cancelled' ||
       ctx.signal.aborted ||
       executionSignal?.aborted ||
       Boolean(
@@ -503,11 +508,15 @@ export class AutomationService {
         retryCtx.setCancel(() =>
           sendHandler('cancelTask', retryCtx.event, projectId),
         );
-        unwrap(
+        const run = taskRunService()?.get(projectId);
+        if (run && ['failed', 'interrupted'].includes(run.status)) {
+          await invokeHandler('taskRuns:command', retryCtx.event, { projectId, expectedRunId: run.runId, requestId: a.requestId || randomUUID(), command: 'retry' });
+        } else unwrap(
           enqueueTaskSubmission({
             projectId,
             requestId: a.requestId || randomUUID(),
             files: item.pipelineFiles,
+            resumeLegacy: !run,
             formData: item.configSnapshot as any,
           }),
         );

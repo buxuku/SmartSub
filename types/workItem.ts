@@ -50,6 +50,8 @@ export interface WorkItem {
   currentRunId?: string;
   runStatus?: import('./taskRun').RunStatus;
   runRevision?: number;
+  historicalSessionIds?: string[];
+  historicalProofreadFiles?: string[];
   id: string;
   name: string;
   type: WorkItemType;

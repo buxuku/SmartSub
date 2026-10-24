@@ -186,6 +186,7 @@ function simulate({
       },
     },
     projectId: 'test-project',
+    currentRun: null,
     cachedProviders: [],
     onOpenRefine: undefined,
     onOpenSummary: undefined,

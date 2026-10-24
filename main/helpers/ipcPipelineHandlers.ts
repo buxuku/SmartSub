@@ -13,6 +13,7 @@ import { filterReleasableFiles } from './pipeline/gateLogic';
 import { dubbingSessionOwnership } from './dubbing/sessionOwnership';
 import { readConfigDraft, readCueDraft } from './dubbing/configDraftStore';
 import { getDubbingSession } from './dubbing/dubbingProcessor';
+import { taskRunService } from './taskRuns/access';
 
 export function setupPipelineHandlers(mainWindow: BrowserWindow) {
   ipcMain.handle(
@@ -24,13 +25,22 @@ export function setupPipelineHandlers(mainWindow: BrowserWindow) {
         gate,
         fileUuids,
         leaseId,
+        expectedRunId,
+        approvalRevisions,
       }: {
         projectId: string;
         gate: GateKind;
         fileUuids?: string[];
         leaseId?: string;
+        expectedRunId?: string;
+        approvalRevisions?: Record<string, string>;
       },
     ) => {
+      const run = taskRunService()?.get(projectId);
+      if (expectedRunId && run?.runId !== expectedRunId) return { success: false, error: 'TASK_RUN_CONFLICT' };
+      if (run && approvalRevisions) for (const [fileId, revision] of Object.entries(approvalRevisions)) {
+        if (run.files.find(file => file.fileId === fileId)?.stages[gate === 'subtitle' ? 'subtitleReview' : 'dubbingReview']?.approvalRevision !== revision) return { success: false, error: 'TASK_REVIEW_CONFLICT' };
+      }
       const releasedEditors: string[] = [];
       if (gate === 'dubbing') {
         const targets = filterReleasableFiles(

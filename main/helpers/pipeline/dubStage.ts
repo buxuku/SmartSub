@@ -487,6 +487,13 @@ export async function runDubStage(
       );
     }
 
+    // Managed runs commit automatic cue audio before the independently resumable track stage.
+    if ((formData as any).__deferDubTrack === true) {
+      flushDubbingSession(session);
+      emitStatus(event, file, 'done');
+      return;
+    }
+
     // Snapshot reviewed audio and display text for the downstream compose job.
     const track = await buildDubTrack(session, {
       config,

@@ -8,6 +8,7 @@ import { logMessage } from './storeManager';
 import { wrapFileObject, ensureTempDir, getMd5 } from './fileUtils';
 import { CONTENT_TEMPLATES } from '../translate/constants';
 import { renderTemplate, getExtraResourcesPath } from './utils';
+import { assertTaskRunEditable } from './taskRuns/access';
 import {
   detectSubtitleFormat,
   detectSubtitleFormatFromContent,
@@ -551,6 +552,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     'saveSubtitleFile',
     async (event, { filePath, subtitles, contentType = 'source' }) => {
       try {
+        assertTaskRunEditable({ path: filePath });
         await writeSubtitleFile(filePath, subtitles, contentType);
         return { success: true };
       } catch (error) {
@@ -586,6 +588,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
             `Proofread data file not found: ${proofreadDataFile}`,
           );
         }
+        assertTaskRunEditable({ path: proofreadDataFile });
 
         const updated = await updateProofreadDataFromSubtitles(
           proofreadDataFile,
@@ -613,6 +616,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         ]) {
           const filePath = output?.filePath;
           if (!filePath) continue;
+          assertTaskRunEditable({ path: filePath });
           const key = path.resolve(filePath).toLowerCase();
           if (rendered.has(key)) continue;
           rendered.add(key);

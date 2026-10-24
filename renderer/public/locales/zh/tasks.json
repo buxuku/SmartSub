@@ -728,5 +728,61 @@
       "interrupted": "任务已中断，等待重试",
       "paused": "已暂停，等待继续"
     }
+  },
+  "runs": {
+    "current": "当前运行",
+    "history": "历史运行",
+    "editNext": "编辑下一轮配置",
+    "retry": "重试失败阶段",
+    "readOnly": "历史结果（只读）",
+    "configuration": "执行配置",
+    "lockedHint": "当前运行的配置和文件已锁定。暂停会在当前阶段结束后释放处理资源。",
+    "draftHint": "正在编辑下一轮草稿。开始后重新评估所有文件，并复用未变化的有效阶段产物。",
+    "resultHint": "本轮结果和配置已保留。可编辑下一轮草稿，或使用相同配置再次开始；历史校对和配音修改不会自动带入新运行。",
+    "stages": {
+      "prepareInput": "校验输入",
+      "extractAudio": "提取音频",
+      "extractSubtitle": "获取字幕",
+      "refineSubtitle": "字幕精修",
+      "manuscriptMatch": "文稿匹配",
+      "normalizeSubtitle": "字幕归一",
+      "summarizeEpisode": "通读摘要",
+      "translateSubtitle": "翻译",
+      "speakerDiarization": "角色分析",
+      "annotateSpeakers": "角色标注",
+      "prepareProofread": "校对数据",
+      "exportSubtitle": "导出字幕",
+      "subtitleReview": "字幕校对",
+      "dubbing": "配音",
+      "dubbingTrack": "构建音轨",
+      "dubbingReview": "配音确认",
+      "composeVideo": "合成视频"
+    },
+    "status": {
+      "preparing": "准备中",
+      "queued": "排队中",
+      "running": "执行中",
+      "pausing": "当前阶段结束后暂停",
+      "paused": "已暂停",
+      "waiting_review": "等待人工确认",
+      "cancelling": "取消中",
+      "cancelled": "已取消",
+      "succeeded": "已完成",
+      "failed": "执行失败",
+      "interrupted": "已中断"
+    },
+    "outcome": {
+      "executed": "已执行",
+      "reused": "已复用",
+      "not_applicable": "无需执行",
+      "degraded": "已降级",
+      "pending": "待执行",
+      "running": "执行中",
+      "succeeded": "已完成",
+      "failed": "失败",
+      "interrupted": "已中断",
+      "waiting_review": "待确认",
+      "cancelled": "已取消"
+    }
   }
 }

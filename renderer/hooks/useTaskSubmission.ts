@@ -68,6 +68,9 @@ export function useTaskSubmission(options?: {
     busy.current = true;
     try {
       const snapshot = structuredClone(input);
+      const previousRun = !snapshot.resumeLegacy && snapshot.projectId
+        ? await window.ipc.invoke('taskRuns:get', { projectId: snapshot.projectId }).catch(() => null)
+        : null;
       transition('validating');
       // Probed while the configuration is validated, so the wait is the slower of the
       // two instead of their sum. Never rejects and is bounded, so abandoning it when
@@ -75,7 +78,7 @@ export function useTaskSubmission(options?: {
       const embeddedHit = promptEmbeddedSubtitles
         ? findEmbeddedSubtitleHit(snapshot)
         : Promise.resolve(null);
-      let readiness = await validateTaskStart(snapshot);
+      let readiness = await validateTaskStart(snapshot, { deferResourceValidation: Boolean(previousRun) });
       if (!mounted.current) return { status: 'cancelled' };
       if (!readiness.valid) {
         transition('failed');
@@ -104,7 +107,7 @@ export function useTaskSubmission(options?: {
         return { status: 'cancelled' };
       }
       transition('validating');
-      readiness = await validateTaskStart(snapshot);
+      readiness = await validateTaskStart(snapshot, { deferResourceValidation: Boolean(previousRun) });
       if (!mounted.current) return { status: 'cancelled' };
       if (!readiness.valid) {
         transition('failed');
