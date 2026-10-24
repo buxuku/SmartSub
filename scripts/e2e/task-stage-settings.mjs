@@ -58,6 +58,11 @@ const requests = [];
 const server = http.createServer(async (request, response) => {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
+  if (request.url === '/translate') {
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ data: '用于流程设置验收的字幕。' }));
+    return;
+  }
   requests.push(JSON.parse(Buffer.concat(chunks).toString()));
   response.writeHead(200, { 'Content-Type': 'audio/wav' });
   response.end(audio);
@@ -75,12 +80,39 @@ try {
   const skip = page.getByRole('button', { name: '跳过', exact: true });
   await skip.waitFor();
   await skip.click();
+  await page.evaluate(() => localStorage.setItem('theme', 'light'));
+  await page.reload();
   const invoke = (channel, payload) =>
     page.evaluate(
       ({ channel, payload }) => window.ipc.invoke(channel, payload),
       { channel, payload },
     );
   const initial = await invoke('getUserConfig');
+  // Render a real model label without downloading a model. The supplied SRT
+  // bypasses transcription, so no fake model is used by the pipeline.
+  await app.evaluate(
+    ({ ipcMain }, systemInfo) => {
+      ipcMain.removeHandler('getSystemInfo');
+      ipcMain.handle('getSystemInfo', () => ({
+        ...systemInfo,
+        fasterWhisperModelsInstalled: ['large-v3-turbo'],
+        pythonEngineStatus: { state: 'ready' },
+      }));
+    },
+    await invoke('getSystemInfo'),
+  );
+  await invoke('setTranslationProviders', {
+    expectedProviders: await invoke('getTranslationProviders'),
+    providers: [
+      {
+        id: 'local-translation',
+        type: 'deeplx',
+        name: '本地翻译验收服务',
+        isAi: false,
+        apiUrl: `http://127.0.0.1:${server.address().port}/translate`,
+      },
+    ],
+  });
   const providers = await invoke('getTtsProviders');
   await invoke('setTtsProviders', {
     expectedProviders: providers,
@@ -99,9 +131,13 @@ try {
 
   const config = {
     ...initial,
-    taskType: 'generateOnly',
+    taskType: 'generateAndTranslate',
+    transcriptionEngine: 'fasterWhisper',
+    model: 'large-v3-turbo',
     sourceLanguage: 'en',
-    translateProvider: '-1',
+    targetLanguage: 'zh',
+    translateProvider: 'local-translation',
+    translateContent: 'sourceAndTranslate',
     aiCorrection: false,
     aiSegmentation: false,
     speakerDiarization: false,
@@ -118,7 +154,7 @@ try {
   };
   const recipe = await invoke('recipes:save', {
     name: '配方流程验收',
-    goals: { translate: false, dub: true, video: true },
+    goals: { translate: true, dub: true, video: true },
     accepts: 'media',
     config,
   });
@@ -175,6 +211,60 @@ try {
   ).toHaveCount(0);
   const section = async (name) =>
     page.getByRole('tab', { name, exact: true }).click();
+  const checkLayout = async (width, state) => {
+    await page.setViewportSize({ width, height: 960 });
+    const panel = page.getByTestId('task-config-sections');
+    await expect(panel).toBeVisible();
+    await page.mouse.move(0, 0);
+    await page.screenshot({
+      path: path.join(root, `${state}-${width}.png`),
+      animations: 'disabled',
+    });
+    const violations = await panel.evaluate((el) => {
+      const problems = [];
+      if (el.scrollWidth > el.clientWidth + 1) problems.push('panel overflow');
+      for (const tab of el.querySelectorAll('[role="tab"]')) {
+        const bounds = tab.getBoundingClientRect();
+        for (const content of tab.querySelectorAll('span, svg')) {
+          const rect = content.getBoundingClientRect();
+          if (
+            rect.top < bounds.top - 1 ||
+            rect.bottom > bounds.bottom + 1 ||
+            rect.left < bounds.left - 1 ||
+            rect.right > bounds.right + 1
+          )
+            problems.push(
+              `tab content clipped: ${tab.getAttribute('aria-label')}`,
+            );
+        }
+      }
+      const toolbar = el.querySelector('[data-testid="task-inspector-core"]');
+      if (toolbar) {
+        const rect = toolbar.getBoundingClientRect();
+        for (const item of toolbar.children) {
+          const bounds = item.getBoundingClientRect();
+          if (bounds.width < 150)
+            problems.push(`cramped field: ${item.textContent}`);
+          if (bounds.left < rect.left - 1 || bounds.right > rect.right + 1)
+            problems.push(`toolbar overflow: ${item.textContent}`);
+        }
+        const model = toolbar.querySelector('#model');
+        if (model) {
+          for (const label of model.querySelectorAll('span')) {
+            if (label.scrollWidth > label.clientWidth + 1)
+              problems.push(`model label clipped: ${label.textContent}`);
+          }
+        }
+      }
+      return problems;
+    });
+    assert.deepEqual(
+      violations,
+      [],
+      `${state} layout at ${width}; evidence: ${root}`,
+    );
+  };
+  await checkLayout(1024, 'locked-subtitle');
   await section('配音');
   await expect(
     page.getByRole('combobox', { name: '声音', exact: true }),
@@ -234,14 +324,16 @@ try {
   await expect(
     page.getByRole('combobox', { name: '导出画质', exact: true }),
   ).toContainText('标准');
-  for (const width of [1024, 1440, 1920]) {
-    await page.setViewportSize({ width, height: 960 });
-    const panel = page.getByTestId('task-config-sections');
-    assert.ok(
-      await panel.evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
-      `settings overflow at ${width}`,
-    );
-    await page.screenshot({ path: path.join(root, `settings-${width}.png`) });
+  for (const width of [1024, 1440, 1760, 1800, 1920]) {
+    for (const [name, key] of [
+      ['字幕与翻译', 'subtitle'],
+      ['配音', 'dubbing'],
+      ['视频合成', 'compose'],
+      ['流程设置', 'review'],
+    ]) {
+      await section(name);
+      await checkLayout(width, key);
+    }
   }
   await page.getByRole('button', { name: '重新处理', exact: true }).click();
   const second = await wait(

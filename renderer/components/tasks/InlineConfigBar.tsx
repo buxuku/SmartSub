@@ -60,13 +60,9 @@ interface InlineConfigBarProps {
 }
 
 /**
- * 标签在上、控件在下。默认等分剩余宽度（flex-1）；
- * 内容窄且形态固定的控件（词库、摘要）通过 className 改成定宽，
- * 避免其内容变化挤压整条单行配置条。
- *
- * 标签单行截断（title 给出全称）：窄窗口下列宽不够时以省略号收尾，
- * 不会溢出盖住相邻控件。补充说明用 hint（标签旁 ⓘ）承载，而不是在控件上方
- * 另起一段文字——后者会随状态把整条配置条撑高。
+ * 标签在上、控件在下。列宽和换行由参数栏的容器宽度决定，
+ * 避免嵌入流程分组后仍按窗口宽度把所有控件挤在一行。
+ * 标签的补充说明用 hint 承载，保持同一行控件对齐。
  */
 function ConfigItem({
   label,
@@ -80,12 +76,7 @@ function ConfigItem({
   className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        'flex min-w-0 flex-1 flex-col items-stretch gap-1',
-        className,
-      )}
-    >
+    <div className={cn('flex min-w-0 flex-col items-stretch gap-1', className)}>
       <div className="flex min-w-0 items-center gap-1">
         <span title={label} className="truncate text-xs text-muted-foreground">
           {label}
@@ -96,12 +87,6 @@ function ConfigItem({
     </div>
   );
 }
-
-/**
- * 听 | 译 | 出：阶段之间的 1px 分隔线，做成阶段首项上的左边框（而不是多一个元素），
- * 不改变 DOM 结构；与前一项的 gap 一起，两侧各留约 10px。
- */
-const STAGE_START = 'border-l border-border/70 pl-2.5';
 
 const triggerClass = 'h-8 w-full min-w-0 text-xs gap-1';
 const modelTriggerClass = triggerClass;
@@ -257,7 +242,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
         key={disabled ? 'locked' : 'editable'}
         disabled={disabled}
         aria-disabled={disabled}
-        className="inspector-sections min-w-0 border-0 bg-muted/30 px-3 py-2 w-full rounded-md overflow-x-auto"
+        className="inspector-sections min-w-0 border-0 bg-muted/30 px-3 py-3 w-full rounded-md"
         onClickCapture={(event) => {
           if (disabled) {
             event.preventDefault();
@@ -266,7 +251,12 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
         }}
       >
         <div
-          className="flex min-w-0 items-end gap-2.5 flex-nowrap w-full"
+          className={cn(
+            'inspector-fields grid min-w-0 w-full items-end gap-x-3 gap-y-3',
+            typeDef.needsModel &&
+              typeDef.hasTranslate &&
+              'inspector-fields-full',
+          )}
           data-testid="task-inspector-core"
         >
           {typeDef.needsModel && (
@@ -369,10 +359,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
 
           {typeDef.hasTranslate && (
             <>
-              <ConfigItem
-                label={t('configBar.targetLanguage')}
-                className={typeDef.needsModel ? STAGE_START : undefined}
-              >
+              <ConfigItem label={t('configBar.targetLanguage')}>
                 <Select
                   value={formData.targetLanguage}
                   onValueChange={(v) => setValue('targetLanguage', v)}
@@ -451,18 +438,10 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                   </Button>
                 )}
               </ConfigItem>
-              {/* 定宽：最小窗口(1024)下与其余控件同样紧凑，宽屏(≥1280)多给 8~16px，
-                  让默认文案「全局已启用」「DeepSeek」不被省略号截断 */}
-              <ConfigItem
-                label={t('configBar.glossary')}
-                className="w-[120px] flex-none xl:w-[128px]"
-              >
+              <ConfigItem label={t('configBar.glossary')}>
                 <GlossarySelectControl form={form} formData={formData} />
               </ConfigItem>
-              <ConfigItem
-                label={t('configBar.generateSummary')}
-                className="w-[112px] flex-none xl:w-[128px]"
-              >
+              <ConfigItem label={t('configBar.generateSummary')}>
                 <SummaryGenerateControl
                   form={form}
                   formData={formData}
@@ -474,7 +453,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
             </>
           )}
 
-          <ConfigItem label={t('configBar.output')} className={STAGE_START}>
+          <ConfigItem label={t('configBar.output')}>
             <OutputFormatControl
               form={form}
               formData={formData}
@@ -486,6 +465,26 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
       <style jsx>{`
         .task-inspector {
           container-type: inline-size;
+        }
+        .inspector-fields {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        @container (min-width: 640px) {
+          .inspector-fields {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+        @container (min-width: 1200px) {
+          .inspector-fields {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+          }
+        }
+        @container (min-width: 1680px) {
+          .inspector-fields-full {
+            grid-template-columns:
+              minmax(0, 1.75fr) repeat(7, minmax(0, 1fr))
+              minmax(0, 1.5fr);
+          }
         }
       `}</style>
 
