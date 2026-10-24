@@ -147,6 +147,9 @@ export function workItemToTaskProject(item: WorkItem): TaskProject | null {
     name: item.name,
     taskType: item.type as PipelineWorkItemType,
     files: item.pipelineFiles || [],
+    currentRunId: item.currentRunId,
+    runStatus: item.runStatus,
+    runRevision: item.runRevision,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
   };

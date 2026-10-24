@@ -88,6 +88,9 @@ export interface ManuscriptMatchSummary {
 }
 
 export interface IFiles extends SubtitleOutputFiles {
+  taskRunId?: string;
+  taskRunRevision?: number;
+  stageRuns?: import('./taskRun').FileRun['stages'];
   /** Runtime event routing; file UUIDs can be reused by restored drafts. */
   taskProjectId?: string;
   taskActivity?: TaskActivity;
@@ -216,6 +219,9 @@ export type TaskProjectType =
 
 /** 一次任务工程：任务维度记录，下挂文件列表 */
 export interface TaskProject {
+  currentRunId?: string;
+  runStatus?: import('./taskRun').RunStatus;
+  runRevision?: number;
   id: string;
   /** 默认「时间 + 第一个文件名」，用户可改 */
   name: string;

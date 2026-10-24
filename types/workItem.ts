@@ -47,6 +47,9 @@ export interface WorkItemArtifact {
 }
 
 export interface WorkItem {
+  currentRunId?: string;
+  runStatus?: import('./taskRun').RunStatus;
+  runRevision?: number;
   id: string;
   name: string;
   type: WorkItemType;

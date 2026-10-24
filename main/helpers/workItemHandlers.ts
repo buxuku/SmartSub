@@ -24,6 +24,7 @@ import {
 import { logMessage } from './storeManager';
 import type { WorkItem } from '../../types/workItem';
 import { isTaskProjectBusy } from './taskProcessor';
+import { assertLegacyTaskWriteAllowed } from './taskRuns/access';
 
 export function setupWorkItemHandlers(): void {
   setWorkItemDeletionHandler((items: WorkItem[]) => {
@@ -78,9 +79,10 @@ export function setupWorkItemHandlers(): void {
 
   ipcMain.handle('getWorkItem', (_event, id: string) => getWorkItemById(id));
 
-  ipcMain.handle('saveWorkItem', (_event, item: WorkItem) =>
-    saveWorkItem(item, { durable: true }),
-  );
+  ipcMain.handle('saveWorkItem', (_event, item: WorkItem) => {
+    assertLegacyTaskWriteAllowed(item.id);
+    return saveWorkItem(item, { durable: true });
+  });
 
   ipcMain.handle('deleteWorkItem', (_event, id: string) => {
     return deleteWorkItem(id);
