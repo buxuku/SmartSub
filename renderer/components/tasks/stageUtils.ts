@@ -31,7 +31,14 @@ export function getFileStages(
 
 export function getStageStatus(file: any, key: StageKey): StageStatus {
   const stage = file?.stageRuns?.[key];
-  if (stage) return stage.status === 'succeeded' ? 'done' : stage.status === 'running' ? 'loading' : ['failed', 'interrupted'].includes(stage.status) ? 'error' : 'pending';
+  if (stage)
+    return stage.status === 'succeeded'
+      ? 'done'
+      : stage.status === 'running'
+        ? 'loading'
+        : ['failed', 'interrupted'].includes(stage.status)
+          ? 'error'
+          : 'pending';
   const value = file?.[key];
   if (value === 'loading') return 'loading';
   if (value === 'done') return 'done';
@@ -134,6 +141,7 @@ export function getFileRail(
   const dubbingGate = gates.find((g) => g.key === 'dubbingGate');
   const hasDub = stages.some((s) => s.key === 'dubbing');
   const hasCompose = stages.some((s) => s.key === 'composeVideo');
+  const hasManagedTrack = Boolean(file.stageRuns?.dubbingTrack);
 
   const rail: RailItem[] = [];
   for (const stage of stages) {
@@ -145,13 +153,19 @@ export function getFileRail(
       rail.push({ kind: 'gate', gate: subtitleGate });
     }
     // 配音确认点：配音之后、合成之前
-    if (dubbingGate && stage.key === 'composeVideo' && hasDub) {
+    if (
+      dubbingGate &&
+      hasDub &&
+      (hasManagedTrack
+        ? stage.key === 'dubbingTrack'
+        : stage.key === 'composeVideo')
+    ) {
       rail.push({ kind: 'gate', gate: dubbingGate });
     }
     rail.push({ kind: 'stage', stage });
   }
   // 仅配音无合成：配音确认点收尾
-  if (dubbingGate && hasDub && !hasCompose) {
+  if (dubbingGate && hasDub && !hasCompose && !hasManagedTrack) {
     rail.push({ kind: 'gate', gate: dubbingGate });
   }
   return rail;
@@ -174,7 +188,11 @@ export function getFilePercent(file: any, stages: StageDef[]): number {
     if (status === 'done') {
       total += 1;
     } else if (status === 'loading' || status === 'error') {
-      const progress = Number(file?.stageRuns?.[stage.key]?.progress ?? file?.[`${stage.key}Progress`] ?? 0);
+      const progress = Number(
+        file?.stageRuns?.[stage.key]?.progress ??
+          file?.[`${stage.key}Progress`] ??
+          0,
+      );
       total += Math.min(Math.max(progress, 0), 100) / 100;
     }
   }

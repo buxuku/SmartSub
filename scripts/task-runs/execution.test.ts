@@ -106,3 +106,88 @@ test('manual review releases the worker but keeps the run locked and binds appro
   });
   assert.equal(await executeFileRun({ ...ctx, execute }), 'completed');
 });
+
+test('dubbing review completes before track construction so saved edits reach final audio', async (t) => {
+  const ctx = setup(t, { dub: {}, compose: {}, gates: { dubbing: 'manual' } });
+  const calls: string[] = [];
+  let voice = 'automatic';
+  const execute = async ({ stage, file }: any) => {
+    calls.push(stage.id);
+    if (stage.id === 'dubbingReview')
+      return { reviewRevision: 'audio-cues', projection: file.projection };
+    if (stage.id === 'dubbingTrack') assert.equal(voice, 'reviewed');
+    return { outcome: 'executed' as const, artifacts: [] };
+  };
+  assert.equal(await executeFileRun({ ...ctx, execute }), 'waiting_review');
+  assert.equal(calls.includes('dubbingTrack'), false);
+  voice = 'reviewed';
+  ctx.service.releaseReview({
+    ...ctx,
+    stageId: 'dubbingReview',
+    revision: 'audio-cues',
+    projection: ctx.service.get('p')!.files[0].projection,
+  });
+  assert.equal(await executeFileRun({ ...ctx, execute }), 'completed');
+  assert.ok(calls.indexOf('dubbingReview') < calls.indexOf('dubbingTrack'));
+  assert.ok(calls.indexOf('dubbingTrack') < calls.indexOf('composeVideo'));
+});
+
+test('saved proofreading repairs are authoritative for same-run retry and remain absent from new runs', async (t) => {
+  const ctx = setup(t, { dub: {} });
+  const execute = async ({ stage, file }: any) => {
+    if (stage.id === 'translateSubtitle')
+      return {
+        outcome: 'degraded' as const,
+        artifacts: [],
+        projection: {
+          ...file.projection,
+          translationFailures: [{ subtitleId: '1' }],
+        },
+      };
+    if (stage.id === 'dubbing' && file.projection.translationFailures?.length)
+      throw new Error('TRANSLATION_INCOMPLETE');
+    return { outcome: 'executed' as const, artifacts: [] };
+  };
+  // Simulate a saved failure snapshot before the failed downstream stage.
+  const run = ctx.service.get('p')!;
+  const prepare = ctx.service.beginStage('p', ctx.runId, '0', 'prepareInput');
+  ctx.service.finishStage(prepare, {
+    outcome: 'executed',
+    artifacts: [],
+    projection: {
+      ...run.files[0].projection,
+      translationFailures: [{ subtitleId: '1' }],
+    },
+  });
+  assert.equal(await executeFileRun({ ...ctx, execute }), 'failed');
+  ctx.service.recordProofreadEdit({
+    projectId: 'p',
+    runId: ctx.runId,
+    fileId: '0',
+    digest: 'saved-repair',
+    translationFailures: [],
+  });
+  ctx.service.command({
+    projectId: 'p',
+    expectedRunId: ctx.runId,
+    requestId: 'retry-edit',
+    command: 'retry',
+  });
+  assert.equal(await executeFileRun({ ...ctx, execute }), 'completed');
+  assert.deepEqual(
+    ctx.service.get('p')!.files[0].projection.translationFailures,
+    [],
+  );
+  const next = ctx.service.accept({
+    projectId: 'p',
+    requestId: 'next',
+    config: run.config,
+    resolvedConfig: {},
+    files: run.files.map((file) => file.input),
+  });
+  assert.equal(
+    (ctx.service.get('p', next.runId)!.files[0].projection as any)
+      .manualProofreadRevision,
+    undefined,
+  );
+});

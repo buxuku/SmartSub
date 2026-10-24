@@ -15,6 +15,7 @@ export interface StageExecutionContext {
   signal?: AbortSignal;
   progress: (percent: number) => void;
   checkpoint: (file: IFiles) => boolean;
+  activity: (activity: IFiles['taskActivity']) => void;
 }
 export type StageResult = Parameters<TaskRunService['finishStage']>[1];
 export type StageExecutor = (
@@ -67,6 +68,9 @@ export async function executeFileRun(options: {
           service.progress({ ...token, sequence: ++sequence, progress });
         },
         checkpoint: (projection) => service.checkpoint(token, projection),
+        activity: (activity) => {
+          service.activity(token, activity);
+        },
       });
       if ('reviewRevision' in result) {
         service.waitForReview(token, result.projection, result.reviewRevision);

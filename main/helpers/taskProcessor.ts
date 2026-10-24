@@ -14,7 +14,11 @@ import type {
   TaskSubmissionResult,
 } from '../../types/taskSubmission';
 import { persistTaskSubmission } from './taskSubmission';
-import { acceptTaskRun, taskRunService } from './taskRuns/access';
+import {
+  acceptTaskRun,
+  taskRunService,
+  setLegacyTaskBusyResolver,
+} from './taskRuns/access';
 import { isRunLocked } from '../../types/taskRun';
 import { executeFileRun } from './taskRuns/execution';
 import { resolveProviderFallbacks } from './providerMigration';
@@ -198,11 +202,7 @@ function queuedCount(projectId: string): number {
   return processingQueue.filter((item) => item.projectId === projectId).length;
 }
 
-function sendTaskComplete(
-  event: any,
-  projectId: string,
-  status: string,
-) {
+function sendTaskComplete(event: any, projectId: string, status: string) {
   try {
     event?.sender?.send('taskComplete', { projectId, status });
   } catch (error) {
@@ -216,8 +216,18 @@ function finalizeProjectIfDrained(event: any, projectId: string) {
   if (!runtime) return;
   if (runtime.active > 0 || queuedCount(projectId) > 0) return;
   const run = taskRunService()?.get(projectId);
-  if (run && ['paused', 'pausing', 'queued', 'running', 'preparing'].includes(run.status)) return;
-  const status = run ? (run.status === 'succeeded' ? 'completed' : run.status) : runtime.cancelled ? 'cancelled' : 'completed';
+  if (
+    run &&
+    ['paused', 'pausing', 'queued', 'running', 'preparing'].includes(run.status)
+  )
+    return;
+  const status = run
+    ? run.status === 'succeeded'
+      ? 'completed'
+      : run.status
+    : runtime.cancelled
+      ? 'cancelled'
+      : 'completed';
   projectRuntimes.delete(projectId);
   updateTaskbarProgress();
   sendTaskComplete(event, projectId, status);
@@ -237,7 +247,15 @@ function startTaskRun(event: any, input: TaskSubmission): TaskSubmissionResult {
   const {
     result,
     submission: { files, formData },
-  } = managed ? { result: managed.result, submission: { files: managed.run.files.map(f => f.projection), formData: managed.run.config } } : persistTaskSubmission(input, busyFiles);
+  } = managed
+    ? {
+        result: managed.result,
+        submission: {
+          files: managed.run.files.map((f) => f.projection),
+          formData: managed.run.config,
+        },
+      }
+    : persistTaskSubmission(input, busyFiles);
   if (result.duplicate) return result;
   // The durable intent and in-memory queue are published without an await gap.
   dispatchEvent = event;
@@ -249,7 +267,12 @@ function startTaskRun(event: any, input: TaskSubmission): TaskSubmissionResult {
     runtime.controller = new AbortController();
   }
   processingQueue.push(
-    ...files.map((file) => ({ file, formData, projectId: pid, runId: managed?.run.runId })),
+    ...files.map((file) => ({
+      file,
+      formData,
+      projectId: pid,
+      runId: managed?.run.runId,
+    })),
   );
   runtime.total += files.length;
   updateTaskbarProgress();
@@ -311,26 +334,62 @@ async function initializeTaskRun(event: any, formData: any, files: IFiles[]) {
  * 主进程内部派发入口（闸门放行续跑用）：以主窗口 webContents 合成事件 sender，
  * 走与渲染层 handleTask 完全相同的队列/并发/快照路径。窗口不可用时返回 false。
  */
-function queueManagedRun(projectId: string, fileIds?: string[], event = backgroundEvent) {
+function queueManagedRun(
+  projectId: string,
+  fileIds?: string[],
+  event = backgroundEvent,
+) {
   const run = taskRunService()?.get(projectId);
-  if (!run || !['queued', 'running', 'waiting_review'].includes(run.status)) return;
+  if (!run || !['queued', 'running', 'waiting_review'].includes(run.status))
+    return;
   const runtime = ensureRuntime(projectId);
-  runtime.paused = false; runtime.cancelled = false;
-  if (runtime.controller.signal.aborted) runtime.controller = new AbortController();
+  runtime.paused = false;
+  runtime.cancelled = false;
+  if (runtime.controller.signal.aborted)
+    runtime.controller = new AbortController();
   for (const file of run.files) {
     if (fileIds && !fileIds.includes(file.fileId)) continue;
-    if (runtime.activeFiles.has(file.fileId) || processingQueue.some(item => item.projectId === projectId && item.file.uuid === file.fileId)) continue;
-    if (!Object.values(file.stages).some(stage => stage.status === 'pending' && stage.dependencies.every(id => file.stages[id]?.status === 'succeeded'))) continue;
-    processingQueue.push({ projectId, runId: run.runId, file: file.projection, formData: run.config });
+    if (
+      runtime.activeFiles.has(file.fileId) ||
+      processingQueue.some(
+        (item) =>
+          item.projectId === projectId && item.file.uuid === file.fileId,
+      )
+    )
+      continue;
+    if (
+      !Object.values(file.stages).some(
+        (stage) =>
+          stage.status === 'pending' &&
+          stage.dependencies.every(
+            (id) => file.stages[id]?.status === 'succeeded',
+          ),
+      )
+    )
+      continue;
+    processingQueue.push({
+      projectId,
+      runId: run.runId,
+      file: file.projection,
+      formData: run.config,
+    });
   }
   runtime.total = run.files.length;
-  dispatchEvent = event; isProcessing = true;
+  dispatchEvent = event;
+  isProcessing = true;
   void processNextTasks(event);
 }
 function cancelManagedRuntime(projectId: string, event: any) {
-  processingQueue = processingQueue.filter(item => item.projectId !== projectId);
+  processingQueue = processingQueue.filter(
+    (item) => item.projectId !== projectId,
+  );
   const runtime = projectRuntimes.get(projectId);
-  if (runtime) { runtime.cancelled = true; runtime.paused = false; runtime.controller.abort(); killFfmpegForFiles([...runtime.activeFiles]); }
+  if (runtime) {
+    runtime.cancelled = true;
+    runtime.paused = false;
+    runtime.controller.abort();
+    killFfmpegForFiles([...runtime.activeFiles]);
+  }
   finalizeProjectIfDrained(event, projectId);
 }
 export function enqueueProjectFiles(
@@ -342,7 +401,11 @@ export function enqueueProjectFiles(
   try {
     const run = taskRunService()?.get(projectId);
     if (run && isRunLocked(run)) {
-      queueManagedRun(projectId, files.map(file => file.uuid), event);
+      queueManagedRun(
+        projectId,
+        files.map((file) => file.uuid),
+        event,
+      );
       return true;
     }
     return startTaskRun(event, {
@@ -366,14 +429,21 @@ export function enqueueTaskSubmission(
 }
 
 export function setupTaskProcessor(mainWindow: BrowserWindow) {
+  setLegacyTaskBusyResolver(
+    (projectId) =>
+      (projectRuntimes.get(projectId)?.active || 0) > 0 ||
+      processingQueue.some((item) => item.projectId === projectId),
+  );
   progressWindow = mainWindow;
   ipcMain.handle('taskRuns:command', (event, input) => {
     const service = taskRunService();
     if (!service) throw new Error('TASK_RUNTIME_NOT_INITIALIZED');
     const run = service.command(input);
     if (input.command === 'pause') ensureRuntime(input.projectId).paused = true;
-    if (input.command === 'resume' || input.command === 'retry') queueManagedRun(input.projectId, undefined, event);
-    if (input.command === 'cancel') cancelManagedRuntime(input.projectId, event);
+    if (input.command === 'resume' || input.command === 'retry')
+      queueManagedRun(input.projectId, undefined, event);
+    if (input.command === 'cancel')
+      cancelManagedRuntime(input.projectId, event);
     return run;
   });
   ipcMain.handle(
@@ -413,12 +483,26 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
   ipcMain.on('pauseTask', (event, projectId?: string) => {
     if (projectId) {
       const run = taskRunService()?.get(projectId);
-      if (run) taskRunService()!.command({ projectId, expectedRunId: run.runId, requestId: randomUUID(), command: 'pause' });
+      if (run)
+        taskRunService()!.command({
+          projectId,
+          expectedRunId: run.runId,
+          requestId: randomUUID(),
+          command: 'pause',
+        });
       ensureRuntime(projectId).paused = true;
       syncTranscriptionPowerSaveBlocker();
       return;
     }
-    projectRuntimes.forEach((runtime) => {
+    projectRuntimes.forEach((runtime, id) => {
+      const run = taskRunService()?.get(id);
+      if (run && isRunLocked(run))
+        taskRunService()!.command({
+          projectId: id,
+          expectedRunId: run.runId,
+          requestId: randomUUID(),
+          command: 'pause',
+        });
       runtime.paused = true;
     });
     syncTranscriptionPowerSaveBlocker();
@@ -428,13 +512,30 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
     if (projectId) {
       const run = taskRunService()?.get(projectId);
       if (run) {
-        taskRunService()!.command({ projectId, expectedRunId: run.runId, requestId: randomUUID(), command: ['failed', 'interrupted'].includes(run.status) ? 'retry' : 'resume' });
+        taskRunService()!.command({
+          projectId,
+          expectedRunId: run.runId,
+          requestId: randomUUID(),
+          command: ['failed', 'interrupted'].includes(run.status)
+            ? 'retry'
+            : 'resume',
+        });
         queueManagedRun(projectId, undefined, event);
         return;
       }
       ensureRuntime(projectId).paused = false;
     } else {
-      projectRuntimes.forEach((runtime) => {
+      projectRuntimes.forEach((runtime, id) => {
+        const run = taskRunService()?.get(id);
+        if (run?.status === 'paused') {
+          taskRunService()!.command({
+            projectId: id,
+            expectedRunId: run.runId,
+            requestId: randomUUID(),
+            command: 'resume',
+          });
+          queueManagedRun(id, undefined, event);
+        }
         runtime.paused = false;
       });
     }
@@ -456,7 +557,13 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
         );
     for (const id of ids) {
       const run = taskRunService()?.get(id);
-      if (run && isRunLocked(run)) taskRunService()!.command({ projectId: id, expectedRunId: run.runId, requestId: randomUUID(), command: 'cancel' });
+      if (run && isRunLocked(run))
+        taskRunService()!.command({
+          projectId: id,
+          expectedRunId: run.runId,
+          requestId: randomUUID(),
+          command: 'cancel',
+        });
       const beforeCount = processingQueue.length;
       processingQueue = processingQueue.filter((item) => item.projectId !== id);
       const removedCount = beforeCount - processingQueue.length;
@@ -508,7 +615,12 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
     }
     const runtime = projectRuntimes.get(projectId);
     const run = taskRunService()?.get(projectId);
-    if (run) return ['succeeded', 'failed', 'interrupted', 'cancelled'].includes(run.status) ? 'idle' : run.status;
+    if (run)
+      return ['succeeded', 'failed', 'interrupted', 'cancelled'].includes(
+        run.status,
+      )
+        ? 'idle'
+        : run.status;
     const queued = queuedCount(projectId);
     if (!runtime) return queued > 0 ? 'running' : 'idle';
     if (runtime.cancelled) return runtime.active > 0 ? 'cancelling' : 'idle';
@@ -624,9 +736,22 @@ async function processNextTasks(event) {
         if (fileUuid) runtime.activeFiles.add(fileUuid);
         try {
           if (task.runId) {
-            const { createDesktopStageExecutor } = await import('./taskRuns/adapters');
-            const result = await executeFileRun({ service: taskRunService()!, projectId: task.projectId, runId: task.runId, fileId: fileUuid, signal: runtime.controller.signal, execute: createDesktopStageExecutor(event.sender) });
-            if (result === 'paused') { runtime.paused = true; processingQueue.push(task); runtime.completed--; }
+            const { createDesktopStageExecutor } = await import(
+              './taskRuns/adapters'
+            );
+            const result = await executeFileRun({
+              service: taskRunService()!,
+              projectId: task.projectId,
+              runId: task.runId,
+              fileId: fileUuid,
+              signal: runtime.controller.signal,
+              execute: createDesktopStageExecutor(event.sender),
+            });
+            if (result === 'paused') {
+              runtime.paused = true;
+              processingQueue.push(task);
+              runtime.completed--;
+            }
             return;
           }
           const baseProvider = translationProviders.find(

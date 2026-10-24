@@ -284,6 +284,7 @@ interface PreparedHardSubtitle {
 
 /** 运行时挂载：runner 向队列暴露"杀当前 ffmpeg"的取消入口 */
 export interface ComposeRunContext {
+  beforePublish?: () => Promise<void>;
   jobId: string;
   onProgress?: (progress: MergeProgress) => void;
   /** 注册取消函数（每次 ffmpeg 启动前更新；队列 cancel 时调用） */
@@ -530,6 +531,7 @@ export async function runComposeJob(
     }
 
     if (cancelled) throw new Error(MERGE_CANCELLED);
+    await ctx.beforePublish?.();
     const published = await output.publish(publication.signal);
     logMessage(`合成作业完成: ${published}`, 'info');
     emit({ percent: 100, timeMark: '', targetSize: 0, status: 'completed' });

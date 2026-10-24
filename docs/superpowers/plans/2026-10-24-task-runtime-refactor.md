@@ -31,58 +31,60 @@
 
 **Interfaces:** shared stage key registry, planned/legacy stage selection and normalization consumed by UI, migration and startup recovery.
 
-- [ ] Add failing behavioral regression tests for cancelled optional fields (#564), explicit disabled stages, summary recovery and mixed completed/pending files.
-- [ ] Implement a shared stage definition module, use it in stageUtils/workItemMigration/workItemStore, and explicitly reset cancelled stale fields.
-- [ ] Verify the new `test:task-runs` stage cases and existing pipeline, submission, durability, summary/stage/UI tests.
-- [ ] Commit the independently verified fix and update the ledger.
+- [x] Add failing behavioral regression tests for cancelled optional fields (#564), explicit disabled stages, summary recovery and mixed completed/pending files.
+- [x] Implement a shared stage definition module, use it in stageUtils/workItemMigration/workItemStore, and explicitly reset cancelled stale fields.
+- [x] Verify the new `test:task-runs` stage cases and existing pipeline, submission, durability, summary/stage/UI tests.
+- [x] Commit the independently verified fix and update the ledger.
 
 ## Task 2: Immutable runs, snapshots and main-process authority
 
 **Interfaces:** TaskRun/FileRun/StageRun/Artifact models; idempotent run commands, revisioned draft save, get/list state; owned event reducer; effective configuration snapshots.
 
-- [ ] Test durable acceptance/replay/conflict, frozen config, draft conflicts, stale events, restart states and renderer write protection.
-- [ ] Implement shared types, per-run manifest storage/recovery, the run service and configuration materialization with credential references.
-- [ ] Integrate task submission/context/store/IPC; keep old channels as adapters and enforce locks on alternate write paths.
-- [ ] Run `test:task-runs`, submission/durability/defaults/project and automation regression tests; commit and ledger.
+- [x] Test durable acceptance/replay/conflict, frozen config, draft conflicts, stale events, restart states and renderer write protection.
+- [x] Implement shared types, per-run manifest storage/recovery, the run service and configuration materialization with credential references.
+- [x] Integrate task submission/context/store/IPC; keep old channels as adapters and enforce locks on alternate write paths.
+- [x] Run `test:task-runs`, submission/durability/defaults/project and automation regression tests; commit and ledger.
 
 ## Task 3: Stage execution and pause/recovery
 
 **Interfaces:** stage runner context/result/checkpoint, scheduling yield and owned attempts; centralized lifecycle/capability projection.
 
-- [ ] Test pause releasing slots, cancellation barriers, retry attempts, gate/review behavior, failure aggregation and automation waits.
-- [ ] Extract stage adapters from fileProcessor and implement boundary-yield dispatch using the existing queue/resource gates.
-- [ ] Route resume/retry/cancel/manual release/download handoffs/automation through the run service.
-- [ ] Verify focused lifecycle tests and existing pipeline/gates/download/activity/automation tests; commit and ledger.
+- [x] Test pause releasing slots, cancellation barriers, retry attempts, gate/review behavior, failure aggregation and automation waits.
+- [x] Extract stage adapters from fileProcessor and implement boundary-yield dispatch using the existing queue/resource gates.
+- [x] Route resume/retry/cancel/manual release/download handoffs/automation through the run service.
+- [x] Verify focused lifecycle tests and existing pipeline/gates/download/activity/automation tests; commit and ledger.
 
 ## Task 4: Durable artifacts and independent edit/history versions
 
 **Interfaces:** attempt workspace, commit/validate/materialize artifact bundles, input snapshots, run history and reference-aware ownership/deletion.
 
-- [ ] Add `test:stage-artifacts` for non-mutating upstream transforms, commit failures, corruption, output ownership, history/edit separation and references.
-- [ ] Persist immutable ASR/transform/translation/speaker/proofread/dubbing/composition artifacts; snapshot inputs and isolate mutable editor/session data.
-- [ ] Add history/read-only views, safe output allocation and referenced cleanup; bind manual approvals to saved artifacts.
-- [ ] Run artifact, proofreading, dubbing ownership/recovery and export suites; commit and ledger.
+- [x] Add `test:stage-artifacts` for non-mutating upstream transforms, commit failures, corruption, output ownership, history/edit separation and references.
+- [x] Persist immutable ASR/transform/translation/speaker/proofread/dubbing/composition artifacts; snapshot inputs and isolate mutable editor/session data.
+- [x] Add history/read-only views, safe output allocation and referenced cleanup; bind manual approvals to saved artifacts.
+- [x] Run artifact, proofreading, dubbing ownership/recovery and export suites; commit and ledger.
 
 ## Task 5: Fingerprints and all-file incremental reruns
 
 **Interfaces:** stage-specific effective config, dependency lineage, streaming SHA-256, reuse decisions/reason codes, force policy.
 
-- [ ] Add `test:stage-cache` for changed config/input/upstream/implementation, disabling stages, missing output, same-metadata replacement, degraded results and force rerun.
-- [ ] Integrate fingerprint validation into every stage; reevaluate all files and preserve only eligible previous automatic artifacts.
-- [ ] Show input verification, executed/reused/skipped/degraded outcomes and cached source; check dependencies only for actual executions.
-- [ ] Verify controlled full pipelines with exact model/provider invocation counts; commit and ledger.
+- [x] Add `test:stage-cache` for changed config/input/upstream/implementation, disabling stages, missing output, same-metadata replacement, degraded results and force rerun.
+- [x] Integrate fingerprint validation into every stage; reevaluate all files and preserve only eligible previous automatic artifacts.
+- [x] Show input verification, executed/reused/skipped/degraded outcomes and cached source; check dependencies only for actual executions.
+- [x] Verify controlled full pipelines with exact model/provider invocation counts; commit and ledger.
 
 ## Task 6: Compatibility, full UI integration and end-to-end acceptance
 
 **Interfaces:** public task view/commands and legacy projections consumed by all launchers/lists/automation, isolated legacy recovery adapter.
 
-- [ ] Add `test:e2e:task-runs` with isolated user data and generated media for cancellation/retry/pause/history/locks/reuse.
-- [ ] Finish all entrypoint/UI integration, translations, history compatibility, version protection and user documentation.
-- [ ] Run new suites, `test:pro-baseline`, `test:summary`, `test:engines`, `test:automation:regressions`, related Electron tests and app build.
-- [ ] Dispatch independent whole-branch review; fix important findings with regression tests, document coverage limits, commit and ledger.
+- [x] Add `test:e2e:task-runs` with isolated user data and generated media for cancellation/retry/pause/history/locks/reuse.
+- [x] Finish all entrypoint/UI integration, translations, history compatibility, version protection and user documentation.
+- [x] Run new suites, `test:pro-baseline`, `test:summary`, `test:engines`, `test:automation:regressions`, related Electron tests and app build.
+- [x] Dispatch independent whole-branch review; fix important findings with regression tests, document coverage limits, commit and ledger.
 
 ## Delivery
 
 Leave the reviewed implementation on its isolated local branch/worktree. Do not push,
 merge, publish or destroy user data as part of this task. Report verification and
 any material unverified behavior accurately.
+
+Verification and coverage: [task-runtime-verification](2026-10-24-task-runtime-verification.md).

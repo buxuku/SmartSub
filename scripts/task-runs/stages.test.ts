@@ -4,9 +4,33 @@ import {
   getFileStages,
   getFilePercent,
   isProofreadReady,
+  getFileRail,
 } from '../../renderer/components/tasks/stageUtils';
 import { derivePipelineWorkItemStatus } from '../../main/helpers/workItemMigration';
 import { clearInactiveTaskStages } from '../../types/taskStages';
+import { buildFileStagePlan } from '../../types/taskRun';
+
+test('managed rail presents dubbing approval before final track construction', () => {
+  const config = {
+    taskType: 'generateOnly',
+    dub: { providerId: 'tts' },
+    gates: { dubbing: 'manual' },
+  };
+  const file = {
+    filePath: '/clip.mp4',
+    stageRuns: Object.fromEntries(
+      buildFileStagePlan({ filePath: '/clip.mp4' } as any, config).map((id) => [
+        id,
+        { id, status: 'pending' },
+      ]),
+    ),
+  };
+  const keys = getFileRail(file, type as any, config).map((item) =>
+    item.kind === 'stage' ? item.stage.key : item.gate.key,
+  );
+  assert.ok(keys.indexOf('dubbingGate') > keys.indexOf('dubbing'));
+  assert.ok(keys.indexOf('dubbingGate') < keys.indexOf('dubbingTrack'));
+});
 
 const type = {
   slug: 'generate',

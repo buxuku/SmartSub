@@ -13,6 +13,7 @@ import {
   type StageArtifact,
 } from '../../../types/taskRun';
 import type { TaskRunStore } from './store';
+import { assertTaskResultsSaved } from './access';
 
 export function stableJson(value: any): string {
   if (Array.isArray(value))
@@ -27,6 +28,27 @@ export function stableJson(value: any): string {
 }
 export const digestValue = (value: unknown) =>
   createHash('sha256').update(stableJson(value)).digest('hex');
+export function assertValidRunInput(input: {
+  projectId: string;
+  requestId: string;
+  files: IFiles[];
+  config: Record<string, any>;
+}) {
+  if (
+    !input.projectId ||
+    !input.requestId ||
+    !input.files?.length ||
+    input.files.some(
+      (file) =>
+        !file?.uuid || typeof file.filePath !== 'string' || !file.filePath,
+    ) ||
+    !['generateOnly', 'generateAndTranslate', 'translateOnly'].includes(
+      input.config?.taskType,
+    ) ||
+    new Set(input.files.map((file) => file.uuid)).size !== input.files.length
+  )
+    throw new Error('TASK_SUBMISSION_INVALID');
+}
 export function createTaskRunService(
   store: TaskRunStore,
   options: {
@@ -53,6 +75,26 @@ export function createTaskRunService(
     timers.delete(run.projectId);
     options.onChange?.(structuredClone(run));
     return structuredClone(run);
+  }
+  function publishProgress(run: TaskRun) {
+    run.revision++;
+    run.updatedAt = Date.now();
+    progressViews.set(run.projectId, run);
+    options.onProgress?.(structuredClone(run));
+    if (!timers.has(run.projectId)) {
+      const timer = setTimeout(() => {
+        timers.delete(run.projectId);
+        const pending = progressViews.get(run.projectId);
+        if (!pending) return;
+        try {
+          save(pending);
+        } catch (error) {
+          console.error('Task progress flush failed', error);
+        }
+      }, 500);
+      timer.unref?.();
+      timers.set(run.projectId, timer);
+    }
   }
   const active = (run: TaskRun) =>
     run.files.some((file) =>
@@ -105,6 +147,57 @@ export function createTaskRunService(
   return {
     get,
     list: store.list,
+    importLegacyResult(input: {
+      projectId: string;
+      config: Record<string, any>;
+      files: IFiles[];
+      createdAt: number;
+      status: TaskRun['status'];
+    }) {
+      if (store.list(input.projectId).length) return;
+      const run: TaskRun = {
+        schemaVersion: TASK_RUN_SCHEMA_VERSION,
+        projectId: input.projectId,
+        runId: `legacy-${randomUUID()}`,
+        requestId: `legacy:${input.projectId}`,
+        requestFingerprint: digestValue(input),
+        legacy: { configurationComplete: false },
+        config: structuredClone(input.config),
+        resolvedConfig: {},
+        status: input.status,
+        revision: 0,
+        createdAt: input.createdAt,
+        updatedAt: input.createdAt,
+        commands: {},
+        files: input.files.map((file) => ({
+          fileId: file.uuid,
+          input: structuredClone(file),
+          projection: structuredClone(file),
+          stages: Object.fromEntries(
+            buildFileStagePlan(file, input.config).map((id, index, ids) => [
+              id,
+              {
+                id,
+                version: 0,
+                dependencies: index ? [ids[index - 1]] : [],
+                status:
+                  (file as any)[id] === 'done'
+                    ? 'succeeded'
+                    : (file as any)[id] === 'error'
+                      ? 'failed'
+                      : 'pending',
+                sequence: 0,
+                progress: (file as any)[id] === 'done' ? 100 : 0,
+                artifacts: [],
+              },
+            ]),
+          ),
+        })),
+      };
+      // Legacy history is read-only and must never replace the live WorkItem projection.
+      store.write(run);
+      return structuredClone(run);
+    },
     accept(input: {
       projectId: string;
       requestId: string;
@@ -112,13 +205,7 @@ export function createTaskRunService(
       resolvedConfig: Record<string, any>;
       files: IFiles[];
     }) {
-      if (
-        !input.projectId ||
-        !input.requestId ||
-        !input.files.length ||
-        new Set(input.files.map((f) => f.uuid)).size !== input.files.length
-      )
-        throw new Error('TASK_SUBMISSION_INVALID');
+      assertValidRunInput(input);
       // Replay identity is the request, not today's mutable global defaults.
       const fingerprint = digestValue({
         config: input.config,
@@ -202,6 +289,11 @@ export function createTaskRunService(
       const run = get(input.projectId);
       if (!run || run.runId !== input.expectedRunId)
         throw new Error('TASK_RUN_CONFLICT');
+      if (run.legacy) throw new Error('TASK_HISTORY_READ_ONLY');
+      if (input.command === 'resume' || input.command === 'retry')
+        assertTaskResultsSaved(
+          run.files.map((file) => file.projection.proofreadDataFile),
+        );
       const fingerprint = digestValue(input);
       if (run.commands[input.requestId]) {
         if (run.commands[input.requestId].fingerprint !== fingerprint)
@@ -248,6 +340,7 @@ export function createTaskRunService(
     ): AttemptToken {
       const run = get(projectId);
       if (!run || run.runId !== runId) throw new Error('TASK_RUN_CONFLICT');
+      if (run.legacy) throw new Error('TASK_HISTORY_READ_ONLY');
       if (['paused', 'pausing'].includes(run.status))
         throw new Error('TASK_RUN_PAUSED');
       if (
@@ -282,24 +375,16 @@ export function createTaskRunService(
         return false;
       found.stage.sequence = input.sequence;
       found.stage.progress = Math.max(0, Math.min(100, input.progress));
-      found.run.revision++;
-      found.run.updatedAt = Date.now();
-      progressViews.set(input.projectId, found.run);
-      options.onProgress?.(structuredClone(found.run));
-      if (!timers.has(input.projectId)) {
-        const timer = setTimeout(() => {
-          timers.delete(input.projectId);
-          const pending = progressViews.get(input.projectId);
-          if (!pending) return;
-          try {
-            save(pending);
-          } catch (error) {
-            console.error('Task progress flush failed', error);
-          }
-        }, 500);
-        timer.unref?.();
-        timers.set(input.projectId, timer);
-      }
+      publishProgress(found.run);
+      return true;
+    },
+    activity(token: AttemptToken, activity: IFiles['taskActivity']) {
+      const found = owned(token);
+      if (!found) return false;
+      found.run.files.find(
+        (file) => file.fileId === token.fileId,
+      )!.projection.taskActivity = structuredClone(activity);
+      publishProgress(found.run);
       return true;
     },
     finishStage(
@@ -329,7 +414,11 @@ export function createTaskRunService(
         const file = found.run.files.find(
           (file) => file.fileId === token.fileId,
         )!;
-        if (projection) file.projection = structuredClone(projection);
+        if (projection)
+          file.projection = structuredClone({
+            ...projection,
+            taskActivity: file.projection.taskActivity,
+          });
         if (inputDigest) file.inputDigest = inputDigest;
         if (inputIdentity) file.inputIdentity = inputIdentity;
       }
@@ -354,6 +443,34 @@ export function createTaskRunService(
         structuredClone(projection);
       save(found.run);
       return true;
+    },
+    recordProofreadEdit(input: {
+      projectId: string;
+      runId: string;
+      fileId: string;
+      digest: string;
+      translationFailures: IFiles['translationFailures'];
+    }) {
+      const run = get(input.projectId);
+      if (!run || run.runId !== input.runId)
+        throw new Error('TASK_HISTORY_READ_ONLY');
+      if (
+        ![
+          'succeeded',
+          'failed',
+          'interrupted',
+          'cancelled',
+          'waiting_review',
+        ].includes(run.status)
+      )
+        throw new Error('TASK_RESULT_BUSY');
+      const file = run.files.find((file) => file.fileId === input.fileId);
+      if (!file) throw new Error('TASK_FILE_NOT_FOUND');
+      file.projection.translationFailures = structuredClone(
+        input.translationFailures,
+      );
+      (file.projection as any).manualProofreadRevision = input.digest;
+      return save(run);
     },
     waitForReview(token: AttemptToken, projection: IFiles, revision: string) {
       const found = owned(token);

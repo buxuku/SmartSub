@@ -89,6 +89,7 @@ export interface FileRun {
   projection: IFiles;
 }
 export interface TaskRun {
+  legacy?: { configurationComplete: false };
   schemaVersion: number;
   projectId: string;
   runId: string;
@@ -180,10 +181,11 @@ export function buildFileStagePlan(
   if ((config.dub || config.compose) && config.gates?.subtitle === 'manual')
     ids.push('subtitleReview');
   if (config.dub) {
-    ids.push('dubbing', 'dubbingTrack');
+    ids.push('dubbing');
   }
   if (config.dub && config.gates?.dubbing === 'manual')
     ids.push('dubbingReview');
+  if (config.dub) ids.push('dubbingTrack');
   if (config.compose) {
     ids.push('composeVideo');
   }

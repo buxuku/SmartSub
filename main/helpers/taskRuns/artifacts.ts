@@ -46,6 +46,14 @@ export async function copyIndependent(source: string, target: string) {
   await fs.promises.mkdir(path.dirname(target), { recursive: true });
   await fs.promises.copyFile(source, target, fs.constants.COPYFILE_FICLONE);
 }
+export async function assertInputIdentity(
+  filePath: string,
+  identity: { size: number; mtimeMs: number; ctimeMs: number; ino: number },
+) {
+  const now = await fs.promises.stat(filePath);
+  for (const key of ['size', 'mtimeMs', 'ctimeMs', 'ino'] as const)
+    if (now[key] !== identity[key]) throw new Error('TASK_INPUT_CHANGED');
+}
 const safeId = (value: string) =>
   createHash('sha256').update(value).digest('hex').slice(0, 24);
 const within = (root: string, target: string) => {
@@ -127,17 +135,19 @@ export function createStageArtifactStore(manifests: TaskRunStore) {
           });
           return final;
         }
-        if (Array.isArray(value))
-          return Promise.all(value.map((item) => capture(item, key)));
-        if (value && typeof value === 'object')
-          return Object.fromEntries(
-            await Promise.all(
-              Object.entries(value).map(async ([child, item]) => [
-                child,
-                await capture(item, child),
-              ]),
-            ),
-          );
+        // Capture in order: names and reference deduplication share bundle state.
+        // Parallel walks could copy two files to the same index before either hash completes.
+        if (Array.isArray(value)) {
+          const result = [];
+          for (const item of value) result.push(await capture(item, key));
+          return result;
+        }
+        if (value && typeof value === 'object') {
+          const result: Record<string, any> = {};
+          for (const [child, item] of Object.entries(value))
+            result[child] = await capture(item, child);
+          return result;
+        }
         return value;
       }
       try {

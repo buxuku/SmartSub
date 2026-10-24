@@ -528,7 +528,8 @@ export default function TaskPage() {
         const workItem = await window?.ipc?.invoke('getWorkItem', q);
         if (!workItem) throw new Error('TASK_PROJECT_NOT_FOUND');
         rawSnap = workItem.configSnapshot;
-        if (workItem.currentRunId || isPinnedTaskConfigSnapshot(rawSnap)) snapshot = rawSnap;
+        if (workItem.currentRunId || isPinnedTaskConfigSnapshot(rawSnap))
+          snapshot = rawSnap;
         if (!snapshot && workItem.taskDraft) {
           rawSnap = workItem.taskDraft.config;
           savedManuscripts = workItem.taskDraft.manuscripts;
@@ -778,8 +779,16 @@ export default function TaskPage() {
     async (retryFiles: any[]) => {
       if (retrySubmission.starting) return;
       try {
-        if (currentRun && ['failed', 'interrupted'].includes(currentRun.status)) {
-          await window.ipc.invoke('taskRuns:command', { projectId, expectedRunId: currentRun.runId, requestId: uuidv4(), command: 'retry' });
+        if (
+          currentRun &&
+          ['failed', 'interrupted'].includes(currentRun.status)
+        ) {
+          await window.ipc.invoke('taskRuns:command', {
+            projectId,
+            expectedRunId: currentRun.runId,
+            requestId: uuidv4(),
+            command: 'retry',
+          });
           return;
         }
         if (
@@ -841,6 +850,9 @@ export default function TaskPage() {
   const gateReleaseToken = useRef<object>();
   const [gateReleaseError, setGateReleaseError] = useState<string | null>(null);
   const [gateReleasing, setGateReleasing] = useState(false);
+  const beforeReviewRelease = useRef<(() => Promise<boolean>) | null>(null);
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const reviewSavingRef = useRef(false);
   const lastGateRelease = useRef<{
     gate: 'subtitle' | 'dubbing';
     fileUuids?: string[];
@@ -864,6 +876,13 @@ export default function TaskPage() {
       setGateReleasing(true);
       setGateReleaseError(null);
       try {
+        if (
+          gate === 'subtitle' &&
+          proofreadFile &&
+          (!fileUuids || fileUuids.includes(proofreadFile.uuid))
+        ) {
+          if (!(await beforeReviewRelease.current?.())) return false;
+        }
         await releasePipelineGate(
           {
             projectId,
@@ -898,7 +917,7 @@ export default function TaskPage() {
         }
       }
     },
-    [projectId],
+    [projectId, proofreadFile],
   );
 
   const gateReleaseBanner = gateReleaseError && (
@@ -951,10 +970,19 @@ export default function TaskPage() {
   );
 
   const handleReleaseAndNext = useCallback(async () => {
-    if (!proofreadFile) return;
-    if (!(await handleReleaseGate('subtitle', [proofreadFile.uuid]))) return;
-    const next = subtitleReviewQueue.find((f) => f.uuid !== proofreadFile.uuid);
-    setProofreadFile(next ?? null);
+    if (!proofreadFile || reviewSavingRef.current) return;
+    reviewSavingRef.current = true;
+    setReviewSaving(true);
+    try {
+      if (!(await handleReleaseGate('subtitle', [proofreadFile.uuid]))) return;
+      const next = subtitleReviewQueue.find(
+        (f) => f.uuid !== proofreadFile.uuid,
+      );
+      setProofreadFile(next ?? null);
+    } finally {
+      reviewSavingRef.current = false;
+      setReviewSaving(false);
+    }
   }, [proofreadFile, subtitleReviewQueue, handleReleaseGate]);
 
   const handleRetryFailed = handleRetryFiles;
@@ -1405,7 +1433,7 @@ export default function TaskPage() {
             <Button
               size="sm"
               className="h-7 gap-1 text-xs"
-              disabled={gateReleasing}
+              disabled={gateReleasing || reviewSaving}
               onClick={handleReleaseAndNext}
             >
               <Play className="h-3 w-3" />
@@ -1415,8 +1443,14 @@ export default function TaskPage() {
             </Button>
           </div>
         )}
-        <div className="min-h-0 flex-1">
+        <div
+          className="min-h-0 flex-1"
+          ref={(node) => {
+            if (node) node.inert = reviewSaving || gateReleasing;
+          }}
+        >
           <ProofreadEditor
+            beforeReleaseRef={beforeReviewRelease}
             projectId={projectId || undefined}
             file={pendingFileForProofread}
             onMarkComplete={() => setProofreadFile(null)}
@@ -1841,7 +1875,9 @@ export default function TaskPage() {
             ready={
               projectReady &&
               dependencies.loaded &&
-              (Boolean(currentRun) || Boolean(configSnapshot) || Boolean(readiness?.valid))
+              (Boolean(currentRun) ||
+                Boolean(configSnapshot) ||
+                Boolean(readiness?.valid))
             }
             beforeStart={persistence.save}
             promptEmbeddedSubtitles={!configSnapshot}
@@ -1870,15 +1906,19 @@ export default function TaskPage() {
         </div>
       </div>
 
-      <TaskRunHistory runs={runs} editing={!configSnapshot} onEdit={async () => {
-        if (!currentRun || isRunLocked(currentRun)) return;
-        const draft = await window.ipc.invoke('taskRuns:getDraft', projectId);
-        setDraftRevision(draft?.revision || 0);
-        hydrateSnapshot(draft?.config || currentRun.config);
-        setFiles(draft?.files || currentRun.files.map(file => file.input));
-        setConfigSnapshot(null);
-        setTaskStatus('idle');
-      }} />
+      <TaskRunHistory
+        runs={runs}
+        editing={!configSnapshot}
+        onEdit={async () => {
+          if (!currentRun || isRunLocked(currentRun)) return;
+          const draft = await window.ipc.invoke('taskRuns:getDraft', projectId);
+          setDraftRevision(draft?.revision || 0);
+          hydrateSnapshot(draft?.config || currentRun.config);
+          setFiles(draft?.files || currentRun.files.map((file) => file.input));
+          setConfigSnapshot(null);
+          setTaskStatus('idle');
+        }}
+      />
       <LogPanel className="flex-shrink-0" projectId={projectId} />
       {retrySubmission.dialog}
 
