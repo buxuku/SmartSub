@@ -790,5 +790,19 @@
     "processAgain": "重新处理",
     "configLocked": "处理中，参数暂不可修改。取消后可调整参数重新处理。",
     "adjustAndRepeat": "可以直接调整参数后重新处理，未变化的步骤会自动复用。"
+  },
+  "stageSettings": {
+    "label": "处理参数",
+    "subtitle": "字幕",
+    "subtitleTranslate": "字幕与翻译",
+    "dubbing": "配音",
+    "compose": "视频合成",
+    "review": "流程设置",
+    "automatic": "自动继续",
+    "savedValue": "已保存的选择",
+    "choose": "请选择",
+    "dubbingUnavailable": "已保留原来的引擎和音色。当前不可用，请检查服务配置或选择其他音色。",
+    "styleSnapshot": "使用此任务保存的字幕样式；重新选择样式后才会更新。",
+    "composeOptionsUnavailable": "部分合成选项加载失败，已保留任务参数。重新打开页面可重试加载。"
   }
 }

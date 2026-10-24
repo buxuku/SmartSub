@@ -78,6 +78,7 @@ import {
 import { useNavigationGuard } from '@/context/NavigationGuardContext';
 import TaskControls from '@/components/TaskControls';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
+import TaskConfigSections from '@/components/tasks/TaskConfigSections';
 import TaskSettingsSheet from '@/components/tasks/TaskSettingsSheet';
 import type { TaskSettingsTab } from '@/components/tasks/settings/types';
 import TaskLoadStatus from '@/components/tasks/TaskLoadStatus';
@@ -1537,10 +1538,9 @@ export default function TaskPage() {
 
   // 向导任务标题：来自已存配方的任务显示配方名，否则按快照的实际流程
   // （配音/成片）命名，而非固定的字幕段类型
-  const pipelineTitleKey = getPipelineTitleKey(configSnapshot, typeDef.accepts);
+  const pipelineTitleKey = getPipelineTitleKey(formData, typeDef.accepts);
   const pageTitle =
-    configSnapshot?.recipeName ||
-    t(`pageTitle.${pipelineTitleKey ?? typeDef.slug}`);
+    formData?.recipeName || t(`pageTitle.${pipelineTitleKey ?? typeDef.slug}`);
 
   if (proofreadFile && pendingFileForProofread) {
     // 检查员包壳：停靠在字幕校对点的文件叠加「放行并继续」动线（流式审片）
@@ -1639,35 +1639,45 @@ export default function TaskPage() {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <Tabs
-            value={slug}
-            onValueChange={handleModeChange}
-            className="shrink-0"
-          >
-            <TabsList className="h-8">
-              <TabsTrigger
-                value="generate-translate"
-                disabled={queueBusy || isSwitchingMode}
-                className="h-7 text-xs px-2.5 sm:px-3"
-              >
-                {t('pageTitle.generate-translate')}
-              </TabsTrigger>
-              <TabsTrigger
-                value="generate"
-                disabled={queueBusy || isSwitchingMode}
-                className="h-7 text-xs px-2.5 sm:px-3"
-              >
-                {t('pageTitle.generate')}
-              </TabsTrigger>
-              <TabsTrigger
-                value="translate"
-                disabled={queueBusy || isSwitchingMode}
-                className="h-7 text-xs px-2.5 sm:px-3"
-              >
-                {t('pageTitle.translate')}
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          {pipelineTitleKey ? (
+            <h1
+              className="min-w-0 shrink truncate text-base font-semibold"
+              title={pageTitle}
+              data-testid="task-pipeline-title"
+            >
+              {pageTitle}
+            </h1>
+          ) : (
+            <Tabs
+              value={slug}
+              onValueChange={handleModeChange}
+              className="shrink-0"
+            >
+              <TabsList className="h-8">
+                <TabsTrigger
+                  value="generate-translate"
+                  disabled={queueBusy || isSwitchingMode}
+                  className="h-7 text-xs px-2.5 sm:px-3"
+                >
+                  {t('pageTitle.generate-translate')}
+                </TabsTrigger>
+                <TabsTrigger
+                  value="generate"
+                  disabled={queueBusy || isSwitchingMode}
+                  className="h-7 text-xs px-2.5 sm:px-3"
+                >
+                  {t('pageTitle.generate')}
+                </TabsTrigger>
+                <TabsTrigger
+                  value="translate"
+                  disabled={queueBusy || isSwitchingMode}
+                  className="h-7 text-xs px-2.5 sm:px-3"
+                >
+                  {t('pageTitle.translate')}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
           {editingName ? (
             <div className="flex items-center gap-1 min-w-0">
               <Input
@@ -1793,21 +1803,33 @@ export default function TaskPage() {
         {router.query.project && !projectIdRef.current ? (
           <div className="h-12 w-full animate-pulse rounded-lg border bg-muted/20" />
         ) : (
-          <InlineConfigBar
-            disabled={configLocked}
+          <TaskConfigSections
+            key={projectId}
             form={form}
             formData={formData}
-            systemInfo={systemInfo}
-            providers={providers}
-            asrProviders={asrProviders as any}
-            typeDef={typeDef}
-            useLocalWhisper={useLocalWhisper}
-            refineOpen={refinePopoverOpen}
-            onRefineOpenChange={setRefinePopoverOpen}
-            summaryOpen={summaryPopoverOpen}
-            onSummaryOpenChange={setSummaryPopoverOpen}
-            onOpenSettings={openSettings}
-          />
+            disabled={configLocked}
+            composePreferences={
+              configLocked
+                ? currentRun?.resolvedConfig.mergePreferences
+                : undefined
+            }
+          >
+            <InlineConfigBar
+              disabled={configLocked}
+              form={form}
+              formData={formData}
+              systemInfo={systemInfo}
+              providers={providers}
+              asrProviders={asrProviders as any}
+              typeDef={typeDef}
+              useLocalWhisper={useLocalWhisper}
+              refineOpen={refinePopoverOpen}
+              onRefineOpenChange={setRefinePopoverOpen}
+              summaryOpen={summaryPopoverOpen}
+              onSummaryOpenChange={setSummaryPopoverOpen}
+              onOpenSettings={openSettings}
+            />
+          </TaskConfigSections>
         )}
       </div>
 
@@ -2151,6 +2173,8 @@ export async function getStaticProps(context) {
       'common',
       'home',
       'tasks',
+      'dubbing',
+      'subtitleMerge',
       'translateControl',
     ]),
   };

@@ -152,6 +152,26 @@ export function projectRunFiles(run: TaskRun): IFiles[] {
     taskRunId: run.runId,
     taskRunRevision: run.revision,
     stageRuns: file.stages,
+    // A terminal run retains its historical checkpoint, but cannot be released.
+    ...(TERMINAL_RUN_STATUSES.includes(run.status)
+      ? Object.fromEntries(
+          ['subtitleGate', 'dubbingGate'].map((key) => [
+            key,
+            file.projection[key] === 'review'
+              ? 'pending'
+              : file.projection[key],
+          ]),
+        )
+      : {}),
+    ...(['cancelled', 'interrupted'].includes(run.status) &&
+    Object.values(file.stages).some((stage) => stage.status !== 'succeeded')
+      ? {
+          taskActivity: {
+            ...file.projection.taskActivity,
+            status: run.status as 'cancelled' | 'interrupted',
+          },
+        }
+      : {}),
   }));
 }
 
