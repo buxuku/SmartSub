@@ -3,6 +3,7 @@ import { latestTaskActivity } from '../../types/taskActivity';
 import { IFiles, TaskProject, TaskProjectType } from '../../types';
 import { isPipelineWorkItem, type WorkItem } from '../../types/workItem';
 import { getTaskContext } from './taskContext';
+import { assertLegacyTaskWriteAllowed, requireTaskRunService as getRunService } from './taskRuns/access';
 import {
   deleteWorkItem,
   getWorkItemById,
@@ -62,6 +63,8 @@ export function applyTaskEventToProjects(
 
   const workItem = findWorkItemByFileUuid(uuid, file.taskProjectId);
   if (!workItem || !isPipelineWorkItem(workItem)) return;
+  // New run projections are only published by the run service after a durable commit.
+  if (workItem.currentRunId) return;
 
   const pipelineFiles = (workItem.pipelineFiles || []).map((item) => {
     if (item.uuid !== uuid) return item;
@@ -107,6 +110,10 @@ export function applyTaskEventToProjects(
 
 /** @deprecated 请使用 getWorkItems；保留兼容 shim */
 export function setupTaskManager() {
+  ipcMain.handle('taskRuns:get', (_event, { projectId, runId }) => getRunService().get(projectId, runId));
+  ipcMain.handle('taskRuns:list', (_event, projectId: string) => getRunService().list(projectId));
+  ipcMain.handle('taskRuns:getDraft', (_event, projectId: string) => getRunService().getDraft(projectId));
+  ipcMain.handle('taskRuns:saveDraft', (_event, input) => getRunService().saveDraft(input));
   ipcMain.handle('getTaskProjects', () => listTaskProjects());
 
   ipcMain.handle('getTaskProject', (_event, id: string) => {
@@ -129,6 +136,7 @@ export function setupTaskManager() {
     ) => {
       const { id, taskType, files, name, taskDraft } = payload || {};
       if (!id) return null;
+      assertLegacyTaskWriteAllowed(id);
 
       if (!Array.isArray(files)) throw new Error('TASK_FILES_INVALID');
       if (

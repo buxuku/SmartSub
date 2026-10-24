@@ -16,6 +16,7 @@ export type TaskSubmissionResult =
       requestId: string;
       acceptedFileUuids: string[];
       duplicate: boolean;
+      runId?: string;
     }
   | { success: false; error: string };
 

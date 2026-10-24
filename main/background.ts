@@ -23,6 +23,7 @@ import { setupTaskProcessor } from './helpers/taskProcessor';
 import { setupSystemInfoManager } from './helpers/systemInfoManager';
 import { setupStoreHandlers, store, logMessage } from './helpers/storeManager';
 import { setupTaskManager } from './helpers/taskManager';
+import { initializeTaskRuns } from './helpers/taskRuns/runtime';
 import {
   initializeWorkItemStore,
   flushWorkItemStore,
@@ -304,6 +305,7 @@ app.on('before-quit', (event) => {
   setupEmbeddedSubtitleHandlers();
   setupSystemInfoManager(mainWindow);
   initializeWorkItemStore();
+  initializeTaskRuns();
   setupWorkItemHandlers();
   setupRecipeHandlers();
   setupGlossaryHandlers(mainWindow);

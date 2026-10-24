@@ -2,6 +2,9 @@ import type { TaskActivityReporter } from './taskActivity';
 import { AsyncLocalStorage } from 'async_hooks';
 
 export interface TaskRunContext {
+  runId?: string;
+  resolvedConfig?: Record<string, any>;
+  attemptId?: string;
   activity?: TaskActivityReporter;
   projectId?: string;
   fileUuid?: string;
