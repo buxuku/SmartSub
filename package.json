@@ -46,6 +46,7 @@
     "test:navigation-save": "tsx scripts/test-navigation-save.ts",
     "test:work-item-durability": "node scripts/test-work-item-durability.cjs",
     "test:provider-health": "tsx scripts/test-provider-health.ts",
+    "test:task-runs": "node --import tsx --test scripts/task-runs/*.test.ts",
     "test:task-draft": "tsx --tsconfig renderer/tsconfig.json scripts/test-unified-task-draft.ts",
     "test:task-project": "tsx --tsconfig renderer/tsconfig.json scripts/test-task-project-persistence.tsx",
     "test:e2e:task-project": "node scripts/e2e/task-project-persistence.mjs",

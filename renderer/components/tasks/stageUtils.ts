@@ -1,18 +1,12 @@
 import { isSubtitleFile } from '../../lib/utils';
 import type { TaskTypeDef } from '../../lib/taskTypes';
-import { supportsSpeakerDiarizationTask } from '../../../types/speakerDiarization';
+import {
+  getTaskFileStageKeys,
+  TASK_STAGE_LABELS,
+  type TaskStageKey,
+} from '../../../types/taskStages';
 
-export type StageKey =
-  | 'extractAudio'
-  | 'extractSubtitle'
-  | 'refineSubtitle'
-  | 'manuscriptMatch'
-  | 'summarizeEpisode'
-  | 'translateSubtitle'
-  | 'speakerDiarization'
-  | 'exportSubtitle'
-  | 'dubbing'
-  | 'composeVideo';
+export type StageKey = Exclude<TaskStageKey, 'prepareSubtitle'>;
 export type StageStatus = 'pending' | 'loading' | 'done' | 'error';
 
 export interface StageDef {
@@ -30,83 +24,9 @@ export function getFileStages(
   typeDef: TaskTypeDef,
   formData: any,
 ): StageDef[] {
-  const subtitleInput = isSubtitleFile(file?.filePath || '');
-  // 配对模式（媒体携带既有字幕）：跳过提取/听写，不在轨道上展示
-  const hasProvidedSubtitle = Boolean(file?.providedSubtitlePath);
-  const stages: StageDef[] = [];
-  if (
-    !subtitleInput &&
-    hasProvidedSubtitle &&
-    formData?.speakerDiarization === true
-  ) {
-    stages.push({ key: 'extractAudio', labelKey: 'stage.extract' });
-  }
-  if (!subtitleInput && !hasProvidedSubtitle) {
-    stages.push({ key: 'extractAudio', labelKey: 'stage.extract' });
-    stages.push({ key: 'extractSubtitle', labelKey: 'stage.transcribe' });
-    // AI 字幕精修：配置快照声明开启，或文件上已有阶段状态（旧记录无该阶段不渲染）
-    if (
-      formData?.aiSegmentation === true ||
-      formData?.aiCorrection === true ||
-      file?.refineSubtitle !== undefined
-    ) {
-      stages.push({ key: 'refineSubtitle', labelKey: 'stage.refine' });
-    }
-    const hasFileManuscript =
-      file?.manuscriptPath && file.manuscriptPath !== '__none__';
-    const isExplicitNone = file?.manuscriptPath === '__none__';
-    const hasGlobalManuscript =
-      Boolean(formData?.manuscriptPath) &&
-      formData.manuscriptPath !== '__none__';
-    const shouldMatchManuscript =
-      hasFileManuscript ||
-      (!isExplicitNone && hasGlobalManuscript) ||
-      file?.manuscriptMatch !== undefined;
-
-    if (shouldMatchManuscript) {
-      stages.push({
-        key: 'manuscriptMatch',
-        labelKey: 'stage.manuscript',
-      });
-    }
-  }
-  if (
-    typeDef.hasTranslate &&
-    formData?.translateProvider !== '-1' &&
-    (formData?.generateSummary === true ||
-      file?.summarizeEpisode !== undefined)
-  ) {
-    stages.push({ key: 'summarizeEpisode', labelKey: 'stage.summarize' });
-  }
-  if (typeDef.hasTranslate && formData?.translateProvider !== '-1') {
-    stages.push({ key: 'translateSubtitle', labelKey: 'stage.translate' });
-  }
-  // 角色分离是标准转写任务的独立后处理阶段：翻译之后、任何附加阶段之前。
-  if (
-    !subtitleInput &&
-    supportsSpeakerDiarizationTask(formData) &&
-    (formData?.speakerDiarization === true ||
-      file?.speakerDiarization !== undefined)
-  ) {
-    stages.push({
-      key: 'speakerDiarization',
-      labelKey: 'stage.speakerDiarization',
-    });
-  }
-  if (
-    file?.exportSubtitle !== undefined ||
-    formData?.subtitleOutputFormats?.length > 1
-  ) {
-    stages.push({ key: 'exportSubtitle', labelKey: 'stage.export' });
-  }
-  // 附加阶段：配置快照声明，或文件上已有阶段状态（快照缺失时兜底）
-  if (formData?.dub || file?.dubbing !== undefined) {
-    stages.push({ key: 'dubbing', labelKey: 'stage.dubbing' });
-  }
-  if (formData?.compose || file?.composeVideo !== undefined) {
-    stages.push({ key: 'composeVideo', labelKey: 'stage.compose' });
-  }
-  return stages;
+  return getTaskFileStageKeys(file, formData, typeDef.taskType)
+    .filter((key): key is StageKey => key !== 'prepareSubtitle')
+    .map((key) => ({ key, labelKey: TASK_STAGE_LABELS[key] }));
 }
 
 export function getStageStatus(file: any, key: StageKey): StageStatus {

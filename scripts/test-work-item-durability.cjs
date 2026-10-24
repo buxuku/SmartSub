@@ -367,6 +367,7 @@ const legacy = [
     uuid: 'legacy-file',
     fileName: 'legacy.mp4',
     refineSubtitle: 'loading',
+    summarizeEpisode: 'loading',
     manuscriptMatch: 'loading',
     speakerDiarization: 'loading',
   },
@@ -387,6 +388,7 @@ assert.ok(
 assert.equal(migration.disk().workItems[0].status, 'interrupted');
 for (const stage of [
   'refineSubtitle',
+  'summarizeEpisode',
   'manuscriptMatch',
   'speakerDiarization',
 ]) {

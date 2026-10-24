@@ -1,3 +1,4 @@
+import { TASK_STAGE_KEYS as STAGE_KEYS } from '../../types/taskStages';
 import { store } from './store';
 import type { IFiles, TaskProject } from '../../types';
 import type { ProofreadTask } from '../../types/proofread';
@@ -26,19 +27,6 @@ function normalizeProofreadStatus(item: WorkItem): WorkItem {
       status === 'done' ? (item.finishedAt ?? item.updatedAt) : undefined,
   };
 }
-
-const STAGE_KEYS = [
-  'extractAudio',
-  'extractSubtitle',
-  'refineSubtitle',
-  'manuscriptMatch',
-  'translateSubtitle',
-  'prepareSubtitle',
-  'speakerDiarization',
-  'exportSubtitle',
-  'dubbing',
-  'composeVideo',
-] as const;
 
 function markInterruptedFile(file: IFiles): IFiles {
   const next: Record<string, any> = { ...file };
