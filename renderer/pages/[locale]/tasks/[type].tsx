@@ -78,7 +78,6 @@ import {
 import { useNavigationGuard } from '@/context/NavigationGuardContext';
 import TaskControls from '@/components/TaskControls';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
-import SnapshotConfigBar from '@/components/tasks/SnapshotConfigBar';
 import TaskSettingsSheet from '@/components/tasks/TaskSettingsSheet';
 import type { TaskSettingsTab } from '@/components/tasks/settings/types';
 import TaskLoadStatus from '@/components/tasks/TaskLoadStatus';
@@ -106,7 +105,8 @@ import { correctedSourceSrtSaveOption } from '../../../../types/sourceSrtSave';
 import { useTranslation } from 'next-i18next';
 import { toast } from 'sonner';
 import { useTaskRuns } from 'hooks/useTaskRuns';
-import { TaskRunHistory } from '@/components/tasks/TaskRunHistory';
+import { editableRunState, taskDraftInput } from 'lib/taskRunDraft';
+import isEqual from 'lodash/isEqual';
 import { isRunLocked } from '../../../../types/taskRun';
 
 export default function TaskPage() {
@@ -121,12 +121,31 @@ export default function TaskPage() {
   const confirmOrUndo = useConfirmOrUndo();
   const [files, setFiles] = useState([]);
   const [projectId, setProjectId] = useState<string | null>(null);
-  const { runs, currentRun } = useTaskRuns(projectId);
+  const { currentRun } = useTaskRuns(projectId);
+  const [editableRunId, setEditableRunId] = useState<string | null>(null);
+  const [expectedRunId, setExpectedRunId] = useState<string | null>(null);
+  const [draftLoadError, setDraftLoadError] = useState<string | null>(null);
   const [draftRevision, setDraftRevision] = useState(0);
   const [projectName, setProjectName] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [taskStatus, setTaskStatus] = useState('idle');
+  const processingLocked =
+    isRunLocked(currentRun) ||
+    [
+      'preparing',
+      'queued',
+      'running',
+      'pausing',
+      'paused',
+      'cancelling',
+      'review',
+      'waiting_review',
+    ].includes(taskStatus);
+  const configLocked =
+    processingLocked ||
+    Boolean(expectedRunId && !currentRun) ||
+    Boolean(currentRun && editableRunId !== currentRun.runId);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** 更多设置停在哪一页：再次打开回到上次停留的页，场景弹层的「专家设置」直达专家页 */
   const [settingsTab, setSettingsTab] = useState<TaskSettingsTab>('common');
@@ -158,17 +177,27 @@ export default function TaskPage() {
   } = useUnifiedTaskConfig({
     autoLoad: false,
     // 用户在任务页调整的参数实时记为新任务默认值；固定快照页只读，不记。
-    syncDefaults: !configSnapshot,
+    syncDefaults: !configLocked && !draftLoadError,
   });
   /** 列表/横幅的有效配置：固定任务用快照，否则使用当前表单。 */
   const listFormData = configSnapshot ?? formData;
-  useEffect(() => {
-    if (!currentRun) return;
-    setConfigSnapshot(currentRun.config);
-    hydrateSnapshot(currentRun.config);
-    setTaskStatus(currentRun.status);
-    setSettingsOpen(false);
-  }, [currentRun?.runId]);
+  const resultTypeDef =
+    TASK_TYPES.find((def) => def.taskType === configSnapshot?.taskType) ||
+    typeDef;
+  const runConfigChanged = Boolean(
+    currentRun &&
+      !isEqual(
+        buildTaskSnapshotFromConfig(formData),
+        buildTaskSnapshotFromConfig(currentRun.config),
+      ),
+  );
+  const runInputsChanged = Boolean(
+    currentRun &&
+      !isEqual(
+        files.map((file) => taskDraftInput(file, currentRun)),
+        currentRun.files.map((file) => taskDraftInput(file.input)),
+      ),
+  );
   /** 来自加载（而非用户/任务事件）的 files 引用，避免回写存储 */
   const loadedFilesRef = useRef<any[] | null>(null);
   const projectIdRef = useRef<string | null>(null);
@@ -231,23 +260,54 @@ export default function TaskPage() {
       isTaskRouteHydrated({ hydratedRoute, slug, queryProject, projectId }) &&
       configLoaded,
   );
+  const runLocked = isRunLocked(currentRun);
+  useEffect(() => {
+    if (!currentRun || !projectReady) return;
+    let disposed = false;
+    setConfigSnapshot(currentRun.config);
+    setTaskStatus(currentRun.status);
+    setDraftLoadError(null);
+    if (runLocked) {
+      setEditableRunId(null);
+      hydrateSnapshot(currentRun.config);
+      setSettingsOpen(false);
+      setRefinePopoverOpen(false);
+      setSummaryPopoverOpen(false);
+    } else {
+      void window.ipc
+        .invoke('taskRuns:getDraft', currentRun.projectId)
+        .then((draft) => {
+          if (disposed) return;
+          const next = editableRunState(currentRun, draft);
+          setDraftRevision(next.draftRevision);
+          hydrateSnapshot(next.config);
+          setFiles(next.files);
+          setEditableRunId(currentRun.runId);
+        })
+        .catch((error) => {
+          if (!disposed) setDraftLoadError(String(error));
+        });
+    }
+    return () => {
+      disposed = true;
+    };
+  }, [currentRun?.runId, runLocked, projectReady, loadAttempt, slug]);
+
   const projectPayload: TaskProjectSave | null =
-    projectReady && typeDef && !(currentRun && configSnapshot)
+    projectReady && typeDef && !configLocked && !draftLoadError
       ? {
           id: projectId!,
           ...(currentRun ? { runId: currentRun.runId, draftRevision } : {}),
           taskType: typeDef.taskType,
-          files,
-          ...(configSnapshot
-            ? {}
-            : {
-                taskDraft: {
-                  config: buildTaskSnapshotFromConfig(formData, {
-                    taskType: typeDef.taskType,
-                  }),
-                  manuscripts: manuscriptPool,
-                },
-              }),
+          files: currentRun
+            ? files.map((file) => taskDraftInput(file, currentRun))
+            : files,
+          taskDraft: {
+            config: buildTaskSnapshotFromConfig(formData, {
+              taskType: typeDef.taskType,
+            }),
+            manuscripts: manuscriptPool,
+          },
           preserveTaskProgress: true,
         }
       : null;
@@ -431,6 +491,7 @@ export default function TaskPage() {
   // 统一导入入口：支持文件选择对话框（file-selected）与外部事件传入
   const appendFiles = useCallback(
     (incoming: IFiles[]) => {
+      if (configLocked) return;
       if (!incoming?.length) return;
 
       // 若当前任务为需要模型的媒体转写类任务，支持自动分离媒体与参考文稿并进行同名配对
@@ -461,13 +522,20 @@ export default function TaskPage() {
         toast.info(t('skippedDuplicates', { count: skipped }));
       }
     },
-    [files, typeDef?.needsModel, handleIncomingMediaAndManuscripts, t],
+    [
+      files,
+      typeDef?.needsModel,
+      handleIncomingMediaAndManuscripts,
+      t,
+      configLocked,
+    ],
   );
 
   const { hydrateFiles } = useIpcCommunication(
     setFiles,
     appendFiles,
     typeof router.query.project === 'string' ? router.query.project : projectId,
+    currentRun && !configLocked ? currentRun.runId : undefined,
   );
 
   useEffect(() => {
@@ -516,8 +584,14 @@ export default function TaskPage() {
       let name: string | null = null;
       let snapshot: any = null;
       let rawSnap: any = null;
+      let nextExpectedRunId: string | null = null;
       let savedManuscripts: IFiles[] | undefined;
       const id = q || uuidv4();
+      if (!q) {
+        setExpectedRunId(null);
+        setEditableRunId(null);
+        setTaskStatus('idle');
+      }
       if (q) {
         const project = await window?.ipc?.invoke('getTaskProject', q);
         if (project) {
@@ -527,7 +601,26 @@ export default function TaskPage() {
         // 附加阶段、参考文稿及角色分离是任务级输入：创建后固定快照。
         const workItem = await window?.ipc?.invoke('getWorkItem', q);
         if (!workItem) throw new Error('TASK_PROJECT_NOT_FOUND');
+        nextExpectedRunId = workItem.currentRunId || null;
         rawSnap = workItem.configSnapshot;
+        if (
+          workItem.currentRunId &&
+          ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(
+            workItem.runStatus,
+          )
+        ) {
+          const draft = await window.ipc.invoke('taskRuns:getDraft', q);
+          if (cancelled) return;
+          const draftType =
+            draft?.basedOnRunId === workItem.currentRunId &&
+            TASK_TYPES.find((def) => def.taskType === draft.config.taskType);
+          if (draftType && draftType.slug !== slug) {
+            await router.replace(
+              `/${locale}/tasks/${draftType.slug}?project=${encodeURIComponent(q)}`,
+            );
+            return;
+          }
+        }
         if (workItem.currentRunId || isPinnedTaskConfigSnapshot(rawSnap))
           snapshot = rawSnap;
         if (!snapshot && workItem.taskDraft) {
@@ -542,6 +635,7 @@ export default function TaskPage() {
       }
       assertTaskConfig(rawSnap);
       if (cancelled) return;
+      setExpectedRunId(nextExpectedRunId);
       projectIdRef.current = id;
       loadedSlugRef.current = slug;
       // 经 hydrateFiles 合并装载窗口内暂存的任务事件（向导起跑后立刻跳转时，
@@ -777,10 +871,12 @@ export default function TaskPage() {
   const retrySubmission = useTaskSubmission();
   const handleRetryFiles = useCallback(
     async (retryFiles: any[]) => {
-      if (retrySubmission.starting) return;
+      if (retrySubmission.starting || configLocked || draftLoadError) return;
       try {
         if (
           currentRun &&
+          !runConfigChanged &&
+          !runInputsChanged &&
           ['failed', 'interrupted'].includes(currentRun.status)
         ) {
           await window.ipc.invoke('taskRuns:command', {
@@ -800,7 +896,9 @@ export default function TaskPage() {
           toast.error(t('subtitleFilesRequired'));
           return;
         }
-        const snapshot = buildTaskSnapshotFromConfig(listFormData);
+        const snapshot = buildTaskSnapshotFromConfig(
+          currentRun ? formData : listFormData,
+        );
         // A retry reproduces the configuration the task already ran with, so it never
         // asks again whether to use the embedded subtitles.
         const outcome = await retrySubmission.submit(
@@ -824,7 +922,20 @@ export default function TaskPage() {
         toast.error(error instanceof Error ? error.message : String(error));
       }
     },
-    [listFormData, projectId, typeDef, retrySubmission, t, currentRun, files],
+    [
+      listFormData,
+      formData,
+      runConfigChanged,
+      runInputsChanged,
+      projectId,
+      typeDef,
+      retrySubmission,
+      configLocked,
+      draftLoadError,
+      t,
+      currentRun,
+      files,
+    ],
   );
 
   const handleRetry = useCallback(
@@ -988,6 +1099,7 @@ export default function TaskPage() {
   const handleRetryFailed = handleRetryFiles;
 
   const handleImport = useCallback(() => {
+    if (configLocked) return;
     const fileType =
       typeDef?.accepts === 'subtitle'
         ? 'srt'
@@ -995,7 +1107,7 @@ export default function TaskPage() {
           ? 'media-and-manuscript'
           : 'media';
     window?.ipc?.send('openDialog', { dialogType: 'openDialog', fileType });
-  }, [typeDef]);
+  }, [typeDef, configLocked]);
 
   // Cmd/Ctrl+O 导入文件（任务页范围）
   useHotkeys([
@@ -1004,7 +1116,7 @@ export default function TaskPage() {
 
   // 任务运行/取消中禁止破坏性列表操作（删行/清空），避免主进程仍处理已移除文件
   const queueBusy =
-    isRunLocked(currentRun) ||
+    configLocked ||
     taskStatus === 'running' ||
     taskStatus === 'paused' ||
     taskStatus === 'cancelling';
@@ -1043,15 +1155,18 @@ export default function TaskPage() {
 
   const handleProofread = useCallback(
     (file: IFiles) => {
-      if (!typeDef) return;
-      const unavailableReason = getProofreadUnavailableReason(file, typeDef);
+      if (!resultTypeDef) return;
+      const unavailableReason = getProofreadUnavailableReason(
+        file,
+        resultTypeDef,
+      );
       if (unavailableReason === 'txt') {
         toast.info(t('row.proofreadTxtUnsupported'));
         return;
       }
       setProofreadFile(file);
     },
-    [t, typeDef],
+    [t, resultTypeDef],
   );
 
   const startRename = () => {
@@ -1119,18 +1234,35 @@ export default function TaskPage() {
         } else {
           if (projectId) {
             try {
-              const saved = await window?.ipc?.invoke('saveTaskProject', {
-                id: projectId,
-                taskType: targetTypeDef.taskType,
-                files,
-                taskDraft: {
+              let saved;
+              if (currentRun) {
+                const previous = await window.ipc.invoke(
+                  'taskRuns:getDraft',
+                  projectId,
+                );
+                saved = await window.ipc.invoke('taskRuns:saveDraft', {
+                  projectId,
+                  expectedDraftRevision: previous?.revision || 0,
                   config: buildTaskSnapshotFromConfig(form.getValues(), {
                     taskType: targetTypeDef.taskType,
                   }),
-                  manuscripts: manuscriptPool,
-                },
-                preserveTaskProgress: true,
-              });
+                  files: files.map((file) => taskDraftInput(file, currentRun)),
+                });
+                setEditableRunId(null);
+              } else {
+                saved = await window?.ipc?.invoke('saveTaskProject', {
+                  id: projectId,
+                  taskType: targetTypeDef.taskType,
+                  files,
+                  taskDraft: {
+                    config: buildTaskSnapshotFromConfig(form.getValues(), {
+                      taskType: targetTypeDef.taskType,
+                    }),
+                    manuscripts: manuscriptPool,
+                  },
+                  preserveTaskProgress: true,
+                });
+              }
               if (!saved) {
                 toast.error(t('modeSwitch.saveFailed'));
                 return;
@@ -1160,6 +1292,7 @@ export default function TaskPage() {
       t,
       persistence.save,
       manuscriptPool,
+      currentRun,
     ],
   );
 
@@ -1212,6 +1345,7 @@ export default function TaskPage() {
 
   const handleAssignManuscript = useCallback(
     (targetFile: IFiles, manuscriptPath: string, manuscriptName?: string) => {
+      if (configLocked) return;
       if (manuscriptPath && manuscriptPath !== '__none__') {
         const name =
           manuscriptName ||
@@ -1259,13 +1393,13 @@ export default function TaskPage() {
         }),
       );
     },
-    [],
+    [configLocked],
   );
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (!typeDef) return;
+    if (!typeDef || configLocked) return;
 
     const paths: string[] = [];
     const droppedFiles = e.dataTransfer.files;
@@ -1309,7 +1443,7 @@ export default function TaskPage() {
   const pendingFileForProofread = useMemo(() => {
     if (!proofreadFile || !typeDef) return null;
 
-    const isGenerateOnly = typeDef.taskType === 'generateOnly';
+    const isGenerateOnly = listFormData.taskType === 'generateOnly';
 
     const videoPath = isSubtitleFile(proofreadFile.filePath)
       ? undefined
@@ -1505,44 +1639,35 @@ export default function TaskPage() {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          {configSnapshot ? (
-            <h1
-              className="shrink-0 truncate text-lg font-semibold"
-              title={pageTitle}
-            >
-              {pageTitle}
-            </h1>
-          ) : (
-            <Tabs
-              value={slug}
-              onValueChange={handleModeChange}
-              className="shrink-0"
-            >
-              <TabsList className="h-8">
-                <TabsTrigger
-                  value="generate-translate"
-                  disabled={queueBusy || isSwitchingMode}
-                  className="h-7 text-xs px-2.5 sm:px-3"
-                >
-                  {t('pageTitle.generate-translate')}
-                </TabsTrigger>
-                <TabsTrigger
-                  value="generate"
-                  disabled={queueBusy || isSwitchingMode}
-                  className="h-7 text-xs px-2.5 sm:px-3"
-                >
-                  {t('pageTitle.generate')}
-                </TabsTrigger>
-                <TabsTrigger
-                  value="translate"
-                  disabled={queueBusy || isSwitchingMode}
-                  className="h-7 text-xs px-2.5 sm:px-3"
-                >
-                  {t('pageTitle.translate')}
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          )}
+          <Tabs
+            value={slug}
+            onValueChange={handleModeChange}
+            className="shrink-0"
+          >
+            <TabsList className="h-8">
+              <TabsTrigger
+                value="generate-translate"
+                disabled={queueBusy || isSwitchingMode}
+                className="h-7 text-xs px-2.5 sm:px-3"
+              >
+                {t('pageTitle.generate-translate')}
+              </TabsTrigger>
+              <TabsTrigger
+                value="generate"
+                disabled={queueBusy || isSwitchingMode}
+                className="h-7 text-xs px-2.5 sm:px-3"
+              >
+                {t('pageTitle.generate')}
+              </TabsTrigger>
+              <TabsTrigger
+                value="translate"
+                disabled={queueBusy || isSwitchingMode}
+                className="h-7 text-xs px-2.5 sm:px-3"
+              >
+                {t('pageTitle.translate')}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
           {editingName ? (
             <div className="flex items-center gap-1 min-w-0">
               <Input
@@ -1597,6 +1722,7 @@ export default function TaskPage() {
             size="sm"
             className="h-8 text-xs gap-1.5"
             onClick={handleImport}
+            disabled={configLocked}
           >
             <Import className="h-3.5 w-3.5" />
             {t('import')}
@@ -1631,52 +1757,44 @@ export default function TaskPage() {
             <Trash2 className="h-3.5 w-3.5" />
             {t('clearList')}
           </Button>
-          {!configSnapshot &&
-            (() => {
-              const hasActiveManuscript = Boolean(
-                formData?.manuscriptPath &&
-                  formData.manuscriptPath !== '__none__',
-              );
-              return (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="relative h-8 text-xs gap-1.5"
-                  onClick={() => openSettings()}
-                  title={
-                    hasActiveManuscript
-                      ? `${t('settings.title')} (${t('manuscript.label')})`
-                      : t('settings.title')
-                  }
-                >
-                  <SlidersHorizontal className="h-3.5 w-3.5" />
-                  {t('settings.title')}
-                  {hasActiveManuscript && (
-                    <span
-                      className="absolute -top-1 -right-1 flex h-2 w-2 rounded-full bg-primary"
-                      aria-hidden="true"
-                    />
-                  )}
-                </Button>
-              );
-            })()}
+          {(() => {
+            const hasActiveManuscript = Boolean(
+              formData?.manuscriptPath &&
+                formData.manuscriptPath !== '__none__',
+            );
+            return (
+              <Button
+                variant="outline"
+                size="sm"
+                className="relative h-8 text-xs gap-1.5"
+                onClick={() => openSettings()}
+                disabled={configLocked}
+                title={
+                  hasActiveManuscript
+                    ? `${t('settings.title')} (${t('manuscript.label')})`
+                    : t('settings.title')
+                }
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                {t('settings.title')}
+                {hasActiveManuscript && (
+                  <span
+                    className="absolute -top-1 -right-1 flex h-2 w-2 rounded-full bg-primary"
+                    aria-hidden="true"
+                  />
+                )}
+              </Button>
+            );
+          })()}
         </div>
       </div>
 
       <div className="flex-shrink-0">
         {router.query.project && !projectIdRef.current ? (
           <div className="h-12 w-full animate-pulse rounded-lg border bg-muted/20" />
-        ) : configSnapshot ? (
-          // 固定任务：配置随首次派发快照锁定，只读展示实际生效参数。
-          <SnapshotConfigBar
-            snapshot={configSnapshot}
-            files={files}
-            typeDef={typeDef}
-            providers={providers}
-            asrProviders={asrProviders as any}
-          />
         ) : (
           <InlineConfigBar
+            disabled={configLocked}
             form={form}
             formData={formData}
             systemInfo={systemInfo}
@@ -1695,7 +1813,7 @@ export default function TaskPage() {
 
       <CompletionBanner
         files={files}
-        typeDef={typeDef}
+        typeDef={resultTypeDef!}
         formData={listFormData}
         taskStatus={taskStatus}
         dismissed={bannerDismissed}
@@ -1703,6 +1821,7 @@ export default function TaskPage() {
         onDismiss={() => setBannerDismissed(true)}
         onProofread={handleProofread}
         onRetryFailed={handleRetryFailed}
+        retryDisabled={configLocked || Boolean(draftLoadError)}
       />
 
       {/* 人工检查点聚合操作条：有停靠文件时常驻 */}
@@ -1795,8 +1914,9 @@ export default function TaskPage() {
         <ScrollArea className="flex-1 min-h-0">
           {viewMode === 'grid' ? (
             <TaskGridList
+              inputsLocked={configLocked}
               files={files}
-              typeDef={typeDef}
+              typeDef={resultTypeDef!}
               formData={listFormData}
               taskStatus={taskStatus}
               manuscriptPool={manuscriptPool}
@@ -1812,8 +1932,9 @@ export default function TaskPage() {
             />
           ) : (
             <TaskRowList
+              inputsLocked={configLocked}
               files={files}
-              typeDef={typeDef}
+              typeDef={resultTypeDef!}
               formData={listFormData}
               taskStatus={taskStatus}
               manuscriptPool={manuscriptPool}
@@ -1869,19 +1990,30 @@ export default function TaskPage() {
           )}
         <div className="mt-3 flex items-center justify-between flex-shrink-0">
           <span className="text-xs text-muted-foreground">
-            {files.length > 0 ? t('taskCount', { count: files.length }) : ''}
+            {currentRun
+              ? t(
+                  configLocked
+                    ? 'processing.configLocked'
+                    : 'processing.adjustAndRepeat',
+                )
+              : files.length > 0
+                ? t('taskCount', { count: files.length })
+                : ''}
           </span>
           <TaskControls
+            allowRetry={!runConfigChanged && !runInputsChanged}
             ready={
               projectReady &&
               dependencies.loaded &&
+              !configLocked &&
+              !draftLoadError &&
               (Boolean(currentRun) ||
                 Boolean(configSnapshot) ||
                 Boolean(readiness?.valid))
             }
             beforeStart={persistence.save}
-            promptEmbeddedSubtitles={!configSnapshot}
-            formData={listFormData}
+            promptEmbeddedSubtitles={!currentRun}
+            formData={formData}
             files={files}
             typeDef={typeDef}
             projectId={projectId}
@@ -1906,19 +2038,18 @@ export default function TaskPage() {
         </div>
       </div>
 
-      <TaskRunHistory
-        runs={runs}
-        editing={!configSnapshot}
-        onEdit={async () => {
-          if (!currentRun || isRunLocked(currentRun)) return;
-          const draft = await window.ipc.invoke('taskRuns:getDraft', projectId);
-          setDraftRevision(draft?.revision || 0);
-          hydrateSnapshot(draft?.config || currentRun.config);
-          setFiles(draft?.files || currentRun.files.map((file) => file.input));
-          setConfigSnapshot(null);
-          setTaskStatus('idle');
-        }}
-      />
+      {draftLoadError && (
+        <div role="alert" className="text-sm text-destructive">
+          {draftLoadError}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setLoadAttempt((value) => value + 1)}
+          >
+            {t('projectSave.retry')}
+          </Button>
+        </div>
+      )}
       <LogPanel className="flex-shrink-0" projectId={projectId} />
       {retrySubmission.dialog}
 

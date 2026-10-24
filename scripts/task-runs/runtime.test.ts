@@ -239,6 +239,31 @@ test('draft revision rejects lost updates without overwriting history', (t) => {
   assert.equal(service.getDraft('project')!.config.model, 'tiny');
 });
 
+test('editable settings are associated with the result they follow, not the next submitted run', (t) => {
+  const { service } = harness(t);
+  const first = service.accept(input());
+  service.command({
+    projectId: 'project',
+    expectedRunId: first.runId,
+    requestId: 'cancel',
+    command: 'cancel',
+  });
+  const draft = service.saveDraft({
+    projectId: 'project',
+    expectedDraftRevision: 0,
+    config: { ...input().config, model: 'large' },
+    files: input().files,
+  });
+  assert.equal(draft.basedOnRunId, first.runId);
+  assert.equal(service.get('project')!.config.model, 'tiny');
+  const next = service.accept({
+    ...input(),
+    requestId: 'next',
+    config: draft.config,
+  });
+  assert.notEqual(service.getDraft('project')!.basedOnRunId, next.runId);
+});
+
 test('restart interrupts active attempts while preserving paused and review runs', (t) => {
   const { store, service } = harness(t);
   const run = service.accept(input());

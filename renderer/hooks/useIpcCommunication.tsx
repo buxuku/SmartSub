@@ -5,12 +5,16 @@ import {
 import { useCallback, useEffect, useRef } from 'react';
 import { IFiles } from '../../types';
 import { projectRunFiles, type TaskRun } from '../../types/taskRun';
+import { mergeDraftFiles } from '../lib/taskRunDraft';
 
 export default function useIpcCommunication(
   setFiles,
   appendFiles?: (incoming: IFiles[]) => void,
   projectId?: string | null,
+  preserveDraftRunId?: string,
 ) {
+  const preserveDraftRef = useRef(preserveDraftRunId);
+  preserveDraftRef.current = preserveDraftRunId;
   const projectRef = useRef(projectId);
   const latestRun = useRef<TaskRun | null>(null);
   const legacyBlocked = useRef(false);
@@ -232,7 +236,12 @@ export default function useIpcCommunication(
         latestRun.current = run;
         legacyBlocked.current = true;
         pendingEventsRef.current.clear();
-        setFiles(projectRunFiles(run));
+        const projected = projectRunFiles(run);
+        setFiles((files) =>
+          preserveDraftRef.current === run.runId
+            ? mergeDraftFiles(files, projected)
+            : projected,
+        );
       }),
       cleanupFileSelected,
       window?.ipc?.on('taskActivityChange', handleActivityChange),

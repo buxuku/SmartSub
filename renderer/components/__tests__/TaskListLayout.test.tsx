@@ -93,6 +93,29 @@ describe.each([
   ['list', TaskRowList, 'task-row'],
   ['grid', TaskGridList, 'task-card'],
 ] as const)('%s entries', (_mode, Component, shellId) => {
+  it('keeps reuse outcomes accessible without repeating them in every stage label', async () => {
+    await renderList(Component, [
+      {
+        ...done,
+        stageRuns: {
+          extractSubtitle: {
+            id: 'extractSubtitle',
+            status: 'succeeded',
+            outcome: 'reused',
+            reason: 'FINGERPRINT_MATCH',
+          },
+        },
+      },
+    ]);
+    const chip = screen.getByTestId('rail-chip');
+    expect(chip).toHaveAttribute(
+      'aria-label',
+      expect.stringContaining('已复用'),
+    );
+    expect(chip).toHaveAttribute('title', expect.stringContaining('已复用'));
+    expect(chip.textContent).not.toContain('已复用');
+    expect(chip.textContent).not.toContain('FINGERPRINT_MATCH');
+  });
   it('outlines every entry so neighbouring entries can be told apart', async () => {
     await renderList(Component, [idle, done]);
     const shells = screen.getAllByTestId(shellId);

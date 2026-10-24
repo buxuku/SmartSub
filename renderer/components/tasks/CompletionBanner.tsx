@@ -46,6 +46,7 @@ interface CompletionBannerProps {
   onDismiss: () => void;
   onProofread: (file: any) => void;
   onRetryFailed: (files: any[]) => void;
+  retryDisabled?: boolean;
 }
 
 const CompletionBanner: React.FC<CompletionBannerProps> = ({
@@ -58,6 +59,7 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
   onDismiss,
   onProofread,
   onRetryFailed,
+  retryDisabled = false,
 }) => {
   const { t } = useTranslation('tasks');
   const router = useRouter();
@@ -172,6 +174,7 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
             size="sm"
             className="h-7 text-xs gap-1"
             onClick={() => onRetryFailed(failedFiles)}
+            disabled={retryDisabled}
           >
             <RotateCcw className="h-3 w-3" />
             {t('completion.retryFailed')}
@@ -375,6 +378,7 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
             size="sm"
             className="h-7 text-xs gap-1"
             onClick={() => onRetryFailed(failedFiles)}
+            disabled={retryDisabled}
           >
             <RotateCcw className="h-3 w-3" />
             {t('completion.retryFailed')}

@@ -41,6 +41,7 @@ interface Provider {
 }
 
 interface InlineConfigBarProps {
+  disabled?: boolean;
   form: any;
   formData: any;
   systemInfo: any;
@@ -106,6 +107,7 @@ const triggerClass = 'h-8 w-full min-w-0 text-xs gap-1';
 const modelTriggerClass = triggerClass;
 
 const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
+  disabled = false,
   form,
   formData,
   systemInfo,
@@ -251,14 +253,27 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
       className="task-inspector flex min-w-0 flex-col gap-1.5 w-full"
       data-testid="task-inspector"
     >
-      <div className="inspector-sections bg-muted/30 px-3 py-2 w-full rounded-md overflow-x-auto">
+      <fieldset
+        key={disabled ? 'locked' : 'editable'}
+        disabled={disabled}
+        aria-disabled={disabled}
+        className="inspector-sections min-w-0 border-0 bg-muted/30 px-3 py-2 w-full rounded-md overflow-x-auto"
+        onClickCapture={(event) => {
+          if (disabled) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }}
+      >
         <div
           className="flex min-w-0 items-end gap-2.5 flex-nowrap w-full"
           data-testid="task-inspector-core"
         >
           {typeDef.needsModel && (
             <ConfigItem label={t('configBar.model')}>
-              {hasModels || formData.transcriptionEngine === 'parakeet' ? (
+              {hasModels ||
+              formData.transcriptionEngine === 'parakeet' ||
+              (disabled && formData.model) ? (
                 <Models
                   className={modelTriggerClass}
                   engine={formData.transcriptionEngine}
@@ -467,7 +482,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
             />
           </ConfigItem>
         </div>
-      </div>
+      </fieldset>
       <style jsx>{`
         .task-inspector {
           container-type: inline-size;

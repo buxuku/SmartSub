@@ -50,13 +50,32 @@ try {
       ({ channel, payload }) => window.ipc.invoke(channel, payload),
       { channel, payload },
     );
+  const navigate = async (url) => {
+    const cancelled = await page.evaluate(async (url) => {
+      try {
+        await window.next.router.push(url);
+        return null;
+      } catch (error) {
+        if (!error?.cancelled) throw error;
+        return error.code || 'REDIRECTED';
+      }
+    }, url);
+    if (cancelled === 'SMARTSUB_UNSAVED_NAVIGATION') {
+      // A direct navigation may beat the 150 ms autosave; exercise Save and leave.
+      await page
+        .getByRole('button', { name: '保存并离开', exact: true })
+        .click();
+      await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    }
+  };
   const skip = page.getByRole('button', { name: '跳过', exact: true });
   if (await skip.isVisible()) await skip.click();
   const initial = await invoke('getUserConfig');
   const file = {
     uuid: 'media',
     filePath: media,
-    fileName: 'clip',
+    fileName:
+      'A-very-long-video-file-name-for-checking-task-stage-layout-with-reused-results-final-version-2026',
     fileExtension: '.mp4',
     directory: root,
     providedSubtitlePath: subtitle,
@@ -139,24 +158,81 @@ try {
     subtitle,
     'rerun restores original input binding',
   );
-  await page.evaluate(
-    (id) => window.next.router.push(`/zh/tasks/generate/?project=${id}`),
-    projectId,
-  );
+  await navigate(`/zh/tasks/generate/?project=${projectId}`);
+  const sourceLanguage = page.getByRole('combobox', {
+    name: '视频语言',
+    exact: true,
+  });
+  await expect(sourceLanguage).toBeEnabled();
+  await expect(
+    page.getByRole('button', { name: '重新处理', exact: true }),
+  ).toBeEnabled();
+  await expect(page.getByLabel('历史运行', { exact: true })).toHaveCount(0);
   await expect(
     page.getByRole('button', { name: '编辑下一轮配置', exact: true }),
-  ).toBeVisible();
-  await page.getByLabel('历史运行', { exact: true }).selectOption(done.runId);
-  await expect(
-    page.getByText('历史结果（只读）', { exact: false }),
-  ).toBeVisible();
-  await page
-    .getByRole('button', { name: '编辑下一轮配置', exact: true })
-    .click();
-  await expect(
-    page.getByText('正在编辑下一轮草稿。', { exact: false }),
-  ).toBeVisible();
-  await page.screenshot({ path: path.join(root, 'history-and-draft.png') });
+  ).toHaveCount(0);
+  for (const width of [1024, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    const geometry = await page
+      .getByTestId('task-row')
+      .first()
+      .evaluate((row) => {
+        const name = row
+          .querySelector('[data-testid="task-name"]')
+          .getBoundingClientRect();
+        const rail = row
+          .querySelector('[data-testid="task-stage-rail"]')
+          .getBoundingClientRect();
+        const bounds = row.getBoundingClientRect();
+        return {
+          filenameWidth: name.width,
+          separated: name.bottom <= rail.top,
+          contained: rail.left >= bounds.left && rail.right <= bounds.right,
+          overflow: row.scrollWidth > row.clientWidth,
+        };
+      });
+    assert.ok(
+      geometry.filenameWidth > 160,
+      JSON.stringify({ width, geometry }),
+    );
+    assert.equal(geometry.separated, true);
+    assert.equal(geometry.contained, true);
+    assert.equal(geometry.overflow, false);
+    await page.screenshot({
+      path: path.join(root, `compact-task-${width}.png`),
+    });
+  }
+  const reused = page
+    .locator('[data-testid="rail-chip"][data-outcome="reused"]')
+    .first();
+  assert.ok((await reused.getAttribute('title')).includes('已复用'));
+  assert.equal((await reused.innerText()).includes('已复用'), false);
+  await sourceLanguage.click();
+  await page.getByRole('option', { name: '日语', exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await invoke('taskRuns:getDraft', projectId))?.config.sourceLanguage,
+    )
+    .toBe('ja');
+  assert.equal((await get()).config.sourceLanguage, formData.sourceLanguage);
+  await page.reload();
+  await expect(sourceLanguage).toBeEnabled();
+  await expect(sourceLanguage).toContainText('日语');
+  await page.getByRole('button', { name: '重新处理', exact: true }).click();
+  const edited = await wait(
+    (run) =>
+      run?.runId !== again.runId &&
+      ['succeeded', 'failed'].includes(run.status),
+  );
+  assert.equal(edited.status, 'succeeded', JSON.stringify(edited));
+  assert.equal(edited.config.sourceLanguage, 'ja');
+  assert.equal(
+    (await invoke('taskRuns:get', { projectId, runId: again.runId })).config
+      .sourceLanguage,
+    formData.sourceLanguage,
+  );
+  await expect(sourceLanguage).toBeEnabled();
   const oldEdit = await invoke('saveProofreadDataAndRender', {
     proofreadDataFile: sidecar,
     subtitles: [],
@@ -179,6 +255,10 @@ try {
     command: 'pause',
   });
   await wait((run) => run?.status === 'paused');
+  await expect(sourceLanguage).toBeDisabled();
+  await expect(
+    page.getByRole('button', { name: '更多设置', exact: true }),
+  ).toBeDisabled();
   await assert.rejects(
     invoke('taskRuns:saveDraft', {
       projectId,
@@ -203,6 +283,41 @@ try {
     command: 'cancel',
   });
   await wait((run) => run?.status === 'cancelled');
+  await expect(sourceLanguage).toBeEnabled();
+  await expect(sourceLanguage).toContainText('英语');
+  await page.getByRole('tab', { name: '视频 → 双语字幕', exact: true }).click();
+  await expect(page).toHaveURL(/generate-translate/);
+  await expect
+    .poll(
+      async () =>
+        (await invoke('taskRuns:getDraft', projectId))?.config.taskType,
+    )
+    .toBe('generateAndTranslate');
+  assert.equal((await get()).config.taskType, 'generateOnly');
+  await navigate(`/zh/tasks/generate/?project=${projectId}`);
+  await expect(page).toHaveURL(/generate-translate/);
+  await expect
+    .poll(
+      async () =>
+        (await invoke('taskRuns:getDraft', projectId))?.config.taskType,
+    )
+    .toBe('generateAndTranslate');
+  await page.getByRole('tab', { name: '视频 → 原文字幕', exact: true }).click();
+  await expect(page).toHaveURL(/tasks\/generate\//);
+  await expect(sourceLanguage).toBeEnabled();
+  await sourceLanguage.click();
+  await page.getByRole('option', { name: '日语', exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await invoke('taskRuns:getDraft', projectId))?.config.sourceLanguage,
+    )
+    .toBe('ja');
+  await navigate('/zh/tasks/generate/');
+  await expect(sourceLanguage).toBeEnabled();
+  await expect(
+    page.getByRole('button', { name: '导入', exact: true }),
+  ).toBeEnabled();
   await assert.rejects(
     invoke('taskRuns:command', {
       projectId,
@@ -213,7 +328,8 @@ try {
     /TASK_RUN_CONFLICT/,
   );
   await page.screenshot({ path: path.join(root, 'desktop.png') });
-  await page.evaluate(() => window.next.router.push('/zh/'));
+  await expect(page).toHaveURL(/project=/);
+  await navigate('/zh/');
   assert.equal(await invoke('deleteWorkItem', projectId), true);
   await app.close();
   app = null;
@@ -233,7 +349,10 @@ try {
   );
   console.log(`Task run Electron acceptance passed. Evidence: ${root}`);
 } finally {
-  if (app) await app.close();
+  if (app) {
+    await app.evaluate(({ app }) => app.exit(0)).catch(() => {});
+    await app.close().catch(() => {});
+  }
 }
 
 await import('./task-runs-presentation.mjs');
