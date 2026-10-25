@@ -446,7 +446,9 @@ export async function runComposeJob(
       subtitle.mode !== 'hard'
         ? await scanEmbeddedSubtitles(videoPath, publication.signal)
         : undefined;
-    const mediaInfo = await probeVideoInfo(videoPath, publication.signal);
+    const mediaInfo = await probeVideoInfo(videoPath, publication.signal, {
+      allowUnknownDuration: true,
+    });
     const hasOriginalAudio = mediaInfo.hasAudio;
     // ── 解析硬烧字幕（滤镜 + 编码参数），探测分辨率/时长 ─────────────────────
     let prepared: PreparedHardSubtitle | null = null;

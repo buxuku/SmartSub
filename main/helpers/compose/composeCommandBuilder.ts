@@ -286,6 +286,12 @@ export function buildComposePlan(
     } else if (audio.mode === 'addTrack') {
       opt.push('-map', '0', '-map', '1:a', '-c', 'copy');
     }
+    if (
+      extension === '.mkv' &&
+      (audio.mode === 'replace' || audio.mode === 'mix')
+    ) {
+      opt.push('-map', '0:t?', '-c:t', 'copy');
+    }
   }
 
   // Stream-indexed overrides follow the broad copy options; the added subtitle is s:0.

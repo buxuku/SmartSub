@@ -8,6 +8,7 @@
  *   replaceAudioTrack / duckMixIntoVideo / addAudioTrack
  */
 
+import path from 'node:path';
 import {
   buildComposePlan,
   composePlanRequiresMkv,
@@ -67,6 +68,7 @@ function assertThrowsMatching(
 const VIDEO = '/media/movie.mp4';
 const TRACK = '/media/dub.wav';
 const SUB = '/media/movie.srt';
+const TEMP_TRACK = path.join('/media', '.dub-track-T.m4a');
 
 const HARD = {
   mode: 'hard' as const,
@@ -311,12 +313,12 @@ for (const subtitle of [
   );
   assertDeepEqual(
     plan.prep,
-    { kind: 'encodeAac', src: TRACK, dst: '/media/.dub-track-T.m4a' },
+    { kind: 'encodeAac', src: TRACK, dst: TEMP_TRACK },
     'none+addTrack: 先预编 aac 临时文件（两步形制保留）',
   );
   assertDeepEqual(
     plan.inputs,
-    [VIDEO, '/media/.dub-track-T.m4a'],
+    [VIDEO, TEMP_TRACK],
     'none+addTrack: 主命令输入为视频+预编 aac',
   );
   assertDeepEqual(
@@ -497,7 +499,7 @@ for (const subtitle of [
   );
   assertDeepEqual(
     plan.inputs,
-    [VIDEO, '/media/.dub-track-T.m4a', SUB],
+    [VIDEO, TEMP_TRACK, SUB],
     'soft+addTrack: 预编轨 + 字幕输入顺序',
   );
   assertDeepEqual(
