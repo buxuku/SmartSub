@@ -54,7 +54,8 @@ export function projectRun(run: TaskRun, durable = true) {
     {
       ...old,
       id: run.projectId,
-      name: old?.name || buildTaskName(run.files.map((f) => f.input)),
+      name:
+        old?.name || run.name || buildTaskName(run.files.map((f) => f.input)),
       type: run.config.taskType,
       createdAt: old?.createdAt || run.createdAt,
       updatedAt: run.updatedAt,
@@ -233,6 +234,7 @@ export function acceptManagedTask(
   const submission = {
     projectId: input.projectId,
     requestId: input.requestId,
+    name: input.name,
     config,
     resolvedConfig,
     files: input.files.map((file) => {

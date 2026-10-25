@@ -272,3 +272,26 @@ test('translation presentation does not change paid-stage fingerprints; refine u
       refine,
     );
 });
+
+test('source export filename tracks provider name without invalidating recognition', () => {
+  const run: any = {
+    config: {
+      taskType: 'generateOnly',
+      translateProvider: 'p',
+      customSourceSrtFileName: '${fileName}.${translateProvider}',
+    },
+    resolvedConfig: { translationProviders: [{ id: 'p', name: 'Original' }] },
+  };
+  const file: any = {
+    projection: {},
+    stages: {
+      extractSubtitle: { version: 1, dependencies: [] },
+      exportSubtitle: { version: 2, dependencies: [] },
+    },
+  };
+  const recognition = stageFingerprint(run, file, 'extractSubtitle');
+  const delivery = stageFingerprint(run, file, 'exportSubtitle');
+  run.resolvedConfig.translationProviders[0].name = 'Renamed';
+  assert.equal(stageFingerprint(run, file, 'extractSubtitle'), recognition);
+  assert.notEqual(stageFingerprint(run, file, 'exportSubtitle'), delivery);
+});
