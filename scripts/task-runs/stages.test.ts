@@ -71,6 +71,30 @@ test('cancelled optional fields cannot add ghost stages or disable proofreading 
   assert.equal(derivePipelineWorkItemStatus([file as any]), 'done');
 });
 
+test('reserved legacy export remains pending without counting empty optional stages', () => {
+  const file = {
+    ...completed,
+    exportSubtitle: '',
+    refineSubtitle: '',
+    manuscriptMatch: '',
+    speakerDiarization: '',
+  };
+  const stages = getFileStages(file, type, config);
+  assert.equal(derivePipelineWorkItemStatus([file as any]), 'waiting');
+  assert.equal(isProofreadReady(file, type, config), false);
+  assert.ok(getFilePercent(file, stages) < 100);
+  assert.equal(
+    derivePipelineWorkItemStatus([{ ...file, exportSubtitle: 'done' } as any]),
+    'done',
+  );
+  assert.equal(
+    derivePipelineWorkItemStatus([
+      { ...file, exportSubtitle: undefined } as any,
+    ]),
+    'done',
+  );
+});
+
 test('explicitly disabled optional stages do not inherit an old successful state', () => {
   const stages = getFileStages(
     { ...completed, refineSubtitle: 'done', speakerDiarization: 'done' },

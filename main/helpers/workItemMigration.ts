@@ -46,7 +46,13 @@ export function derivePipelineWorkItemStatus(files: IFiles[]): WorkItemStatus {
     let fileHasStage = false;
     for (const key of STAGE_KEYS) {
       const value = file[key as keyof IFiles];
-      if (!hasStageEvidence(value)) continue;
+      // An empty export field reserves a required delivery stage. Unlike empty
+      // optional stages left by cancellation, it still blocks completion.
+      if (
+        !hasStageEvidence(value) &&
+        !(key === 'exportSubtitle' && value === '')
+      )
+        continue;
       fileHasStage = true;
 
       hasAnyStage = true;
