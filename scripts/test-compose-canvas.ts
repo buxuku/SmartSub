@@ -40,6 +40,8 @@ async function main() {
   const output = await fs.mkdtemp(
     path.join(os.tmpdir(), 'smartsub-compose-canvas-unit-'),
   );
+  // Use fixture basenames from this cwd so Windows drive syntax cannot alter filters.
+  // Absolute/special-character paths are exercised through the real compose runner.
   const bounds = [];
   for (let alignment = 1; alignment <= 9; alignment++) {
     const file = path.join(output, `alignment-${alignment}.ass`);
@@ -50,24 +52,28 @@ async function main() {
         alignment: alignment as SubtitleAlignment,
       }),
     );
-    const pixels = execFileSync(ffmpeg!, [
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-f',
-      'lavfi',
-      '-i',
-      'color=black:s=384x288:d=1',
-      '-vf',
-      `ass='${file}'`,
-      '-frames:v',
-      '1',
-      '-pix_fmt',
-      'gray',
-      '-f',
-      'rawvideo',
-      'pipe:1',
-    ]);
+    const pixels = execFileSync(
+      ffmpeg!,
+      [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=black:s=384x288:d=1',
+        '-vf',
+        `ass='${path.basename(file)}'`,
+        '-frames:v',
+        '1',
+        '-pix_fmt',
+        'gray',
+        '-f',
+        'rawvideo',
+        'pipe:1',
+      ],
+      { cwd: output },
+    );
     let minX = 384,
       maxX = 0,
       minY = 288,
@@ -174,26 +180,30 @@ async function main() {
   assert.match(shifted, /\\pos\(190,250\)/);
   assert.match(shifted, /m 0 0 l 20 0 20 20 0 20/);
   const pixelFrame = (file: string, time: number, translateY = 0) =>
-    execFileSync(ffmpeg!, [
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-f',
-      'lavfi',
-      '-i',
-      'color=black:s=384x288:r=25:d=1',
-      '-vf',
-      `format=rgba,${translatedAssFilter(`ass='${file}'`, translateY)}`,
-      '-ss',
-      String(time),
-      '-frames:v',
-      '1',
-      '-pix_fmt',
-      'gray',
-      '-f',
-      'rawvideo',
-      'pipe:1',
-    ]);
+    execFileSync(
+      ffmpeg!,
+      [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=black:s=384x288:r=25:d=1',
+        '-vf',
+        `format=rgba,${translatedAssFilter(`ass='${path.basename(file)}'`, translateY)}`,
+        '-ss',
+        String(time),
+        '-frames:v',
+        '1',
+        '-pix_fmt',
+        'gray',
+        '-f',
+        'rawvideo',
+        'pipe:1',
+      ],
+      { cwd: output },
+    );
   const beforeFile = path.join(output, 'layers-before.ass');
   const afterFile = path.join(output, 'layers-after.ass');
   await fs.writeFile(beforeFile, styleAssDocument(layered, style));
@@ -357,7 +367,9 @@ async function main() {
   const video = path.join(output, 'matrix.mp4');
   const audio = path.join(output, 'matrix.wav');
   const run = (args: string[]) =>
-    execFileSync(ffmpeg!, ['-hide_banner', '-loglevel', 'error', ...args]);
+    execFileSync(ffmpeg!, ['-hide_banner', '-loglevel', 'error', ...args], {
+      cwd: output,
+    });
   run([
     '-f',
     'lavfi',
@@ -389,7 +401,10 @@ async function main() {
         outputPath: final,
         subtitle: {
           mode: 'hard',
-          filter: translatedAssFilter(`ass='${afterFile}'`, matrix.translateY),
+          filter: translatedAssFilter(
+            `ass='${path.basename(afterFile)}'`,
+            matrix.translateY,
+          ),
           encoderArgs: ['-c:v', 'libx264', '-crf', '18'],
           needsNv12: true,
         },
@@ -433,24 +448,28 @@ async function main() {
         positionY,
       }),
     );
-    const pixels = execFileSync(ffmpeg!, [
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-f',
-      'lavfi',
-      '-i',
-      'color=black:s=384x288:d=1',
-      '-vf',
-      `ass='${file}'`,
-      '-frames:v',
-      '1',
-      '-pix_fmt',
-      'gray',
-      '-f',
-      'rawvideo',
-      'pipe:1',
-    ]);
+    const pixels = execFileSync(
+      ffmpeg!,
+      [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=black:s=384x288:d=1',
+        '-vf',
+        `ass='${path.basename(file)}'`,
+        '-frames:v',
+        '1',
+        '-pix_fmt',
+        'gray',
+        '-f',
+        'rawvideo',
+        'pipe:1',
+      ],
+      { cwd: output },
+    );
     const rows = Array.from(pixels.entries())
       .filter(([, value]) => value > 200)
       .map(([i]) => Math.floor(i / 384));
