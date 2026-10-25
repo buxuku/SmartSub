@@ -28,7 +28,7 @@
 
 ## Task 1: Compose stream compatibility and CPU format
 
-Files: `main/helpers/compose/{composeCommandBuilder,composeRunner,streamCompatibility}.ts`, existing subtitle path fix and compose tests.
+Files: `main/helpers/compose/{composeCommandBuilder,composeRunner}.ts`, shared `main/helpers/mediaStreamCompatibility.ts`, existing subtitle path fix and compose tests.
 
 - [x] Add real failing regressions for mov_text MP4 to MKV, PCM MKV to MP4, mixed audio tracks, and CPU translated ASS pixel format.
 - [x] Add `audioCodecs?: string[]` to compose input; consume probe metadata and apply per-output audio/subtitle codec options.
@@ -60,5 +60,18 @@ Files: package scripts and `.github/workflows/ffmpeg-compatibility.yml`.
 
 - [x] Add a focused portable real-FFmpeg regression command and CI matrix (Windows and Linux).
 - [x] Run relevant local suites and typecheck; review the complete branch and address findings.
-- [ ] Commit and push this branch; run Windows CI and inspect/fix failures until green.
-- [ ] Report branch, commits, tested platforms and CI links. Keep main unmerged.
+- [x] Commit and push this branch; run Windows CI and inspect/fix failures until green.
+- [x] Report branch, commits, tested platforms and CI links. Keep main unmerged.
+
+## Verification record
+
+- Branch: `fix/ffmpeg-compatibility`; tested code/test/workflow commit: `06d2ecc402ff382d4577ecc81644b2b3571d4a5d`.
+- Local macOS: the 35 new regressions (11 compose, 17 toolbox, 7 audio), relevant existing suites and full typecheck passed.
+- [Windows 2022 and Ubuntu 22.04 CI](https://github.com/buxuku/SmartSub/actions/runs/40203373283): both jobs succeeded, including the new regressions, existing compose/output/canvas/toolbox/waveform/audio-cache/voice-clone suites and full typecheck.
+- Independent branch review passed after fixing unknown-duration compose inputs and preserving MKV font attachments during audio replacement/mixing. Real-media regressions cover both findings.
+- Windows CI also exposed two existing test portability problems: POSIX-only expected temp paths and unescaped drive paths in canvas fixtures. Both test entry points are fixed; actual application path escaping remains exercised through the real compose runner.
+
+## Remaining verification limits and separate timing issue
+
+- Hosted CI does not validate successful NVENC/QSV encoding on real GPUs; the compose suite does exercise fallback to CPU when the requested encoder is unavailable.
+- An existing accurate-trim timing issue was reproduced in both the base and updated commands: copying a subtitle event that begins before the trim start can omit that overlapping event. Repairing subtitle-event clipping is outside this parameter/container compatibility change; it remains unresolved.
