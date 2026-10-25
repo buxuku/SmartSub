@@ -95,20 +95,19 @@ export function buildForceStyle(style: SubtitleStyle): string {
 }
 
 /**
- * 转义字幕文件路径以用于 FFmpeg 滤镜
- * Windows 路径需要特殊处理
+ * 转义字幕路径，供调用方放入滤镜的单引号中（`ass='…'`）。
+ * FFmpeg 先解析滤镜图，再解析滤镜选项；两层都需要保护路径中的单引号。
  */
 export function escapeSubtitlePath(subtitlePath: string): string {
-  // 将反斜杠转换为正斜杠
-  let escaped = subtitlePath.replace(/\\/g, '/');
-  // 转义特殊字符: : ' [
-  // 注意: 先转义 : 和 [，再转义 '（避免引入的 \ 被重复转义）
-  // 此时路径中不应有反斜杠（已全部转为正斜杠），所以不需要转义 \
-  escaped = escaped
-    .replace(/:/g, '\\:')
-    .replace(/\[/g, '\\[')
-    .replace(/'/g, "\\'");
-  return escaped;
+  return (
+    subtitlePath
+      .replace(/\\/g, '/')
+      // 选项层：保护 Windows 盘符的冒号和路径中的单引号。
+      .replace(/[:']/g, '\\$&')
+      // 滤镜图层：单引号内的反斜杠不能转义单引号，须先闭合、转义、再重新打开。
+      // 外层单引号已保护逗号、分号、方括号和空格，避免吞入后续 crop 等滤镜。
+      .replace(/'/g, "'\\''")
+  );
 }
 
 /**

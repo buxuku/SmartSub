@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { logMessage } from './storeManager';
 import { getMd5, ensureTempDir, timemarkToSeconds } from './fileUtils';
 import { getAudioCacheKey } from './audioCacheKey';
+import { FIRST_AUDIO_STREAM } from './audioStreamSelection';
 import { getTaskContext, TaskCancelledError } from './taskContext';
 import { energySpeechSegments } from './subtitleTiming';
 import { computeChunkBoundaries } from './cloudAudioChunking';
@@ -84,7 +85,7 @@ export const extractAudio = (
         .audioFrequency(16000)
         .audioChannels(1)
         .audioCodec('pcm_s16le')
-        .outputOptions('-y')
+        .outputOptions(['-map', FIRST_AUDIO_STREAM, '-y'])
         .on('start', function (str) {
           onProgress(0);
           logMessage(`extract audio start ${str}`, 'info');

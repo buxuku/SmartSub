@@ -56,6 +56,7 @@ import { probeVideoInfo } from '../toolbox/videoTrimmer';
 import { assertValidSubtitleStyle } from '../../../types/subtitleStyleValidation';
 import { assertComposeOutputWritable } from '../../../types/composeContainer';
 import { prepareSubtitleFonts } from '../fontResolver';
+import { COMPATIBLE_PIXEL_FORMAT } from '../videoEncoding';
 
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -121,7 +122,16 @@ function buildCpuEncoding(
   );
   return {
     encoder: 'libx264',
-    args: ['-c:v', 'libx264', '-preset', 'medium', '-crf', String(crf)],
+    args: [
+      '-c:v',
+      'libx264',
+      '-preset',
+      'medium',
+      '-crf',
+      String(crf),
+      '-pix_fmt',
+      COMPATIBLE_PIXEL_FORMAT,
+    ],
     needsNv12: false,
   };
 }
@@ -433,13 +443,11 @@ export async function runComposeJob(
     output = createComposeOutput(config.outputPath, inputs);
     outputPath = output.staged;
     const embeddedSubtitles =
-      subtitle.mode === 'soft'
+      subtitle.mode !== 'hard'
         ? await scanEmbeddedSubtitles(videoPath, publication.signal)
         : undefined;
-    const hasOriginalAudio =
-      audio.mode === 'mix'
-        ? (await probeVideoInfo(videoPath, publication.signal)).hasAudio
-        : undefined;
+    const mediaInfo = await probeVideoInfo(videoPath, publication.signal);
+    const hasOriginalAudio = mediaInfo.hasAudio;
     // ── 解析硬烧字幕（滤镜 + 编码参数），探测分辨率/时长 ─────────────────────
     let prepared: PreparedHardSubtitle | null = null;
     if (subtitle.mode === 'hard') {
@@ -464,6 +472,7 @@ export async function runComposeJob(
         subtitle: planSubtitle,
         audio,
         embeddedSubtitles,
+        audioCodecs: mediaInfo.audioCodecs,
         hasOriginalAudio,
       },
       planOptions,
@@ -521,6 +530,7 @@ export async function runComposeJob(
             },
             audio,
             hasOriginalAudio,
+            audioCodecs: mediaInfo.audioCodecs,
           },
           planOptions,
         );

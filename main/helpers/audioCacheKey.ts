@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { createHash } from 'crypto';
+import { FIRST_AUDIO_STREAM } from './audioStreamSelection';
 
 /**
  * 抽取音频缓存的键（issue #510）。
@@ -15,6 +16,7 @@ import { createHash } from 'crypto';
  * - 不做内容哈希：多 GB 视频全量读盘代价过高；size + mtime 已覆盖「替换同名文件」。
  * - 路径仍参与哈希，避免不同文件仅凭 size + mtime 撞键；产物是 32 位十六进制 ASCII，
  *   中文路径下同样可直接作文件名。
+ * - 选轨策略参与哈希：显式首音轨不能复用旧版自动选轨留下的音频。
  *
  * 读不到文件状态时返回 null：此时无法证明已有缓存仍对应当前文件，调用方不得复用。
  */
@@ -22,7 +24,9 @@ export function getAudioCacheKey(filePath: string): string | null {
   try {
     const { size, mtimeMs } = fs.statSync(filePath);
     return createHash('md5')
-      .update(`${filePath}|${size}|${Math.trunc(mtimeMs)}`)
+      .update(
+        `${filePath}|${size}|${Math.trunc(mtimeMs)}|audio=${FIRST_AUDIO_STREAM}`,
+      )
       .digest('hex');
   } catch {
     return null;

@@ -20,7 +20,7 @@ Module._load = function (request, parent, isMain) {
     MERGE_CANCELLED: 'MERGE_CANCELLED',
     getVideoInfo: async () => ({ width: 640, height: 360, duration: 3 }),
     buildAssForSubtitle: (_text, _file, style) => ({ assContent: buildAssDocument([{ startMs: 0, endMs: 3000, text: 'Runner' }], style), effectiveStyle: style }),
-    escapeSubtitlePath: value => value.replace(/\\/g, '/').replace(/:/g, '\\:'),
+    escapeSubtitlePath: originalLoad.call(this, request, parent, isMain).escapeSubtitlePath,
     cleanupTempSubtitle: value => fs.rmSync(value, { force: true }),
   };
   if (request.endsWith('/hwEncoderDetector')) return {
@@ -83,6 +83,26 @@ async function main() {
   const burnedStreams = probe(burned);
   assert.match(burnedStreams, /Video: h264/, 'a WebM source is burned to H.264 in the MP4 deliverable');
   assert.match(burnedStreams, /Audio: aac/, 'the Opus audio of a WebM source is re-encoded to AAC for the MP4 deliverable');
+  // A quote in the OS temp directory (e.g. a Windows user named O'Brien) used to
+  // swallow the comma before crop, making ass parse trunc(ih/2)*2 as original_size.
+  const originalTmpdir = os.tmpdir;
+  for (const [tempName, audio] of [["O'Brien", { mode: 'keep' }], ["O'Brien [字幕], draft;v1", { mode: 'mix', trackPath: voice }]]) {
+    const quotedTemp = path.join(root, tempName);
+    fs.mkdirSync(quotedTemp);
+    try {
+      os.tmpdir = () => quotedTemp;
+      const quotedOutput = await runComposeJob({ videoPath: video, outputPath: path.join(root, `quoted-temp-${audio.mode}.mp4`), subtitle: burn, audio }, context());
+      const quotedStreams = probe(quotedOutput);
+      assert.match(quotedStreams, /Video: h264.*640x360/, `${audio.mode}: special characters in the temp path do not corrupt the filter graph`);
+      assert.equal((quotedStreams.match(/Audio:/g) || []).length, 1, `${audio.mode}: the audio track is retained`);
+      const frame = run(['-i', quotedOutput, '-ss', '1', '-frames:v', '1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1']);
+      assert.ok(frame.some(value => value > 128), `${audio.mode}: the white subtitle is rendered on the black source frame`);
+      assert.deepEqual(fs.readdirSync(path.join(quotedTemp, 'video-subtitle-master')), [], 'the temporary ASS file is cleaned up');
+    } finally {
+      os.tmpdir = originalTmpdir;
+      fs.rmSync(quotedTemp, { recursive: true, force: true });
+    }
+  }
   const guardedDir = path.join(root, 'never-created');
   logs.length = 0;
   await assert.rejects(runComposeJob({ videoPath: webm, outputPath: path.join(guardedDir, 'download_subtitled.webm'), subtitle: burn, audio: { mode: 'keep' } }, context()), /WebM\/Ogg/);
