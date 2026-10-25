@@ -24,7 +24,11 @@ export function stderrTail(stderr?: string, maxLines = 8): string {
  */
 export function toFriendlyFfmpegError(err: Error, stderr?: string): Error {
   const tail = stderrTail(stderr, 20);
-  if (/does not contain any stream/i.test(tail)) {
+  if (
+    /does not contain any stream|Stream map ['"]?0:a:0['"]? matches no streams/i.test(
+      tail,
+    )
+  ) {
     return new Error(
       '该文件不包含音频轨道（网页版视频下载工具常只抓到纯视频流），请用能合并音视频的下载工具（如 yt-dlp）重新下载',
     );

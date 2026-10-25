@@ -12,6 +12,14 @@ import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
 import { logMessage } from '../logger';
+import { writableComposeExtension } from '../../../types/composeContainer';
+import type { EmbeddedSubtitleStream } from '../embeddedSubtitleParser';
+import { scanEmbeddedSubtitles } from './embeddedSubtitleExtractor';
+import { buildSubtitleCodecOptions } from '../mediaStreamCompatibility';
+import {
+  COMPATIBLE_PIXEL_FORMAT,
+  EVEN_DIMENSIONS_PAD_FILTER,
+} from '../videoEncoding';
 import type {
   VideoTrimConfig,
   VideoTrimProgress,
@@ -22,9 +30,15 @@ const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
 
 /** 正在执行的裁剪进程映射：jobId -> ChildProcess */
 const activeTrimProcesses = new Map<string, ChildProcess>();
+const preparingTrimJobs = new Map<string, AbortController>();
 
 /** 取消指定裁剪任务 */
 export function cancelVideoTrim(jobId: string): boolean {
+  const preparing = preparingTrimJobs.get(jobId);
+  if (preparing) {
+    preparing.abort();
+    return true;
+  }
   const proc = activeTrimProcesses.get(jobId);
   if (proc) {
     try {
@@ -41,6 +55,7 @@ export function cancelVideoTrim(jobId: string): boolean {
 
 /** 取消并清理所有正在进行的裁剪任务（在应用关闭时调用） */
 export function cancelAllTrimProcesses(): void {
+  preparingTrimJobs.forEach((controller) => controller.abort());
   for (const [jobId, proc] of activeTrimProcesses.entries()) {
     try {
       proc.kill('SIGKILL');
@@ -91,6 +106,8 @@ export function probeVideoInfo(
   hasAudio: boolean;
   videoCodec?: string;
   audioCodec?: string;
+  audioCodecs: string[];
+  pixelFormat?: string;
 }> {
   return new Promise((resolve, reject) => {
     if (!fs.existsSync(videoPath)) {
@@ -129,8 +146,22 @@ export function probeVideoInfo(
       const durationMatch = /Duration:\s*(\d{2,}:\d{2}:\d{2}(?:\.\d+)?)/.exec(
         stderr,
       );
-      const videoMatch = /Video:[^\n]*?(\d{2,5})x(\d{2,5})/.exec(stderr);
-      const audioMatch = /Audio:/i.test(stderr);
+      const streamLines = stderr
+        .split(/\r?\n/)
+        .filter((line) => /^\s*Stream #/.test(line));
+      const videoLines = streamLines.filter((line) => /Video:/.test(line));
+      const videoLine =
+        videoLines.find((line) => !/\(attached pic\)/.test(line)) ||
+        videoLines[0] ||
+        '';
+      const videoMatch = /,\s*(\d{1,5})x(\d{1,5})(?:[\s,]|$)/.exec(videoLine);
+      const audioCodecs = streamLines.flatMap((line) => {
+        const match = /Audio:\s*(\w+)/.exec(line);
+        return match ? [match[1]] : [];
+      });
+      const videoFormat = /Video:\s*(\w+)(?:\s*\([^)]*\))*\s*,\s*(\w+)/.exec(
+        videoLine,
+      );
 
       if (!durationMatch) {
         return reject(
@@ -155,9 +186,11 @@ export function probeVideoInfo(
         width,
         height,
         size: stats.size,
-        hasAudio: audioMatch,
-        videoCodec: /Video:\s*(\w+)/.exec(stderr)?.[1],
-        audioCodec: /Audio:\s*(\w+)/.exec(stderr)?.[1],
+        hasAudio: audioCodecs.length > 0,
+        videoCodec: /Video:\s*(\w+)/.exec(videoLine)?.[1],
+        audioCodec: audioCodecs[0],
+        audioCodecs,
+        pixelFormat: videoFormat?.[2],
       });
     });
 
@@ -173,6 +206,7 @@ export function probeVideoInfo(
 export function buildTrimArgs(
   config: VideoTrimConfig,
   resolvedOutputPath: string,
+  subtitles: readonly EmbeddedSubtitleStream[] = [],
 ): string[] {
   const { videoPath, startSec, endSec, mode } = config;
   const startTime = formatFfmpegTime(startSec);
@@ -191,6 +225,8 @@ export function buildTrimArgs(
       '-accurate_seek',
       '-i',
       videoPath,
+      '-map',
+      '0',
       '-c',
       'copy',
       '-avoid_negative_ts',
@@ -206,8 +242,21 @@ export function buildTrimArgs(
       startTime,
       '-t',
       durationStr,
+      '-map',
+      '0:V',
+      '-map',
+      '0:a?',
+      '-map',
+      '0:s?',
+      ...(path.extname(resolvedOutputPath).toLowerCase() === '.mkv'
+        ? ['-map', '0:t?', '-c:t', 'copy']
+        : []),
       '-c:v',
       'libx264',
+      '-vf',
+      EVEN_DIMENSIONS_PAD_FILTER,
+      '-pix_fmt',
+      COMPATIBLE_PIXEL_FORMAT,
       '-preset',
       'fast',
       '-crf',
@@ -216,6 +265,9 @@ export function buildTrimArgs(
       'aac',
       '-b:a',
       '192k',
+      '-c:s',
+      'copy',
+      ...buildSubtitleCodecOptions(path.extname(resolvedOutputPath), subtitles),
       '-avoid_negative_ts',
       'make_zero',
       resolvedOutputPath,
@@ -228,11 +280,25 @@ export function buildTrimArgs(
 /**
  * 执行视频裁剪
  */
-export function executeVideoTrim(
+export async function executeVideoTrim(
   config: VideoTrimConfig,
   jobId: string,
   onProgress?: (p: VideoTrimProgress) => void,
 ): Promise<VideoTrimResult> {
+  let subtitles: EmbeddedSubtitleStream[] = [];
+  if (config.mode === 'accurate') {
+    const preparation = new AbortController();
+    preparingTrimJobs.set(jobId, preparation);
+    try {
+      subtitles = await scanEmbeddedSubtitles(
+        config.videoPath,
+        preparation.signal,
+      );
+      preparation.signal.throwIfAborted();
+    } finally {
+      preparingTrimJobs.delete(jobId);
+    }
+  }
   return new Promise((resolve, reject) => {
     const { videoPath, startSec, endSec, outputPath, outputDir } = config;
 
@@ -254,9 +320,19 @@ export function executeVideoTrim(
       );
     }
 
+    if (config.mode === 'accurate') {
+      const parsed = path.parse(targetOutput);
+      targetOutput = path.join(
+        parsed.dir,
+        `${parsed.name}${writableComposeExtension(parsed.ext)}`,
+      );
+    }
+
+    // Validate the stream/container policy before reserving an output file.
+    const args = buildTrimArgs(config, targetOutput, subtitles);
     targetOutput = reserveToolboxOutput(targetOutput);
+    args[args.length - 1] = targetOutput;
     const targetDuration = Math.max(0.01, endSec - startSec);
-    const args = buildTrimArgs(config, targetOutput);
 
     logMessage(
       `执行视频裁剪 [${jobId}]: ${ffmpegPath} ${args.join(' ')}`,

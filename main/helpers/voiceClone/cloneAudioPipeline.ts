@@ -12,6 +12,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { TaskCancelledError } from '../taskContext';
 import { stderrTail } from '../ffmpegErrorUtils';
+import { FIRST_AUDIO_STREAM } from '../audioStreamSelection';
 import {
   readWavInfo,
   probeMediaDurationMs,
@@ -251,7 +252,7 @@ export async function analyzeCloneSource(
     .audioFrequency(16000)
     .audioChannels(1)
     .audioCodec('pcm_s16le')
-    .outputOptions('-y');
+    .outputOptions(['-map', FIRST_AUDIO_STREAM, '-y']);
   await runSave(command, analysisWavPath, opts?.signal);
 
   const { samples, sampleRate } = readWavSamples(analysisWavPath);
@@ -427,7 +428,9 @@ export async function prepareCloneReference(
   keeps.forEach((iv, i) => {
     const s = ((from + iv.startMs) / 1000).toFixed(3);
     const e = ((from + iv.endMs) / 1000).toFixed(3);
-    parts.push(`[0:a]atrim=start=${s}:end=${e},asetpts=PTS-STARTPTS[k${i}]`);
+    parts.push(
+      `[${FIRST_AUDIO_STREAM}]atrim=start=${s}:end=${e},asetpts=PTS-STARTPTS[k${i}]`,
+    );
     labels.push(`[k${i}]`);
   });
   const gainFilter = gainDb > 0 ? `,volume=${gainDb}dB` : '';

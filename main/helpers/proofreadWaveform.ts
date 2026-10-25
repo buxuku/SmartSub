@@ -3,6 +3,7 @@ import path from 'path';
 import { spawn } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
 import type { WaveformData } from '../../types/waveform';
+import { FIRST_AUDIO_STREAM } from './audioStreamSelection';
 
 const SAMPLE_RATE = 8000;
 const BUCKET_SIZE = 160;
@@ -94,7 +95,7 @@ export async function extractWaveform(
         '-i',
         realPath,
         '-map',
-        '0:a:0',
+        FIRST_AUDIO_STREAM,
         '-vn',
         '-ac',
         '1',

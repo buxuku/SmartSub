@@ -17,6 +17,11 @@ import {
   sourceAudioNeedsAac,
 } from '../../../types/composeContainer';
 import type { EmbeddedSubtitleStream } from '../embeddedSubtitleParser';
+import {
+  buildAudioCodecOptions,
+  buildSubtitleCodecOptions,
+} from '../mediaStreamCompatibility';
+import { EVEN_DIMENSIONS_CROP_FILTER } from '../videoEncoding';
 
 /** 硬烧字幕的解析后输入：滤镜与编码参数由调用方（runner）解析完成后传入。 */
 export interface ComposeHardSubtitle {
@@ -52,6 +57,8 @@ export interface ComposePlanInput {
   subtitle: ComposePlanSubtitle;
   audio: ComposePlanAudio;
   embeddedSubtitles?: EmbeddedSubtitleStream[];
+  /** Original audio codecs in source stream order, supplied by the bundled media probe. */
+  audioCodecs?: string[];
   hasOriginalAudio?: boolean;
 }
 
@@ -102,7 +109,7 @@ const REENCODED_VIDEO_MAP = '0:V';
  * 放在字幕滤镜之后：字幕仍按原始画面渲染，位置不变；放在 `format=nv12` 之前：
  * 硬件编码器同样拿到偶数宽高。软封装/无字幕是 -c copy，没有滤镜链，不受影响。
  */
-const EVEN_DIMENSIONS_FILTER = 'crop=trunc(iw/2)*2:trunc(ih/2)*2:0:0';
+const EVEN_DIMENSIONS_FILTER = EVEN_DIMENSIONS_CROP_FILTER;
 
 const DEFAULT_DUCK_RATIO = 8;
 
@@ -146,6 +153,14 @@ export function buildComposePlan(
   }
   // 纵深防御：WebM/Ogg 写不下这里产出的 H.264/AAC，构建期拒绝而不是等 ffmpeg 写头失败（#521）
   assertComposeOutputWritable(outputPath);
+  const originalSubtitleCodecs =
+    subtitle.mode === 'hard'
+      ? []
+      : buildSubtitleCodecOptions(
+          extension,
+          input.embeddedSubtitles || [],
+          subtitle.mode === 'soft' ? 1 : 0,
+        );
   const softSubtitleTail = [
     extension === '.mp4' ? '-c:s' : '-c:s:0',
     extension === '.mp4' ? 'mov_text' : 'srt',
@@ -233,7 +248,8 @@ export function buildComposePlan(
       // 其余组合保持直拷，用户手动选的 .mkv 也一样（#521）。
       opt.push(
         ...subtitle.encoderArgs,
-        ...(sourceAudioNeedsAac(path.extname(videoPath), extension)
+        ...(input.audioCodecs === undefined &&
+        sourceAudioNeedsAac(path.extname(videoPath), extension)
           ? AAC_ARGS
           : ['-c:a', 'copy']),
       );
@@ -272,6 +288,11 @@ export function buildComposePlan(
     }
   }
 
+  // Stream-indexed overrides follow the broad copy options; the added subtitle is s:0.
+  opt.push(...originalSubtitleCodecs);
+  if (audio.mode === 'keep' || audio.mode === 'addTrack') {
+    opt.push(...buildAudioCodecOptions(extension, input.audioCodecs || []));
+  }
   opt.push('-y');
 
   return {

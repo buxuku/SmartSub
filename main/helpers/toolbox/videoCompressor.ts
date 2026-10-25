@@ -11,6 +11,10 @@ import { spawn, ChildProcess } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
 import { logMessage } from '../logger';
 import { probeVideoInfo } from './videoTrimmer';
+import {
+  COMPATIBLE_PIXEL_FORMAT,
+  EVEN_DIMENSIONS_PAD_FILTER,
+} from '../videoEncoding';
 import type {
   VideoCompressConfig,
   VideoCompressResult,
@@ -95,7 +99,8 @@ export async function executeVideoCompress(
     origInfo.size <= targetBytes &&
     /\.mp4$/i.test(videoPath) &&
     origInfo.videoCodec === 'h264' &&
-    (!origInfo.hasAudio || origInfo.audioCodec === 'aac')
+    origInfo.pixelFormat === COMPATIBLE_PIXEL_FORMAT &&
+    origInfo.audioCodecs.every((codec) => codec === 'aac')
   ) {
     onProgress?.(100);
     return {
@@ -114,7 +119,14 @@ export async function executeVideoCompress(
     outputPath || path.join(dir, `${baseName}_compressed.mp4`),
   );
 
-  const args: string[] = ['-hide_banner', '-y', '-i', videoPath];
+  const args: string[] = [
+    '-hide_banner',
+    '-y',
+    '-i',
+    videoPath,
+    '-pix_fmt',
+    COMPATIBLE_PIXEL_FORMAT,
+  ];
 
   if (preset === 'wechat_25mb' || preset === 'target_size') {
     const targetMb = preset === 'wechat_25mb' ? 24 : targetSizeMb;
@@ -137,7 +149,7 @@ export async function executeVideoCompress(
       '-bufsize',
       `${videoBitrate * 2}`,
       '-vf',
-      "scale='min(1280,iw)':-2",
+      `${EVEN_DIMENSIONS_PAD_FILTER},scale='min(1280,iw)':-2`,
       '-preset',
       'fast',
       '-c:a',
@@ -154,7 +166,7 @@ export async function executeVideoCompress(
       '-preset',
       'veryfast',
       '-vf',
-      "scale='min(1280,iw)':-2",
+      `${EVEN_DIMENSIONS_PAD_FILTER},scale='min(1280,iw)':-2`,
       '-c:a',
       'aac',
       '-b:a',
@@ -170,7 +182,7 @@ export async function executeVideoCompress(
       '-preset',
       'fast',
       '-vf',
-      "scale='min(1920,iw)':-2",
+      `${EVEN_DIMENSIONS_PAD_FILTER},scale='min(1920,iw)':-2`,
       '-c:a',
       'aac',
       '-b:a',
