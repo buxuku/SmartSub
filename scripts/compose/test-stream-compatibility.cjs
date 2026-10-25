@@ -95,6 +95,8 @@ async function main() {
   const movtext = path.join(root, 'movtext.mp4');
   const mixed = path.join(root, 'mixed.mkv');
   const assVideo = path.join(root, 'native.mkv');
+  const attachment = path.join(root, 'font-fixture.ttf');
+  fs.writeFileSync(attachment, 'font attachment preservation fixture');
   run([
     '-i',
     video,
@@ -138,6 +140,10 @@ async function main() {
     '1',
     '-c',
     'copy',
+    '-attach',
+    attachment,
+    '-metadata:s:t:0',
+    'mimetype=application/x-truetype-font',
     assVideo,
   ]);
   let id = 0;
@@ -284,6 +290,69 @@ async function main() {
       'subtitle pixels are present',
     );
   });
+  for (const mode of ['replace', 'mix'])
+    await check(
+      `${mode}: copied ASS retains MKV font attachments`,
+      async () => {
+        const out = await compose(
+          assVideo,
+          'mkv',
+          { mode: 'none' },
+          { mode, trackPath: voice },
+        );
+        assert.match(probe(out), /Attachment: ttf/);
+        const dumped = path.join(root, `attachment-${mode}.ttf`);
+        run([
+          '-dump_attachment:t:0',
+          dumped,
+          '-i',
+          out,
+          '-t',
+          '0.1',
+          '-f',
+          'null',
+          '-',
+        ]);
+        assert.deepEqual(fs.readFileSync(dumped), fs.readFileSync(attachment));
+      },
+    );
+  await check(
+    'streamable media without duration still supports compose',
+    async () => {
+      const live = path.join(root, 'live.webm');
+      run([
+        '-i',
+        video,
+        '-an',
+        '-c:v',
+        'libvpx-vp9',
+        '-deadline',
+        'realtime',
+        '-cpu-used',
+        '8',
+        '-live',
+        '1',
+        live,
+      ]);
+      assert.match(probe(live), /Duration: N\/A/);
+      const {
+        probeVideoInfo,
+      } = require('../../main/helpers/toolbox/videoTrimmer.ts');
+      await assert.rejects(
+        probeVideoInfo(live),
+        /duration/i,
+        'duration-dependent toolbox operations still reject unknown duration',
+      );
+      for (const subtitle of [hard, soft, { mode: 'none' }]) {
+        const out = await compose(live, 'mkv', subtitle, {
+          mode: 'replace',
+          trackPath: voice,
+        });
+        assert.match(probe(out), /Video:/);
+        assert.match(probe(out), /Audio: aac/);
+      }
+    },
+  );
   assert.deepEqual(
     failures,
     [],

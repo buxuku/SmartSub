@@ -59,6 +59,6 @@ Files: audioProcessor, cloneAudioPipeline, proofreadWaveform and relevant audio 
 Files: package scripts and `.github/workflows/ffmpeg-compatibility.yml`.
 
 - [x] Add a focused portable real-FFmpeg regression command and CI matrix (Windows and Linux).
-- [ ] Run relevant local suites and typecheck; review the complete branch and address findings.
+- [x] Run relevant local suites and typecheck; review the complete branch and address findings.
 - [ ] Commit and push this branch; run Windows CI and inspect/fix failures until green.
 - [ ] Report branch, commits, tested platforms and CI links. Keep main unmerged.

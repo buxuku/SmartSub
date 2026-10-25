@@ -98,6 +98,7 @@ export function formatFfmpegTime(seconds: number): string {
 export function probeVideoInfo(
   videoPath: string,
   signal?: AbortSignal,
+  options: { allowUnknownDuration?: boolean } = {},
 ): Promise<{
   duration: number;
   width: number;
@@ -163,7 +164,7 @@ export function probeVideoInfo(
         videoLine,
       );
 
-      if (!durationMatch) {
+      if (!durationMatch && !options.allowUnknownDuration) {
         return reject(
           new Error(
             `Unable to parse video duration. Invalid, corrupted, or unsupported media file. ${stderr.slice(-200)}`,
@@ -171,8 +172,8 @@ export function probeVideoInfo(
         );
       }
 
-      const duration = parseTimemark(durationMatch[1]);
-      if (duration <= 0) {
+      const duration = durationMatch ? parseTimemark(durationMatch[1]) : 0;
+      if (duration <= 0 && !options.allowUnknownDuration) {
         return reject(
           new Error(`Detected invalid video duration: ${duration}s`),
         );
