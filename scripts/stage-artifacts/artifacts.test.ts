@@ -22,6 +22,41 @@ function setup(t: any) {
   const artifacts = createStageArtifactStore(createTaskRunStore(root));
   return { root, artifacts, workspace: artifacts.workspace(token) };
 }
+
+test('artifact publication syncs both copied data and state with writable handles (Windows)', async (t) => {
+  const { artifacts, workspace } = setup(t);
+  const source = path.join(workspace, 'source.srt');
+  fs.writeFileSync(source, 'original');
+  const open = fs.promises.open.bind(fs.promises);
+  const synced: string[] = [];
+  t.mock.method(
+    fs.promises,
+    'open',
+    async (target: string, flags: string, ...args: any[]) => {
+      const handle = await open(target, flags, ...args);
+      const sync = handle.sync.bind(handle);
+      handle.sync = async () => {
+        // Windows FlushFileBuffers rejects handles opened without write access.
+        if (flags === 'r')
+          throw Object.assign(
+            new Error('EPERM: operation not permitted, fsync'),
+            { code: 'EPERM' },
+          );
+        synced.push(path.basename(target));
+        return sync();
+      };
+      return handle;
+    },
+  );
+  const result = await artifacts.commit(token, workspace, 'f', {
+    srtFile: source,
+  });
+  assert.deepEqual(synced, ['0-source.srt', 'state.json']);
+  assert.equal(fs.readFileSync(result.patch.srtFile, 'utf8'), 'original');
+  assert.equal(fs.readFileSync(source, 'utf8'), 'original');
+  assert.ok(await artifacts.validate(result.artifacts));
+});
+
 test('committed artifacts are independent of attempt inputs and reject later corruption', async (t) => {
   const { artifacts, workspace } = setup(t);
   const source = path.join(workspace, 'source.srt');

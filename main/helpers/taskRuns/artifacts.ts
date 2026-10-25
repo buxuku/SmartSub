@@ -111,7 +111,9 @@ export function createStageArtifactStore(manifests: TaskRunStore) {
           const target = path.join(staging, name);
           await copyIndependent(value, target);
           const { digest, identity } = await hashFile(target, signal);
-          const handle = await fs.promises.open(target, 'r');
+          // Windows requires write access to flush a file. This is our private
+          // staging copy; r+ preserves its contents until atomic publication.
+          const handle = await fs.promises.open(target, 'r+');
           try {
             await handle.sync();
           } finally {
@@ -157,7 +159,7 @@ export function createStageArtifactStore(manifests: TaskRunStore) {
           mode: 0o600,
         });
         const { digest, identity } = await hashFile(statePath, signal);
-        const handle = await fs.promises.open(statePath, 'r');
+        const handle = await fs.promises.open(statePath, 'r+');
         try {
           await handle.sync();
         } finally {
