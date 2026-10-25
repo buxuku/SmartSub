@@ -261,9 +261,11 @@ async function materializeEditableProofread(
     if (value !== destination) await copyIndependent(value, destination);
     file[key] = destination;
   }
-  if (!file.sourceSubtitleFiles?.length) file.srtFile = file.tempSrtFile;
-  if (!file.translatedSubtitleFiles?.length)
-    file.translatedSrtFile = file.tempFinalSubtitleFile;
+  // Artifact capture rewrites scalar paths; the editor must target published
+  // deliveries (or this run's editable SRT), never the immutable captured copy.
+  file.srtFile = file.sourceSubtitleFiles?.[0] || file.tempSrtFile;
+  file.translatedSrtFile =
+    file.translatedSubtitleFiles?.[0] || file.tempFinalSubtitleFile;
   const data = await readProofreadDataFile(editable);
   data.meta.targetFile = file.tempTranslatedSrtFile;
   data.meta.translateContent = ctx.run.config.translateContent;
@@ -367,7 +369,10 @@ async function exportSubtitles(
         sourceLanguage: config.sourceLanguage,
         targetLanguage: config.targetLanguage,
         model: config.model,
-        translateProvider: '',
+        translateProvider:
+          ctx.run.resolvedConfig.translationProviders?.find(
+            (provider: any) => provider.id === config.translateProvider,
+          )?.name || '',
       },
     );
     for (const source of output.files) {
@@ -387,7 +392,9 @@ async function exportSubtitles(
       file.internalDeliverables.push({ source, desired, target, role });
     }
   }
-  file.tempSrtFile = canonicalSource;
+  // Keep the timed, rendered source for composition even when only TXT/VTT is
+  // published. The upstream canonical source remains in its immutable artifact.
+  file.tempSrtFile = file.srtFile;
   file.tempFinalSubtitleFile = file.translatedSrtFile || canonicalTarget;
   file.srtFile = file.sourceSubtitleFiles[0] || canonicalSource;
   file.translatedSrtFile = file.translatedSubtitleFiles[0] || canonicalTarget;

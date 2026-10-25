@@ -70,6 +70,14 @@ test('accepted configuration is an independent durable snapshot, including effec
   assert.equal(service.get('project', result.runId)!.config.model, 'tiny');
 });
 
+test('accepted task name is durable metadata and request replays preserve it', (t) => {
+  const { store, service } = harness(t);
+  const first = service.accept({ ...input(), name: '  Submitted title  ' });
+  assert.equal(store.read('project', first.runId)!.name, 'Submitted title');
+  service.accept({ ...input(), name: 'Changed replay title' });
+  assert.equal(service.get('project')!.name, 'Submitted title');
+});
+
 test('replayed requests return the original run; conflicting replays cannot start work', (t) => {
   const { store, service } = harness(t);
   const first = service.accept(input());

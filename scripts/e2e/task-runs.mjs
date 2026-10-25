@@ -357,5 +357,6 @@ try {
 
 await import('./task-runs-presentation.mjs');
 await import('./task-runs-review.mjs');
+await import('./task-runs-delivery.mjs');
 
 await import('./task-stage-settings.mjs');

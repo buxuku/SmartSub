@@ -201,6 +201,7 @@ export function createTaskRunService(
     accept(input: {
       projectId: string;
       requestId: string;
+      name?: string;
       config: Record<string, any>;
       resolvedConfig: Record<string, any>;
       files: IFiles[];
@@ -224,6 +225,7 @@ export function createTaskRunService(
         schemaVersion: TASK_RUN_SCHEMA_VERSION,
         projectId: input.projectId,
         runId: randomUUID(),
+        name: input.name?.trim() || undefined,
         previousRunId: runs[0]?.runId,
         requestId: input.requestId,
         requestFingerprint: fingerprint,
@@ -245,7 +247,8 @@ export function createTaskRunService(
                 id,
                 {
                   id,
-                  version: 1,
+                  // Version 2 retains rendered source SRT and provider filenames.
+                  version: id === 'exportSubtitle' ? 2 : 1,
                   dependencies: i ? [plan[i - 1]] : [],
                   status: 'pending',
                   progress: 0,

@@ -1,6 +1,6 @@
 /** Only credential values are live. Result-affecting parameters are frozen. */
 const secretKey =
-  /^(apiKey|api_key|accessKey|secretKey|accessToken|refreshToken|token|password|authorization|x-api-key)$/i;
+  /^(apiKey|api_key|apiSecret|accessKey|accessKeyId|accessKeySecret|secretId|secretKey|appId|appKey|accessToken|refreshToken|token|password|authorization|x-api-key)$/i;
 export function redactCredentials(value: any): any {
   if (Array.isArray(value)) return value.map(redactCredentials);
   if (value && typeof value === 'object')
@@ -14,7 +14,7 @@ export function redactCredentials(value: any): any {
 }
 export function resolveCredentials(snapshot: any, live: any): any {
   if (snapshot?.$credential === true)
-    return typeof live === 'string' ? live : '';
+    return typeof live === 'string' || typeof live === 'number' ? live : '';
   if (Array.isArray(snapshot))
     return snapshot.map((item, index) =>
       resolveCredentials(
@@ -28,7 +28,11 @@ export function resolveCredentials(snapshot: any, live: any): any {
     return Object.fromEntries(
       Object.entries(snapshot).map(([key, item]) => [
         key,
-        resolveCredentials(item, live?.[key]),
+        // Older manifests may contain credentials captured before this key was recognized.
+        resolveCredentials(
+          secretKey.test(key) ? { $credential: true } : item,
+          live?.[key],
+        ),
       ]),
     );
   return snapshot;

@@ -93,6 +93,8 @@ export interface TaskRun {
   schemaVersion: number;
   projectId: string;
   runId: string;
+  /** Submitted display name; existing WorkItem names take precedence. */
+  name?: string;
   previousRunId?: string;
   requestId: string;
   requestFingerprint: string;

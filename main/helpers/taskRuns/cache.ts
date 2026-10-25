@@ -166,7 +166,14 @@ export function stageConfiguration(run: TaskRun, id: StageId) {
     return pick(config, ['speakerDiarizationEmbedInSubtitle']);
   if (id === 'prepareProofread')
     return pick(config, ['sourceLanguage', 'targetLanguage', 'glossaryIds']);
-  if (id === 'exportSubtitle') return pick(config, outputKeys);
+  if (id === 'exportSubtitle')
+    return {
+      ...pick(config, outputKeys),
+      translateProviderName:
+        run.resolvedConfig.translationProviders?.find(
+          (provider: any) => provider.id === config.translateProvider,
+        )?.name || '',
+    };
   if (id === 'dubbing' || id === 'dubbingTrack')
     return {
       dub: config.dub,
