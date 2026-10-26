@@ -43,11 +43,21 @@ export interface ConfigurationValidationOptions {
 export class ConfigurationManager {
   /** Synchronous acceptance snapshot, before queue publication. */
   getTaskSnapshot(): Record<string, CustomParameterConfig> {
-    if (this.isInitialized) return Object.fromEntries([...this.configurations].map(([id, entry]) => [id, structuredClone(entry.config)]));
+    if (this.isInitialized)
+      return Object.fromEntries(
+        [...this.configurations].map(([id, entry]) => [
+          id,
+          structuredClone(entry.config),
+        ]),
+      );
     if (!existsSync(this.configurationsFile)) return {};
     const data = JSON.parse(readFileSync(this.configurationsFile, 'utf8'));
     const entries = data.configurations || data;
-    return Object.fromEntries(Object.entries(entries).filter(([, entry]: any) => entry?.config).map(([id, entry]: any) => [id, entry.config]));
+    return Object.fromEntries(
+      Object.entries(entries)
+        .filter(([, entry]: any) => entry?.config)
+        .map(([id, entry]: any) => [id, entry.config]),
+    );
   }
   private readonly configDir: string;
   private readonly configurationsFile: string;
