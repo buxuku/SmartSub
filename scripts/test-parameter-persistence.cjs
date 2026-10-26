@@ -6,6 +6,13 @@ const path = require('node:path');
 const vm = require('node:vm');
 const ts = require('typescript');
 
+// The main-process bundle is compiled by nextron's Babel preset with
+// @babel/plugin-transform-runtime (corejs: 3), so in production `Map` is
+// core-js-pure's wrapper class rather than the native one. Run the manager with
+// that same class so these tests see production collection semantics, e.g.
+// structuredClone(map) yields `{}` there instead of a Map.
+const ProductionMap = require('@babel/runtime-corejs3/core-js-stable/map');
+
 function harness(directory) {
   const cache = new Map();
   let failure;
@@ -34,6 +41,7 @@ function harness(directory) {
       {
         module,
         exports: module.exports,
+        Map: ProductionMap,
         structuredClone,
         process,
         console: Object.fromEntries(
@@ -189,8 +197,38 @@ const config = (value) => ({
   const migrated = await harness(directory).manager.getConfiguration('legacy');
   assert.equal(migrated.configVersion, '1.2.0');
   assert.equal(migrated.bodyParameters.temperature, 0.8);
+
+  // Reported regression: create an API, add a body parameter, quit, relaunch.
+  // The renderer saves new configs as configVersion '1.0.0', so the next launch
+  // must migrate them. That migration may not fail or drop the parameter.
+  const relaunchDirectory = await fsp.mkdtemp(
+    path.join(os.tmpdir(), 'smartsub-parameter-relaunch-'),
+  );
+  const relaunchFile = path.join(
+    relaunchDirectory,
+    'parameter-configs/configurations.json',
+  );
+  const storedVersion = async () =>
+    JSON.parse(await fsp.readFile(relaunchFile, 'utf8'))['new-api'].metadata
+      .version;
+  const thinking = { thinking: { type: 'disabled' } };
+  await harness(relaunchDirectory).manager.saveConfiguration('new-api', {
+    ...config(0),
+    bodyParameters: thinking,
+    configVersion: '1.0.0',
+  });
+  assert.equal(await storedVersion(), '1.0.0');
+  const relaunched =
+    await harness(relaunchDirectory).manager.getConfiguration('new-api');
+  assert.deepEqual(relaunched.bodyParameters, thinking);
+  assert.equal(relaunched.configVersion, '1.2.0');
+  assert.equal(await storedVersion(), '1.2.0');
+  const relaunchedAgain =
+    await harness(relaunchDirectory).manager.getConfiguration('new-api');
+  assert.deepEqual(relaunchedAgain.bodyParameters, thinking);
+
   console.log(
-    'Parameter persistence: atomic failure, retry, concurrency, reset, import, restore, isolation, validation, corrupt read and migration passed.',
+    'Parameter persistence: atomic failure, retry, concurrency, reset, import, restore, isolation, validation, corrupt read, migration and relaunch of 1.0.0 configs passed.',
   );
   console.log(`Evidence: ${directory}`);
 })().catch((error) => {
