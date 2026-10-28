@@ -237,6 +237,102 @@ async function main() {
     ]);
   });
 
+  for (const scenario of [
+    {
+      toolkit: '12.6.20',
+      driver: '13.3',
+      addon: '13.0.2',
+      type: 'tar.gz',
+      reason: 'toolkitIncompatible',
+    },
+    {
+      toolkit: '13.0.88',
+      driver: '13.3',
+      addon: '13.0.2',
+      type: 'node.gz',
+      reason: 'toolkitInstalled',
+    },
+    {
+      toolkit: '13.0.0',
+      driver: '13.0',
+      addon: '13.0.2',
+      type: 'node.gz',
+      reason: 'toolkitInstalled',
+    },
+    {
+      toolkit: '13.0.88',
+      driver: '12.9',
+      addon: '12.4.0',
+      type: 'tar.gz',
+      reason: 'toolkitIncompatible',
+    },
+    {
+      toolkit: '12.3.99',
+      driver: '12.9',
+      addon: '12.4.0',
+      type: 'tar.gz',
+      reason: 'toolkitIncompatible',
+    },
+    {
+      toolkit: '12.6.20',
+      driver: '12.9',
+      addon: '12.4.0',
+      type: 'node.gz',
+      reason: 'toolkitInstalled',
+    },
+    {
+      toolkit: '',
+      driver: '13.3',
+      addon: '13.0.2',
+      type: 'tar.gz',
+      reason: 'toolkitIncompatible',
+    },
+    {
+      toolkit: 'unknown',
+      driver: '13.3',
+      addon: '13.0.2',
+      type: 'tar.gz',
+      reason: 'toolkitIncompatible',
+    },
+    {
+      toolkit: null,
+      driver: '13.3',
+      addon: '13.0.2',
+      type: 'tar.gz',
+      reason: 'toolkitMissing',
+    },
+  ]) {
+    await test(`CUDA 推荐：Toolkit=${scenario.toolkit ?? '未安装'} / driver=${scenario.driver} → ${scenario.addon} ${scenario.type}`, async () => {
+      const names = [
+        'NODE_ENV',
+        'DEV_SIMULATE_CUDA',
+        'DEV_SIMULATE_HAS_TOOLKIT',
+        'DEV_SIMULATE_CUDA_TOOLKIT',
+        'DEV_SIMULATE_GPU_CUDA_VERSION',
+      ];
+      const saved = names.map((name) => process.env[name]);
+      try {
+        process.env.NODE_ENV = 'test';
+        process.env.DEV_SIMULATE_CUDA = 'true';
+        process.env.DEV_SIMULATE_HAS_TOOLKIT = String(
+          scenario.toolkit !== null,
+        );
+        process.env.DEV_SIMULATE_CUDA_TOOLKIT = scenario.toolkit ?? '';
+        process.env.DEV_SIMULATE_GPU_CUDA_VERSION = scenario.driver;
+        const { recommendation } = await cudaUtils.getCudaEnvironment();
+        assert.equal(recommendation.recommendedVersion, scenario.addon);
+        assert.equal(recommendation.downloadType, scenario.type);
+        assert.equal(recommendation.needsDlls, scenario.type === 'tar.gz');
+        assert.equal(recommendation.reasonKey, scenario.reason);
+      } finally {
+        names.forEach((name, index) => {
+          if (saved[index] === undefined) delete process.env[name];
+          else process.env[name] = saved[index];
+        });
+      }
+    });
+  }
+
   process.off('uncaughtException', onUncaught);
   moduleInternals._load = originalLoad;
   assert.deepEqual(

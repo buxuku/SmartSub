@@ -153,6 +153,7 @@ export interface AddonRecommendation {
     | 'cudaVersionTooOld'
     | 'maxCudaUnknown'
     | 'toolkitInstalled'
+    | 'toolkitIncompatible'
     | 'toolkitMissing';
 }
 

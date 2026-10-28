@@ -143,6 +143,7 @@ function resetWorld() {
   failLoad = new Set();
   nativeCalls = [];
   storeData.clear();
+  addonLoader.setLoadResultNotifier(null);
   addonLoader.clearAddonLoadCache();
 }
 
@@ -284,6 +285,54 @@ async function main() {
     assert.equal(result.backend, 'custom');
     await result.whisperAsync({ use_gpu: true });
     assert.equal(nativeCalls[0].params.use_gpu, true);
+  });
+
+  await test('启动时的历史降级只留作诊断，不作为当前生效后端', () => {
+    resetWorld();
+    const historical = {
+      backend: 'vulkan',
+      fallback: true,
+      loadedAt: '2026-10-22T17:38:52.654Z',
+    };
+    storeData.set('lastAddonLoadResult', historical);
+    assert.equal(addonLoader.getActiveBackend(), null);
+    assert.equal(storeData.get('lastAddonLoadResult'), historical);
+  });
+
+  await test('重装/切换包清除当前降级状态并通知界面，历史记录仍保留', async () => {
+    resetWorld();
+    customPath = customAddon;
+    failLoad.add(customAddon);
+    await addonLoader.loadBestAddon(ctx('auto'));
+    assert.equal(addonLoader.getActiveBackend()?.fallback, true);
+    const historical = storeData.get('lastAddonLoadResult');
+    const history = structuredClone(storeData.get('addonLoadHistory'));
+    const events: unknown[] = [];
+    addonLoader.setLoadResultNotifier((info) => events.push(info));
+
+    addonLoader.clearAddonLoadCache();
+
+    assert.equal(addonLoader.getActiveBackend(), null);
+    assert.deepEqual(events, [null]);
+    assert.equal(storeData.get('lastAddonLoadResult'), historical);
+    assert.deepEqual(storeData.get('addonLoadHistory'), history);
+  });
+
+  await test('清除状态后重新转写，真实加载结果替代待验证状态', async () => {
+    resetWorld();
+    customPath = customAddon;
+    failLoad.add(customAddon);
+    await addonLoader.loadBestAddon(ctx('auto'));
+    addonLoader.clearAddonLoadCache();
+    failLoad.clear();
+    const events: unknown[] = [];
+    addonLoader.setLoadResultNotifier((info) => events.push(info));
+    await addonLoader.loadBestAddon(ctx('auto'));
+    const active = addonLoader.getActiveBackend();
+    assert.equal(active?.backend, 'custom');
+    assert.equal(active?.fallback, false);
+    assert.deepEqual(active?.failedAttempts, []);
+    assert.deepEqual(events, [active]);
   });
 
   moduleInternals._load = originalLoad;
