@@ -20,6 +20,27 @@ const PREFLIGHT_TIMEOUT_MS = 45_000;
 /** 进度文本解析不到时的文件大小轮询间隔 */
 const SIZE_POLL_INTERVAL_MS = 1000;
 
+/** lux 只识别 /video/ID；精选页、用户页的弹窗链接以 modal_id 标识视频。 */
+function normalizeLuxUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (
+      !['http:', 'https:'].includes(parsed.protocol) ||
+      !['douyin.com', 'www.douyin.com'].includes(parsed.hostname) ||
+      /^\/video\/\d+/.test(parsed.pathname)
+    ) {
+      return url;
+    }
+    const videoId = parsed.searchParams.get('modal_id');
+    if (videoId && /^\d+$/.test(videoId)) {
+      return `https://www.douyin.com/video/${videoId}`;
+    }
+  } catch {
+    // 非法 URL 留给调用方的边界校验处理。
+  }
+  return url;
+}
+
 /** 跨平台文件名清洗（lux -O 只接受纯文件名，不含扩展名） */
 export function sanitizeFileName(name: string): string {
   const cleaned = name
@@ -106,7 +127,7 @@ export const luxAdapter: DownloadEngineAdapter = {
     const preflightArgs = [
       '-j',
       ...(opts.cookieFilePath ? ['-c', opts.cookieFilePath] : []),
-      opts.url,
+      normalizeLuxUrl(opts.url),
     ];
     const result = await runProcess(binaryPath, preflightArgs, {
       timeoutMs: opts.timeoutMs ?? PREFLIGHT_TIMEOUT_MS,
@@ -173,7 +194,7 @@ export const luxAdapter: DownloadEngineAdapter = {
         ...(streamId ? ['-f', streamId] : []),
         ...(opts.cookieFilePath ? ['-c', opts.cookieFilePath] : []),
         ...(opts.expandPlaylist ? ['-p'] : []),
-        opts.url,
+        normalizeLuxUrl(opts.url),
       ];
       const result = await runProcess(binaryPath, args, {
         signal: opts.signal,

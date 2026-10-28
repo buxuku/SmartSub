@@ -480,6 +480,19 @@ function run(): void {
     'error: 优先提取 ERROR 行',
   );
   eq(tailForError('a\nb\nc\nd'), 'b | c | d', 'error: 无 ERROR 行时取末尾行');
+  for (const cause of [
+    'unable to get video ID',
+    'unexpected end of JSON input',
+    'request error: HTTP 403',
+  ]) {
+    eq(
+      tailForError(
+        `Downloading https://www.douyin.com/jingxuan?modal_id=7693844311170993417 error:\n${cause}\ngithub.com/iawia002/lux/extractors/douyin.(*extractor).Extract\n\tgithub.com/iawia002/lux/extractors/douyin/douyin.go:59\n`,
+      ),
+      cause,
+      `error: lux 展示真实原因 ${cause}，而非仅 error 标题或 Go 堆栈`,
+    );
+  }
 
   // ==========================================================
   // matchCookieProfile（spec: 子进程环境注入 - URL→档案匹配）
@@ -488,6 +501,28 @@ function run(): void {
     id: p.id,
     matchDomains: p.matchDomains,
   }));
+  for (const [url, id] of [
+    ['https://v.douyin.com/abc/', 'douyin'],
+    ['https://xhslink.com/a/abc', 'xiaohongshu'],
+    ['https://v.kuaishou.com/abc', 'kuaishou'],
+    ['https://x.com/user/status/1', 'twitter'],
+    ['https://twitter.com/user/status/1', 'twitter'],
+  ]) {
+    eq(matchCookieProfile(url, presetMatchList), id, `auto cookie site ${id}`);
+  }
+  eq(
+    matchCookieProfile('https://www.douyin.com/video/1', [
+      { id: 'broad', matchDomains: ['douyin.com'] },
+      { id: 'specific', matchDomains: ['www.douyin.com'] },
+    ]),
+    'specific',
+    'more specific site definition takes precedence over a parent domain',
+  );
+  eq(
+    matchCookieProfile('file://douyin.com/test', presetMatchList),
+    null,
+    'cookie injection only accepts http(s)',
+  );
   eq(
     matchCookieProfile('https://www.bilibili.com/video/BV1', presetMatchList),
     'bilibili',
@@ -665,6 +700,25 @@ function run(): void {
     1,
     'netscape: 域过滤剔除无关站点（含 #HttpOnly_/. 前缀归一）',
   );
+  const douyinCookies = parseNetscapeCookies(
+    [
+      '.douyin.com\tTRUE\t/\tTRUE\t0\tsessionid\tfixture',
+      'www.douyin.com\tFALSE\t/\tTRUE\t0\tweb_cookie\tfixture',
+      'live.www.douyin.com\tFALSE\t/\tTRUE\t0\tchild_cookie\tfixture',
+      'douyin.com\tFALSE\t/\tTRUE\t0\thost_only_parent\tfixture',
+      '.live.douyin.com\tTRUE\t/\tTRUE\t0\tsibling_cookie\tfixture',
+      '.notdouyin.com\tTRUE\t/\tTRUE\t0\tunrelated_cookie\tfixture',
+      '.douyin.com.example.com\tTRUE\t/\tTRUE\t0\tlookalike_cookie\tfixture',
+      '.com\tTRUE\t/\tTRUE\t0\ttld_cookie\tfixture',
+    ].join('\n'),
+  );
+  eq(
+    filterCookiesByDomains(douyinCookies, ['www.douyin.com']).map(
+      (c) => c.name,
+    ),
+    ['sessionid', 'web_cookie', 'child_cookie'],
+    'netscape: www 档案保留适用的父域 Cookie，排除仅限父主机、兄弟域与无关域',
+  );
   eq(
     parseNetscapeCookies(serializeNetscapeCookies(parsedCookies)).length,
     2,
@@ -677,6 +731,25 @@ function run(): void {
   const synth = cookiesFromRawString(
     'SESSDATA=xxx; bili_jct=yyy',
     'bilibili.com',
+  );
+  const mixedExpiry = [
+    { ...synth[0], name: 'tracking', expiry: 10 },
+    { ...synth[0], name: 'session', expiry: 0 },
+  ];
+  eq(
+    computeCookieStatus(mixedExpiry, [], 20).expired,
+    false,
+    'an expired tracking cookie cannot invalidate an unknown session',
+  );
+  eq(
+    computeCookieStatus(mixedExpiry, [], 20).expiresAt,
+    undefined,
+    'unknown session validity has no guessed expiration date',
+  );
+  eq(
+    computeCookieStatus([{ ...synth[0], expiry: 10 }], [], 20).expired,
+    true,
+    'a jar with only expired cookies can be marked expired',
   );
   eq(synth.length, 2, 'rawCookie: 分号分隔合成两条');
   eq(synth[0].domain, '.bilibili.com', 'rawCookie: 主域带前导点覆盖子域');

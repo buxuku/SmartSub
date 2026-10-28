@@ -241,6 +241,34 @@ export function routeEngines(
 /** cookie 档案导入来源 */
 export type CookieProfileSource = 'browser' | 'file' | 'paste';
 
+export const COOKIE_BROWSERS = [
+  'chrome',
+  'edge',
+  'firefox',
+  'safari',
+  'brave',
+] as const;
+export type CookieBrowser = (typeof COOKIE_BROWSERS)[number];
+
+export interface BrowserCookieProfile {
+  id: string;
+  name: string;
+  isDefault: boolean;
+}
+
+export interface CookieImportOrigin {
+  browser?: CookieBrowser;
+  /** Chromium 用户档案的目录名，例如 Default / Profile 1；不含绝对路径 */
+  browserProfile?: string;
+}
+
+export interface CookieBatchImportResult {
+  profiles: CookieProfileView[];
+  /** 本次保存的 Cookie 数量（多个自定义档案重叠时只计一次） */
+  cookieCount: number;
+  ignoredCookieCount: number;
+}
+
 /**
  * 预设站点档案定义（代码常量，非持久化）。
  * matchDomains：条目 URL → 档案匹配域（含短链别名，如 b23.tv/youtu.be）。
@@ -253,6 +281,8 @@ export interface CookieProfilePreset {
   nameKey: string;
   matchDomains: string[];
   cookieDomains: string[];
+  /** 公开站点主机；缺省使用主域、www 和 m，不收集后台兄弟主机凭据。 */
+  cookieHosts?: string[];
   keyCookieNames: string[];
   /** 附账号风控提示（youtube 带 cookie 批量下载有风险） */
   hasRiskNote?: boolean;
@@ -274,10 +304,64 @@ export const COOKIE_SITE_PRESETS: CookieProfilePreset[] = [
     id: 'youtube',
     nameKey: 'cookie.presetYoutube',
     matchDomains: ['youtube.com', 'youtu.be'],
-    cookieDomains: ['youtube.com', 'google.com'],
+    cookieDomains: ['youtube.com'],
+    cookieHosts: [
+      'youtube.com',
+      'www.youtube.com',
+      'm.youtube.com',
+      'music.youtube.com',
+    ],
     keyCookieNames: ['LOGIN_INFO'],
     hasRiskNote: true,
   },
+  ...(
+    [
+      ['douyin', 'Douyin', ['douyin.com'], ['douyin.com']],
+      ['ixigua', 'Ixigua', ['ixigua.com'], ['ixigua.com']],
+      [
+        'kuaishou',
+        'Kuaishou',
+        ['kuaishou.com', 'gifshow.com'],
+        ['kuaishou.com'],
+      ],
+      [
+        'xiaohongshu',
+        'Xiaohongshu',
+        ['xiaohongshu.com', 'xhslink.com'],
+        ['xiaohongshu.com'],
+      ],
+      ['weibo', 'Weibo', ['weibo.com', 'weibo.cn'], ['weibo.com', 'weibo.cn']],
+      ['zhihu', 'Zhihu', ['zhihu.com'], ['zhihu.com']],
+      ['acfun', 'Acfun', ['acfun.cn'], ['acfun.cn']],
+      ['youku', 'Youku', ['youku.com'], ['youku.com']],
+      ['iqiyi', 'Iqiyi', ['iqiyi.com', 'iq.com'], ['iqiyi.com', 'iq.com']],
+      ['mgtv', 'Mgtv', ['mgtv.com'], ['mgtv.com']],
+      ['tiktok', 'Tiktok', ['tiktok.com'], ['tiktok.com']],
+      [
+        'twitter',
+        'Twitter',
+        ['x.com', 'twitter.com'],
+        ['x.com', 'twitter.com'],
+      ],
+      ['instagram', 'Instagram', ['instagram.com'], ['instagram.com']],
+      ['facebook', 'Facebook', ['facebook.com', 'fb.watch'], ['facebook.com']],
+      ['vimeo', 'Vimeo', ['vimeo.com'], ['vimeo.com']],
+      ['twitch', 'Twitch', ['twitch.tv'], ['twitch.tv']],
+      [
+        'dailymotion',
+        'Dailymotion',
+        ['dailymotion.com', 'dai.ly'],
+        ['dailymotion.com'],
+      ],
+      ['niconico', 'Niconico', ['nicovideo.jp', 'nico.ms'], ['nicovideo.jp']],
+    ] as Array<[string, string, string[], string[]]>
+  ).map(([id, name, matchDomains, cookieDomains]) => ({
+    id,
+    nameKey: `cookie.preset${name}`,
+    matchDomains,
+    cookieDomains,
+    keyCookieNames: [],
+  })),
 ];
 
 export function getCookiePresetById(
@@ -290,13 +374,15 @@ export function getCookiePresetById(
  * 持久化的档案元数据（内容单独落盘 userData/cookies/{id}.cookies）。
  * 预设档案仅在已导入时才有元数据记录；自定义档案额外带 name/域定义。
  */
-export interface CookieProfileMeta {
+export interface CookieProfileMeta extends CookieImportOrigin {
   id: string;
   kind: 'preset' | 'custom';
   importedAt: number;
   source: CookieProfileSource;
   /** safeStorage 加密落盘（false=明文回退，如 Linux 无 keyring） */
   encrypted: boolean;
+  /** 新版不可变内容文件；缺省时兼容旧版 {id}.cookies */
+  contentFile?: string;
   /** 自定义档案的展示名与域定义（预设从 COOKIE_SITE_PRESETS 取） */
   name?: string;
   matchDomains?: string[];
@@ -304,7 +390,7 @@ export interface CookieProfileMeta {
 }
 
 /** cookie 档案 + 计算状态（渲染层与匹配消费） */
-export interface CookieProfileView {
+export interface CookieProfileView extends CookieImportOrigin {
   id: string;
   kind: 'preset' | 'custom';
   /** 预设为 i18n 键，自定义为用户输入的原文名 */
@@ -321,7 +407,7 @@ export interface CookieProfileView {
   encrypted?: boolean;
   /** cookie 条数 */
   cookieCount?: number;
-  /** 关键/最早 cookie 过期（秒 epoch，0/缺省=会话 cookie 无过期信息） */
+  /** 已知关键 Cookie 的过期时间；缺省时有效性未知 */
   expiresAt?: number;
   /** 已过期 */
   expired?: boolean;
@@ -385,19 +471,38 @@ export function isDownloadableHttpUrl(url: unknown): url is string {
  */
 export function matchCookieProfile(
   url: string,
-  profiles: Array<{ id: string; matchDomains: string[]; configured?: boolean }>,
+  profiles: Array<{
+    id: string;
+    matchDomains: string[];
+    configured?: boolean;
+    importedAt?: number;
+  }>,
 ): string | null {
   let host = '';
   try {
-    host = new URL(url).hostname.toLowerCase();
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    host = parsed.hostname.toLowerCase();
   } catch {
     return null;
   }
+  let matched: string | null = null;
+  let specificity = 0;
+  let importedAt = 0;
   for (const profile of profiles) {
     if (profile.configured === false) continue;
-    if (profile.matchDomains.some((d) => hostMatches(host, d))) {
-      return profile.id;
+    for (const domain of profile.matchDomains) {
+      if (
+        hostMatches(host, domain) &&
+        (domain.length > specificity ||
+          (domain.length === specificity &&
+            (profile.importedAt ?? 0) >= importedAt))
+      ) {
+        matched = profile.id;
+        specificity = domain.length;
+        importedAt = profile.importedAt ?? 0;
+      }
     }
   }
-  return null;
+  return matched;
 }
