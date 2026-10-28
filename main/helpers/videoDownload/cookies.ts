@@ -30,10 +30,21 @@ function stripDomainPrefix(domain: string): string {
   return d.startsWith('.') ? d.slice(1) : d;
 }
 
-function hostMatchesDomain(cookieDomain: string, allowed: string): boolean {
-  const bare = stripDomainPrefix(cookieDomain).toLowerCase();
+function hostMatchesDomain(
+  cookie: NetscapeCookie,
+  allowed: string,
+  includeChildHosts: boolean,
+): boolean {
+  const bare = stripDomainPrefix(cookie.domain).toLowerCase();
   const target = allowed.toLowerCase();
-  return bare === target || bare.endsWith(`.${target}`);
+  return (
+    bare === target ||
+    (includeChildHosts && bare.endsWith(`.${target}`)) ||
+    // www.douyin.com 也需要 .douyin.com 的登录 Cookie；host-only 父域不适用。
+    (cookie.includeSubdomains &&
+      bare.includes('.') &&
+      target.endsWith(`.${bare}`))
+  );
 }
 
 /** Chromium/WebKit epoch（自 1601-01-01 起）到 Unix epoch（1970）的秒差 */
@@ -120,15 +131,20 @@ export function serializeNetscapeCookies(cookies: NetscapeCookie[]): string {
 }
 
 /**
- * 按 cookie 域白名单过滤（后缀域匹配，剥离 `.`/`#HttpOnly_` 前缀后比较）。
+ * 按 cookie 域白名单过滤（含子域及适用于目标域的父域 Cookie）。
+ * 父域须允许子域，且不能是裸 TLD；剥离 `.`/`#HttpOnly_` 前缀后比较。
  * 用于导入时丢弃无关站点 cookie，把 lux 全量发送的爆炸半径限制在单站点。
+ * includeChildHosts=false 时仅接受列出的主机及适用的父域，不接受任意子主机。
  */
 export function filterCookiesByDomains(
   cookies: NetscapeCookie[],
   cookieDomains: string[],
+  includeChildHosts = true,
 ): NetscapeCookie[] {
   return cookies.filter((c) =>
-    cookieDomains.some((allowed) => hostMatchesDomain(c.domain, allowed)),
+    cookieDomains.some((allowed) =>
+      hostMatchesDomain(c, allowed, includeChildHosts),
+    ),
   );
 }
 
@@ -168,15 +184,14 @@ export function cookiesFromRawString(
 
 export interface CookieProfileStatus {
   cookieCount: number;
-  /** 关键/最早 cookie 过期（秒 epoch）；缺省=全是会话 cookie（无过期信息） */
+  /** 已知关键 Cookie 过期时间（秒 epoch）；缺省=有效性未知 */
   expiresAt?: number;
   expired: boolean;
 }
 
 /**
- * 计算档案状态：关键 cookie（keyCookieNames）存在时取其最早过期时间，
- * 否则取所有非会话 cookie 的最早过期时间；全为会话 cookie 时 expiresAt 缺省。
- * expired：expiresAt 存在且早于 nowSeconds。
+ * 仅使用已知关键 Cookie 推断有效期。未知站点的一条追踪 Cookie 过期，
+ * 不代表登录态过期；无关键 Cookie 时只有整份内容全部过期才标记 expired。
  */
 export function computeCookieStatus(
   cookies: NetscapeCookie[],
@@ -187,14 +202,17 @@ export function computeCookieStatus(
   const keyed = keyCookieNames.length
     ? withExpiry.filter((c) => keyCookieNames.includes(c.name))
     : [];
-  const pool = keyed.length ? keyed : withExpiry;
   let expiresAt: number | undefined;
-  for (const c of pool) {
+  for (const c of keyed) {
     if (expiresAt === undefined || c.expiry < expiresAt) expiresAt = c.expiry;
   }
   return {
     cookieCount: cookies.length,
     expiresAt,
-    expired: expiresAt !== undefined && expiresAt < nowSeconds,
+    expired:
+      expiresAt !== undefined
+        ? expiresAt < nowSeconds
+        : cookies.length > 0 &&
+          cookies.every((c) => c.expiry > 0 && c.expiry < nowSeconds),
   };
 }

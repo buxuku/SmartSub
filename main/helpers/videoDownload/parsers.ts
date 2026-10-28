@@ -328,8 +328,13 @@ export function tailForError(output: string, maxLength = 300): string {
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
-  // 优先取包含 ERROR 的行（yt-dlp 约定），否则取最后几行
+  // lux 把原因写在「Downloading ... error:」下一行，后面跟 Go 堆栈。
+  // 只筛含 error 的行会漏掉 unable to get video ID / JSON 解析失败等真实原因。
+  const luxHeader = lines.findIndex((l) => /^Downloading .+ error:$/i.test(l));
+  const luxCause = luxHeader >= 0 ? lines[luxHeader + 1] : undefined;
+  // 其余输出优先取包含 ERROR 的行（yt-dlp 约定），否则取最后几行。
   const errorLines = lines.filter((l) => /error/i.test(l));
-  const chosen = (errorLines.length ? errorLines : lines).slice(-3).join(' | ');
+  const chosen =
+    luxCause || (errorLines.length ? errorLines : lines).slice(-3).join(' | ');
   return chosen.length > maxLength ? chosen.slice(-maxLength) : chosen;
 }
