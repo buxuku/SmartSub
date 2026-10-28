@@ -97,7 +97,7 @@ export function registerAddonIpcHandlers(): void {
     },
   );
 
-  // 获取当前生效的后端（最近一次加载结果）
+  // 获取当前会话实际加载的后端；重启或切换后未加载时为 null
   ipcMain.handle('get-active-backend', async () => {
     try {
       return getActiveBackend();

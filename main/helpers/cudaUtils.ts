@@ -28,6 +28,7 @@ import type {
   GpuVendor,
 } from '../../types/addon';
 import { AVAILABLE_CUDA_VERSIONS } from '../../types/addon';
+import { isCudaToolkitCompatible } from '../../types/cudaToolkitCompatibility';
 import { parseNvidiaSmiGpuList } from '../../types/gpuDevice';
 import {
   attachComputeCapabilities,
@@ -310,10 +311,8 @@ function getAddonRecommendation(
     };
   }
 
-  // 判断是否需要下载带 DLLs 的包
-  // 如果用户已安装 CUDA Toolkit，只需下载 addon.node
-  // 如果未安装，需要下载包含运行时库的完整包
-  const needsDlls = !toolkit.installed;
+  // 驱动能力决定 addon 版本；本机 Toolkit 必须匹配该版本才能省略运行时库。
+  const needsDlls = !isCudaToolkitCompatible(toolkit, recommendedVersion);
   const downloadType = needsDlls ? 'tar.gz' : 'node.gz';
 
   let reason: string;
@@ -321,6 +320,9 @@ function getAddonRecommendation(
   if (!gpuSupport.maxCudaVersion) {
     reason = `未能识别显卡支持的最高 CUDA 版本，已按最高加速包版本推荐；若运行异常请手动选择更低版本`;
     reasonKey = 'maxCudaUnknown';
+  } else if (toolkit.installed && needsDlls) {
+    reason = `CUDA Toolkit ${toolkit.version || '版本未知'} 与加速包 ${recommendedVersion} 不匹配或无法确认兼容，推荐下载包含运行时库的完整加速包`;
+    reasonKey = 'toolkitIncompatible';
   } else if (toolkit.installed) {
     reason = `已检测到 CUDA Toolkit ${toolkit.version}，推荐下载轻量版加速包`;
     reasonKey = 'toolkitInstalled';
