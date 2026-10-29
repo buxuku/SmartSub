@@ -16,7 +16,7 @@ Make every frame speak beautifully
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square&logo=electron&logoColor=white)](https://github.com/buxuku/SmartSub/releases)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/buxuku/SmartSub/blob/master/LICENSE)
 
-[中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md)
+[中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md) | [Türkçe](README_TR.md)
 
 [Download](#download-and-install) · [Features](#features) · [AI Assistant & Automation](#-ai-creative-assistant-in-app-copilot) · [Free Workflow](#a-completely-free-workflow) · [FAQ](#faq) · [Changelog](https://github.com/buxuku/SmartSub/releases)
 
