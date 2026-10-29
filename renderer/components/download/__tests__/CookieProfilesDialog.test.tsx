@@ -7,13 +7,8 @@ import {
   within,
 } from '@testing-library/react';
 import i18next from 'i18next';
-import { randomUUID } from 'node:crypto';
 import CookieProfilesDialog from '../CookieProfilesDialog';
 import type { CookieProfileView } from '../../../../types/download';
-
-jest.mock('sonner', () => ({
-  toast: { success: jest.fn(), error: jest.fn() },
-}));
 
 const douyin: CookieProfileView = {
   id: 'douyin',
@@ -37,10 +32,6 @@ const missing: CookieProfileView = {
 const invoke = jest.fn();
 
 beforeAll(() => {
-  Object.defineProperty(window.crypto, 'randomUUID', {
-    configurable: true,
-    value: randomUUID,
-  });
   i18next.addResourceBundle(
     'en',
     'download',
@@ -88,7 +79,6 @@ test('imports every recognized site without asking for a domain and uses the sel
     ),
   );
   expect(await screen.findByRole('status')).toHaveTextContent('1 site');
-  expect(screen.getByRole('status')).toHaveTextContent('Douyin');
   expect(changed).toHaveBeenCalledTimes(1);
   expect(
     screen.queryByPlaceholderText('Domain, e.g. example.com'),
@@ -148,7 +138,9 @@ test('no matched sites produces an actionable error without marking existing coo
   expect(await screen.findByRole('alert')).toHaveTextContent(
     'No supported-site cookies',
   );
-  expect(screen.getByText(/9 cookies/)).toBeInTheDocument();
+  expect(
+    within(screen.getByRole('table')).getByText('Douyin'),
+  ).toBeInTheDocument();
   expect(screen.queryByText('Expired')).not.toBeInTheDocument();
 });
 
@@ -182,12 +174,109 @@ test('an import in progress disables competing imports and deletion', async () =
       { name: 'Import cookies.txt' },
     ),
   ).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+  expect(
+    screen.getByRole('button', { name: 'Clear Douyin cookies' }),
+  ).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Clear all' })).toBeDisabled();
   finish!({ profiles: [douyin], cookieCount: 9, ignoredCookieCount: 0 });
   await screen.findByRole('status');
 });
 
-test('updating one site uses the browser profile selected above', async () => {
+test('shows only imported sites in compact rows with expiry and a clear action', async () => {
+  const knownExpiry = {
+    ...douyin,
+    id: 'youtube',
+    name: 'cookie.presetYoutube',
+    expiresAt: 1800000000,
+  };
+  const expired = {
+    ...douyin,
+    id: 'bilibili',
+    name: 'cookie.presetBilibili',
+    expired: true,
+  };
+  render(
+    <CookieProfilesDialog
+      open
+      onOpenChange={() => {}}
+      onChanged={() => {}}
+      profiles={[
+        douyin,
+        knownExpiry,
+        expired,
+        { ...missing, id: 'vimeo', name: 'cookie.presetVimeo' },
+      ]}
+    />,
+  );
+  const table = screen.getByRole('table');
+  const rows = within(table).getAllByRole('row');
+  expect(rows).toHaveLength(4);
+  expect(within(rows[1]).getAllByRole('cell')).toHaveLength(3);
+  expect(within(rows[1]).getByText('Unknown')).toBeInTheDocument();
+  expect(
+    within(rows[2]).getByText(new Date(1800000000 * 1000).toLocaleDateString()),
+  ).toBeInTheDocument();
+  expect(within(rows[3]).getByText('Expired')).toBeInTheDocument();
+  expect(within(table).queryByText('Vimeo')).not.toBeInTheDocument();
+  expect(table).not.toHaveTextContent(/chrome|douyin\.com|9 cookies|Profile 1/);
+  expect(
+    screen.queryByText('Update this site separately'),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByText('Manual management and other sites'),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText('Add custom site')).not.toBeInTheDocument();
+  expect(screen.queryByText('Paste cookies')).not.toBeInTheDocument();
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Import supported sites' }),
+    ).toBeEnabled(),
+  );
+});
+
+test('clears a single site and requests the updated list', async () => {
+  const changed = jest.fn();
+  render(
+    <CookieProfilesDialog
+      open
+      onOpenChange={() => {}}
+      onChanged={changed}
+      profiles={[douyin]}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Clear Douyin cookies' }));
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith('videoDownload:cookieProfiles:delete', {
+      id: 'douyin',
+    }),
+  );
+  await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+});
+
+test('clears all sites through the bulk endpoint and refreshes the list', async () => {
+  const changed = jest.fn();
+  render(
+    <CookieProfilesDialog
+      open
+      onOpenChange={() => {}}
+      onChanged={changed}
+      profiles={[douyin]}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith(
+      'videoDownload:cookieProfiles:clearAll',
+    ),
+  );
+  await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+});
+
+test('a failed clear reports the failure and re-enables actions', async () => {
+  invoke.mockImplementation(async (channel) => {
+    if (channel.endsWith('browserProfiles')) return [];
+    throw new Error('permission denied');
+  });
   render(
     <CookieProfilesDialog
       open
@@ -196,55 +285,27 @@ test('updating one site uses the browser profile selected above', async () => {
       profiles={[douyin]}
     />,
   );
-  await waitFor(() =>
-    expect(screen.getByRole('option', { name: /Work/ })).toBeInTheDocument(),
+  fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Could not clear cookies',
   );
-  fireEvent.change(screen.getByLabelText('Browser profile'), {
-    target: { value: 'Profile 1' },
-  });
-  fireEvent.click(screen.getByText('Update this site separately'));
-  fireEvent.click(screen.getByRole('button', { name: 'Import from Chrome' }));
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith(
-      'videoDownload:cookieProfiles:importFromBrowser',
-      {
-        id: 'douyin',
-        browser: 'chrome',
-        browserProfile: 'Profile 1',
-        customDef: undefined,
-      },
-    ),
-  );
+  expect(screen.getByRole('button', { name: 'Clear all' })).toBeEnabled();
 });
 
-test('a custom site uses the same selected browser profile', async () => {
+test('the empty state has no per-site actions and disables clearing all', async () => {
   render(
     <CookieProfilesDialog
       open
       onOpenChange={() => {}}
       onChanged={() => {}}
-      profiles={[]}
+      profiles={[missing]}
     />,
   );
+  expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Clear all' })).toBeDisabled();
   await waitFor(() =>
-    expect(screen.getByRole('option', { name: /Work/ })).toBeInTheDocument(),
-  );
-  fireEvent.change(screen.getByLabelText('Browser profile'), {
-    target: { value: 'Profile 1' },
-  });
-  fireEvent.click(screen.getByText('Manual management and other sites'));
-  fireEvent.click(screen.getByRole('button', { name: 'Add custom site' }));
-  fireEvent.change(screen.getByPlaceholderText('Domain, e.g. example.com'), {
-    target: { value: 'example.video' },
-  });
-  fireEvent.click(screen.getByRole('button', { name: 'Import from Chrome' }));
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith(
-      'videoDownload:cookieProfiles:importFromBrowser',
-      expect.objectContaining({
-        browser: 'chrome',
-        browserProfile: 'Profile 1',
-      }),
-    ),
+    expect(
+      screen.getByRole('button', { name: 'Import supported sites' }),
+    ).toBeEnabled(),
   );
 });
