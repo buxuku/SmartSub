@@ -472,3 +472,9 @@ export function deleteCookieProfile(id: string): boolean {
   metas.filter((meta) => meta.id === id).forEach(removeContent);
   return next.length !== metas.length;
 }
+
+/** 清空本应用的 Cookie（包括未被元数据引用的旧文件），不触碰浏览器源数据库。 */
+export function clearCookieProfiles(): void {
+  fs.rmSync(getCookiesDir(), { recursive: true, force: true });
+  saveMetas([]);
+}

@@ -11,6 +11,7 @@ async function main() {
     let settings = {};
     let failCommit = false;
     let failWrite = false;
+    let failClear = false;
     let exportText = '';
     let extractionError = '';
     let extractionCalls = 0;
@@ -20,6 +21,11 @@ async function main() {
       os: { ...os, homedir: () => path.join(dir, 'home') },
       fs: {
         ...fs,
+        rmSync(file, options) {
+          if (failClear && file === path.join(dir, 'downloader-cookies'))
+            throw new Error('permission denied');
+          return fs.rmSync(file, options);
+        },
         writeFileSync(file, ...args) {
           if (failWrite && String(file).includes('youtube'))
             throw new Error('disk full');
@@ -393,8 +399,61 @@ async function main() {
         /BROWSER_PROFILE_NOT_FOUND/,
       );
     }
+    const cookieDir = path.join(dir, 'downloader-cookies');
+    const browserDatabase = path.join(browserRoot, 'Default', 'Cookies');
+    assert.equal(store.deleteCookieProfile('douyin'), true);
+    assert.equal(
+      store.resolveCookieTextForUrl('https://www.douyin.com/1'),
+      null,
+    );
+    assert.match(
+      store.resolveCookieTextForUrl('https://youtu.be/1'),
+      /LOGIN_INFO/,
+      'clearing one site does not delete other sites',
+    );
+    assert.equal(
+      typeof store.clearCookieProfiles,
+      'function',
+      'clear all has a dedicated store operation',
+    );
+    failClear = true;
+    const beforeClear = JSON.stringify(settings);
+    assert.throws(() => store.clearCookieProfiles(), /permission denied/);
+    assert.equal(JSON.stringify(settings), beforeClear);
+    assert.match(
+      store.resolveCookieTextForUrl('https://youtu.be/1'),
+      /LOGIN_INFO/,
+    );
+    failClear = false;
+    fs.writeFileSync(
+      path.join(cookieDir, 'orphan.cookies'),
+      'leftover content',
+    );
+    store.clearCookieProfiles();
+    assert.equal(settings.videoDownloadCookieProfiles.length, 0);
+    assert.equal(
+      store.listCookieProfiles().some((p) => p.configured || p.needsReimport),
+      false,
+    );
+    assert.equal(store.resolveCookieTextForUrl('https://youtu.be/1'), null);
+    assert.equal(
+      fs.existsSync(cookieDir),
+      false,
+      'clear all removes stored and orphaned cookie files',
+    );
+    assert.equal(
+      fs.readFileSync(browserDatabase, 'utf8'),
+      'Default',
+      'browser source data is never cleared',
+    );
+    store.clearCookieProfiles();
+    assert.equal(
+      imports.importAllCookiesFromFile({ filePath: source }).profiles[0].id,
+      'douyin',
+      'import remains usable after clear all',
+    );
     console.log(
-      'Cookie batch import: classification, aliases, isolation, legacy compatibility, replacement, atomic failure, extraction cleanup and profile selection passed.',
+      'Cookie batch import: classification, aliases, isolation, legacy compatibility, replacement, atomic failure, extraction cleanup, profile selection and site/all clearing passed.',
     );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

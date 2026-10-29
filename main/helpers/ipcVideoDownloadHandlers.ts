@@ -26,6 +26,7 @@ import { luxAdapter } from './videoDownload/luxAdapter';
 import { withCookieFile } from './videoDownload/engineAdapter';
 import {
   deleteCookieProfile,
+  clearCookieProfiles,
   listCookieProfiles,
 } from './videoDownload/cookieProfileStore';
 import {
@@ -451,4 +452,9 @@ export function setupVideoDownloadHandlers(mainWindow: BrowserWindow): void {
     'videoDownload:cookieProfiles:delete',
     (_event, payload: { id: string }) => deleteCookieProfile(payload.id),
   );
+
+  ipcMain.handle('videoDownload:cookieProfiles:clearAll', () => {
+    clearCookieProfiles();
+    return true;
+  });
 }
