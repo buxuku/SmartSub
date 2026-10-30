@@ -24,6 +24,7 @@ import {
   createChecks,
   machineInfo,
   makeSpeechWav,
+  makeLongAudioDir,
   prepareWorkDirs,
   repoRoot,
   runCase,
@@ -124,9 +125,35 @@ check(
   `text="${String(fixedRes.text).slice(0, 80)}"`,
 );
 
+const longSpeech = copyInto(
+  makeLongAudioDir(dirs.ascii),
+  speechAscii,
+  'tempAudioFile.wav',
+);
+const longResult = runWhisper(longSpeech);
+const longRes = resultOf(longResult);
+check(
+  'long ASCII audio path: transcription matches the short-path control',
+  longRes.ok === true &&
+    longRes.segments === controlRes.segments &&
+    longRes.segments > 0 &&
+    longRes.text === controlRes.text,
+  longRes.ok === true
+    ? `path length=${longSpeech.length}`
+    : failureText(longResult),
+);
+check(
+  'long ASCII audio path: uses PCM input only on Windows',
+  longRes.usedPcm === isWindows,
+);
+check(
+  'long ASCII audio path: no unreadable-audio error',
+  countLines(longResult.stderr, FAILED_READ) === 0,
+);
+
 appendSummary(
   [
-    '### whisper.cpp fix verification (non-ASCII audio path)',
+    '### whisper.cpp fix verification (non-ASCII and long audio paths)',
     '',
     `machine: \`${JSON.stringify(machineInfo())}\``,
     '',

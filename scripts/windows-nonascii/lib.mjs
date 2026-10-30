@@ -99,6 +99,21 @@ export function copyInto(dir, src, name = path.basename(src)) {
   return dest;
 }
 
+/** ASCII-only nested directory beyond MAX_PATH; each component stays below 255. */
+export function makeLongAudioDir(root) {
+  const directory = path.join(
+    root,
+    'a'.repeat(80),
+    'b'.repeat(80),
+    'c'.repeat(80),
+  );
+  if (/[^\x00-\x7F]/.test(directory) || directory.length < 260) {
+    throw new Error('Long-path fixture requires an ASCII temporary root');
+  }
+  fs.mkdirSync(directory, { recursive: true });
+  return directory;
+}
+
 function ffmpegPath() {
   for (const id of ['@ffmpeg-installer/ffmpeg', 'ffmpeg-static']) {
     try {

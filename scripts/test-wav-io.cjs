@@ -109,7 +109,7 @@ check('hasNonAscii', () => {
   assert.equal(wavIo.hasNonAscii('\u0080'), true);
 });
 
-check('useJsWavIo: only win32 + non-ASCII, or the force switch', () => {
+check('useJsWavIo: win32 + non-ASCII, or the force switch', () => {
   const cjk = 'C:\\Users\\张三\\a.wav';
   const ascii = 'C:\\Users\\bob\\a.wav';
   assert.equal(wavIo.useJsWavIo(cjk, { platform: 'win32', env: {} }), true);
@@ -131,6 +131,25 @@ check('useJsWavIo: only win32 + non-ASCII, or the force switch', () => {
     }),
     false,
   );
+});
+
+check('useJsWavIo: Windows MAX_PATH boundary for ASCII audio paths', () => {
+  for (const [length, expected] of [
+    [259, false],
+    [260, true],
+    [262, true],
+    [320, true],
+  ]) {
+    const file = 'C:\\' + 'a'.repeat(length - 7) + '.wav';
+    assert.equal(file.length, length);
+    assert.equal(
+      wavIo.useJsWavIo(file, { platform: 'win32', env: {} }),
+      expected,
+    );
+    for (const platform of ['darwin', 'linux']) {
+      assert.equal(wavIo.useJsWavIo(file, { platform, env: {} }), false);
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -338,6 +357,38 @@ try {
   const mac = { platform: 'darwin', env: {} };
   const cjkDir = path.join(tmpRoot, '中文用户-测试');
   fs.mkdirSync(cjkDir, { recursive: true });
+
+  check(
+    'readWave / writeWave: long ASCII paths round trip without native I/O',
+    () => {
+      const directory = path.join(
+        tmpRoot,
+        'a'.repeat(80),
+        'b'.repeat(80),
+        'c'.repeat(80),
+      );
+      fs.mkdirSync(directory, { recursive: true });
+      const file = path.join(directory, 'tempAudioFile.wav');
+      assert.ok(file.length >= 260);
+      assert.equal(wavIo.hasNonAscii(file), false);
+      const native = {
+        readWave() {
+          throw new Error('native reader cannot open this path');
+        },
+        writeWave() {
+          return false;
+        },
+      };
+      const samples = f32([0, 0.25, -0.25, 0.75, -0.75]);
+      wavIo.writeWave(native, file, { samples, sampleRate: 16000 }, win);
+      const back = wavIo.readWave(native, file, false, win);
+      assert.equal(back.sampleRate, 16000);
+      assert.equal(back.samples.length, samples.length);
+      for (let i = 0; i < samples.length; i += 1) {
+        assert.ok(Math.abs(back.samples[i] - samples[i]) <= 2 / 32768);
+      }
+    },
+  );
 
   check('readWave: ASCII path -> native, arguments untouched', () => {
     const sherpa = fakeSherpa();

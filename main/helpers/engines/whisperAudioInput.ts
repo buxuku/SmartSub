@@ -1,11 +1,12 @@
 /**
- * 内置 whisper.cpp 的音频输入适配（Windows 非 ASCII 路径）。
+ * 内置 whisper.cpp 的音频输入适配（Windows 非 ASCII / 超长路径）。
  *
  * addon 用 miniaudio 的窄字符 API（CreateFileA）解码 `fname_inp`。系统代码页不是
  * UTF-8（例如中文版默认的 GBK）时，路径里的中文打不开：addon 只在 stderr 打印
  * `error: failed to read audio file '...'`，然后以 0 段结果「成功」返回——整个任务悄悄变成
  * 空字幕。用户名带中文时，默认临时目录（提取出的 16 kHz wav 就放在这里）就是这种路径。
  * （GitHub Actions windows-latest 实测：模型与 VAD 模型路径含中文能正常加载，只有音频解码失败。）
+ * 纯 ASCII 音频路径达到 MAX_PATH（260，含末尾 NUL）时也使用相同的缓冲输入兜底。
  *
  * 做法：这种路径由 JS 解码 wav（Node 的 fs 走宽字符 API），以 `pcmf32`（Float32Array）
  * 交给 addon，`fname_inp` 置空串（addon 要求该字段是字符串）。addon 对缓冲输入不写任何
@@ -41,7 +42,7 @@ export interface WhisperAudioInputDeps {
   log?: (message: string, level: WhisperInputLogLevel) => void;
 }
 
-/** 原生解码是否会打不开该音频路径：仅 Windows 且路径含非 ASCII。 */
+/** Windows 非 ASCII 或达到 MAX_PATH 的音频路径需要缓冲输入。 */
 export function needsPcmInput(
   audioPath: string | undefined,
   platform: NodeJS.Platform = process.platform,
@@ -49,7 +50,8 @@ export function needsPcmInput(
   return (
     typeof audioPath === 'string' &&
     audioPath.length > 0 &&
-    needsNativeSafe(audioPath, platform)
+    platform === 'win32' &&
+    (audioPath.length >= 260 || needsNativeSafe(audioPath, platform))
   );
 }
 
@@ -118,7 +120,7 @@ export function readPcm16Wav(
 /**
  * 需要时把 whisperAsync 的参数从「文件路径」换成「PCM 缓冲」。
  * 只改 fname_inp / pcmf32，其余参数原样保留，也不修改传入对象；
- * 不适用（ASCII 路径、非 Windows、调用方已给 pcmf32）或解不了时原样返回同一个对象，
+ * 不适用（短 ASCII 路径、非 Windows、调用方已给 pcmf32）或解不了时原样返回同一个对象，
  * 行为不会比不处理更差。
  */
 export function adaptWhisperAudioInput(
@@ -151,7 +153,7 @@ export function adaptWhisperAudioInput(
     return params;
   }
   log(
-    `whisper input: the audio path contains non-ASCII characters, which the native decoder cannot open on Windows; feeding ${decoded.samples.length} PCM samples instead (${input})`,
+    `whisper input: the audio path contains non-ASCII characters or exceeds the Windows native path limit; feeding ${decoded.samples.length} PCM samples instead (${input})`,
     'info',
   );
   return { ...params, fname_inp: '', pcmf32: decoded.samples };

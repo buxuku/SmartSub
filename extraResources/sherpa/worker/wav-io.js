@@ -7,8 +7,8 @@
 // false（原来没有任何调用方检查它，于是产物悄悄缺失）。用户名带中文时，默认
 // userData、%TEMP%、安装目录都是这种路径。
 //
-// 做法：仅当「win32 且路径含非 ASCII」时改由 JS 读写（Node 的 fs 走宽字符 API，
-// 不受代码页影响）；其余路径仍走原生实现，行为不变。writeWave 的失败从此是异常。
+// 做法：Windows 上非 ASCII 或达到 MAX_PATH（260，含末尾 NUL）的路径改由 JS 读写。
+// Node 的 fs 支持宽字符与长路径；其余路径仍走原生实现。writeWave 失败会抛异常。
 // 环境变量 SMARTSUB_FORCE_JS_WAV=1 可在任何平台强制走 JS（测试与排查用）。
 //
 // 编解码口径与 sherpa-onnx 的 wave-reader.cc / wave-writer.cc 保持一致：
@@ -29,7 +29,8 @@ function useJsWavIo(file, options) {
   const platform = opts.platform || process.platform;
   const env = opts.env || process.env;
   if (env.SMARTSUB_FORCE_JS_WAV === '1') return true;
-  return platform === 'win32' && hasNonAscii(String(file));
+  const name = String(file);
+  return platform === 'win32' && (name.length >= 260 || hasNonAscii(name));
 }
 
 const FORMAT_PCM = 1;
@@ -168,7 +169,7 @@ function failure(verb, file, cause) {
 }
 
 /**
- * 读 wav：非 ASCII 的 Windows 路径走 JS，其余调用 sherpa.readWave(file, enableExternalBuffer)。
+ * 读 wav：非 ASCII / 超长 Windows 路径走 JS，其余调用 sherpa.readWave(file, enableExternalBuffer)。
  * 两条路径的返回值形状一致：{ samples: Float32Array, sampleRate }。
  */
 function readWave(sherpa, file, enableExternalBuffer, options) {
@@ -189,7 +190,7 @@ function readWave(sherpa, file, enableExternalBuffer, options) {
 }
 
 /**
- * 写 wav：非 ASCII 的 Windows 路径走 JS，其余调用 sherpa.writeWave(file, wave)。
+ * 写 wav：非 ASCII / 超长 Windows 路径走 JS，其余调用 sherpa.writeWave(file, wave)。
  * 失败一律抛错——原生 writeWave 失败只返回 false，过去没有人检查，产物就悄悄缺失了。
  * 只有明确返回 false 才算失败（旧版本 / 测试替身可能返回 undefined）。
  */

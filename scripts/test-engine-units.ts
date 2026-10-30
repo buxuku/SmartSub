@@ -8289,6 +8289,29 @@ function runWhisperAudioInputTests(): void {
     'needsPcmInput: darwin + CJK',
   );
   eq(needsPcmInput('', 'win32'), false, 'needsPcmInput: empty path');
+  for (const [length, expected] of [
+    [259, false],
+    [260, true],
+    [262, true],
+    [320, true],
+  ] as const) {
+    const file = 'C:\\' + 'a'.repeat(length - 7) + '.wav';
+    eq(
+      needsPcmInput(file, 'win32'),
+      expected,
+      `needsPcmInput: Windows ASCII path of ${length} characters`,
+    );
+    eq(
+      needsPcmInput(file, 'darwin'),
+      false,
+      `needsPcmInput: macOS path of ${length} characters`,
+    );
+    eq(
+      needsPcmInput(file, 'linux'),
+      false,
+      `needsPcmInput: Linux path of ${length} characters`,
+    );
+  }
   eq(
     needsPcmInput(undefined as unknown as string, 'win32'),
     false,
@@ -8427,6 +8450,30 @@ function runWhisperAudioInputTests(): void {
       'adapt: every other parameter is preserved',
     );
     eq(baseParams.fname_inp, mono, 'adapt: the input object is not mutated');
+    const longDirectory = nodePath.join(
+      tmpRoot,
+      'a'.repeat(80),
+      'b'.repeat(80),
+      'c'.repeat(80),
+    );
+    fs.mkdirSync(longDirectory, { recursive: true });
+    const longFile = nodePath.join(longDirectory, 'tempAudioFile.wav');
+    fs.writeFileSync(longFile, wavBytes([0, 16384, -16384]));
+    const longParams = { ...baseParams, fname_inp: longFile };
+    const longAdapted = adaptWhisperAudioInput(longParams, {
+      platform: 'win32',
+    });
+    eq(longAdapted.fname_inp, '', 'adapt: long ASCII path uses PCM input');
+    eq(
+      Array.from((longAdapted.pcmf32 as Float32Array) ?? []),
+      [0, 0.5, -0.5],
+      'adapt: long path preserves audio samples',
+    );
+    eq(
+      longParams.fname_inp,
+      longFile,
+      'adapt: long path input object is not mutated',
+    );
     eq(
       logs.filter((l) => l.level === 'info').length,
       1,

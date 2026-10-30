@@ -24,6 +24,7 @@ import {
   createChecks,
   machineInfo,
   makeSpeechWav,
+  makeLongAudioDir,
   prepareWorkDirs,
   repoRoot,
   runCase,
@@ -252,9 +253,59 @@ console.log('\n--- real sherpa-worker.js ---');
   );
 }
 
+// #573: task attempts can exceed MAX_PATH even with ordinary ASCII usernames.
+const longDir = makeLongAudioDir(dirs.ascii);
+const longSpeech = copyInto(longDir, ascii.speech, 'tempAudioFile.wav');
+{
+  const r = run(verifyCase, {
+    kind: 'wav-roundtrip',
+    nonAsciiOut: path.join(longDir, 'out.wav'),
+    asciiOut: path.join(dirs.ascii, 'long-control.wav'),
+    speechNonAscii: longSpeech,
+    speechAscii: ascii.speech,
+  });
+  const res = resultOf(r);
+  check(
+    'long ASCII path: WAV read/write matches native short-path output',
+    res.ok === true &&
+      res.bytesIdentical === true &&
+      res.roundTripMaxDiff === 0 &&
+      res.speechMaxDiff === 0,
+    whyNot(r),
+  );
+}
+{
+  const r = run(verifyCase, {
+    kind: 'worker-detect-speech',
+    model: ascii.vad,
+    audio: longSpeech,
+    userDataDir: dirs.ascii,
+  });
+  const res = resultOf(r);
+  check(
+    'long ASCII path: real sherpa worker finds the same speech segments',
+    res.ok === true && res.segments === controlWorkerSegments,
+    whyNot(r),
+  );
+}
+{
+  const r = run(verifyCase, {
+    kind: 'worker-denoise',
+    model: ascii.denoise,
+    audio: longSpeech,
+    outFile: path.join(longDir, 'denoised.wav'),
+    userDataDir: dirs.ascii,
+  });
+  check(
+    'long ASCII path: real sherpa worker reads and writes denoised audio',
+    resultOf(r).ok === true,
+    whyNot(r),
+  );
+}
+
 appendSummary(
   [
-    '### sherpa-onnx fix verification (non-ASCII paths)',
+    '### sherpa-onnx fix verification (non-ASCII and long paths)',
     '',
     `machine: \`${JSON.stringify(machineInfo())}\``,
     '',
