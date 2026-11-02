@@ -16,6 +16,7 @@ export interface StageExecutionContext {
   progress: (percent: number) => void;
   checkpoint: (file: IFiles) => boolean;
   activity: (activity: IFiles['taskActivity']) => void;
+  afterSettlement?: (cleanup: () => Promise<void>) => void;
 }
 export type StageResult = Parameters<TaskRunService['finishStage']>[1];
 export type StageExecutor = (
@@ -56,6 +57,7 @@ export async function executeFileRun(options: {
     if (stage.status !== 'pending') return 'failed';
     const token = service.beginStage(projectId, runId, fileId, stage.id);
     let sequence = 0;
+    let cleanup: (() => Promise<void>) | undefined;
     try {
       signal?.throwIfAborted();
       const result = await execute({
@@ -64,6 +66,9 @@ export async function executeFileRun(options: {
         stage,
         token,
         signal,
+        afterSettlement: (fn) => {
+          cleanup = fn;
+        },
         progress: (progress) => {
           service.progress({ ...token, sequence: ++sequence, progress });
         },
@@ -85,6 +90,12 @@ export async function executeFileRun(options: {
         error instanceof Error ? error.message : String(error),
       );
       return signal?.aborted ? 'cancelled' : 'failed';
+    } finally {
+      try {
+        await cleanup?.();
+      } catch (error) {
+        console.warn('Task workspace cleanup deferred', error);
+      }
     }
   }
 }

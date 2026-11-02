@@ -5,12 +5,14 @@ import {
   type FileRun,
 } from '../../../types/taskRun';
 import path from 'node:path';
+import { assertTaskStorageWritable } from './maintenance';
 import type { TaskRunService } from './service';
 import type { TaskSubmission } from '../../../types/taskSubmission';
 import type { acceptManagedTask } from './runtime';
 
 let resolveService: (() => TaskRunService) | undefined;
 const resultWrites = new Set<string>();
+export const hasTaskResultWrites = () => resultWrites.size > 0;
 const editKey = (target: string) => path.resolve(target).toLowerCase();
 
 /** Only the file stopped at a review gate becomes editable during a live batch. */
@@ -31,6 +33,7 @@ export function assertTaskResultsSaved(paths: Array<string | undefined>) {
     throw new Error('TASK_RESULT_SAVE_IN_PROGRESS');
 }
 export function beginTaskResultWrite(target: string) {
+  assertTaskStorageWritable();
   assertTaskResultsSaved([target]);
   const key = editKey(target);
   resultWrites.add(key);

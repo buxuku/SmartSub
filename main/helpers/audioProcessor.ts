@@ -176,8 +176,10 @@ export async function extractAudioFromVideo(event, file) {
   }
   if (!cacheKey) {
     logMessage(
-      `audio cache bypassed, cannot stat source: ${filePath}`,
-      'warning',
+      file.taskRunId
+        ? `audio cache managed by task run: ${file.taskRunId}`
+        : `audio cache bypassed, cannot stat source: ${filePath}`,
+      file.taskRunId ? 'info' : 'warning',
     );
   }
 

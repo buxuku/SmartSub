@@ -69,6 +69,7 @@ import HelpHint from '@/components/HelpHint';
 import IconChip from '@/components/IconChip';
 import CustomLanguageManager from '@/components/settings/CustomLanguageManager';
 import McpConnectionCard from '@/components/settings/McpConnectionCard';
+import TaskStorageSettings from '@/components/settings/TaskStorageSettings';
 import { openUrl } from 'lib/utils';
 import packageInfo from '../../../package.json';
 import {
@@ -1074,6 +1075,7 @@ const Settings = () => {
                 )}
               </div>
             </div>
+            <TaskStorageSettings storageRoot={storageRoot} />
           </CardContent>
         </Card>
 

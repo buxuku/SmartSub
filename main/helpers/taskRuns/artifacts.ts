@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AttemptToken, StageArtifact } from '../../../types/taskRun';
 import type { TaskRunStore } from './store';
+import { rewritePaths, writeJson, within } from './storageIO';
 
 export async function hashFile(
   filePath: string,
@@ -56,16 +57,10 @@ export async function assertInputIdentity(
 }
 const safeId = (value: string) =>
   createHash('sha256').update(value).digest('hex').slice(0, 24);
-const within = (root: string, target: string) => {
-  const relative = path.relative(root, target);
-  return (
-    !!relative &&
-    !relative.startsWith(`..${path.sep}`) &&
-    relative !== '..' &&
-    !path.isAbsolute(relative)
-  );
-};
-export function createStageArtifactStore(manifests: TaskRunStore) {
+export function createStageArtifactStore(
+  manifests: TaskRunStore,
+  options: { workspaceRoot?: () => string } = {},
+) {
   const runDirectory = (projectId: string, runId: string) =>
     path.dirname(manifests.runPath(projectId, runId));
   const fileDirectory = (projectId: string, runId: string, fileId: string) =>
@@ -74,12 +69,21 @@ export function createStageArtifactStore(manifests: TaskRunStore) {
     runDirectory,
     fileDirectory,
     workspace(token: AttemptToken) {
-      const directory = path.join(
-        fileDirectory(token.projectId, token.runId, token.fileId),
-        'attempts',
-        `${token.stageId}-${token.attemptId}`,
-      );
+      const directory = options.workspaceRoot
+        ? path.join(
+            options.workspaceRoot(),
+            createHash('sha256')
+              .update(JSON.stringify(token))
+              .digest('hex')
+              .slice(0, 32),
+          )
+        : path.join(
+            fileDirectory(token.projectId, token.runId, token.fileId),
+            'attempts',
+            `${token.stageId}-${token.attemptId}`,
+          );
       fs.mkdirSync(directory, { recursive: true });
+      writeJson(path.join(directory, '.task-attempt.json'), token);
       return directory;
     },
     async commit(
@@ -98,7 +102,13 @@ export function createStageArtifactStore(manifests: TaskRunStore) {
       await fs.promises.mkdir(staging, { recursive: true });
       const artifacts: StageArtifact[] = [];
       const copied = new Map<string, string>();
-      async function capture(value: any, key: string): Promise<any> {
+      const plans: Array<{
+        source: string;
+        name: string;
+        kind: string;
+        json?: any;
+      }> = [];
+      function reserve(value: any, key: string): any {
         if (
           typeof value === 'string' &&
           path.isAbsolute(value) &&
@@ -106,27 +116,60 @@ export function createStageArtifactStore(manifests: TaskRunStore) {
           fs.existsSync(value) &&
           fs.statSync(value).isFile()
         ) {
-          if (copied.has(value)) return copied.get(value);
-          const name = `${artifacts.length}-${path.basename(value)}`;
-          const target = path.join(staging, name);
-          await copyIndependent(value, target);
+          if (!copied.has(value)) {
+            const name = `${plans.length}-${path.basename(value)}`;
+            copied.set(value, path.join(directory, name));
+            plans.push({ source: value, name, kind: key });
+          }
+          return copied.get(value);
+        }
+        if (Array.isArray(value))
+          return value.map((item) => reserve(item, key));
+        if (value && typeof value === 'object')
+          return Object.fromEntries(
+            Object.entries(value).map(([child, item]) => [
+              child,
+              reserve(item, child),
+            ]),
+          );
+        return value;
+      }
+      try {
+        const committed = reserve(patch, 'result');
+        // Reserve all embedded metadata dependencies before writing any JSON. The
+        // first file can reference a subtitle captured later in this same bundle.
+        for (let index = 0; index < plans.length; index++) {
+          const plan = plans[index];
+          if (path.extname(plan.source).toLowerCase() !== '.json') continue;
+          plan.json = JSON.parse(
+            await fs.promises.readFile(plan.source, 'utf8'),
+          );
+          rewritePaths(plan.json, (value) => reserve(value, 'dependency'));
+        }
+        for (const plan of plans) {
+          const target = path.join(staging, plan.name);
+          if (plan.json !== undefined)
+            await fs.promises.writeFile(
+              target,
+              JSON.stringify(
+                rewritePaths(plan.json, (value) => copied.get(value) ?? value),
+              ),
+              { mode: 0o600 },
+            );
+          else await copyIndependent(plan.source, target);
           const { digest, identity } = await hashFile(target, signal);
-          // Windows requires write access to flush a file. This is our private
-          // staging copy; r+ preserves its contents until atomic publication.
           const handle = await fs.promises.open(target, 'r+');
           try {
             await handle.sync();
           } finally {
             await handle.close();
           }
-          const final = path.join(directory, name);
-          copied.set(value, final);
           artifacts.push({
             id: randomUUID(),
-            path: final,
+            path: path.join(directory, plan.name),
             digest,
             size: identity.size,
-            kind: key,
+            kind: plan.kind,
             provenance: 'automatic',
             producer: {
               runId: token.runId,
@@ -135,25 +178,7 @@ export function createStageArtifactStore(manifests: TaskRunStore) {
               fingerprint,
             },
           });
-          return final;
         }
-        // Capture in order: names and reference deduplication share bundle state.
-        // Parallel walks could copy two files to the same index before either hash completes.
-        if (Array.isArray(value)) {
-          const result = [];
-          for (const item of value) result.push(await capture(item, key));
-          return result;
-        }
-        if (value && typeof value === 'object') {
-          const result: Record<string, any> = {};
-          for (const [child, item] of Object.entries(value))
-            result[child] = await capture(item, child);
-          return result;
-        }
-        return value;
-      }
-      try {
-        const committed = await capture(patch, 'result');
         const statePath = path.join(staging, 'state.json');
         await fs.promises.writeFile(statePath, JSON.stringify(committed), {
           mode: 0o600,
@@ -192,7 +217,7 @@ export function createStageArtifactStore(manifests: TaskRunStore) {
         return false;
       for (const artifact of artifacts) {
         if (
-          !within(manifests.root, artifact.path) ||
+          !manifests.owns(artifact.path) ||
           artifact.provenance !== 'automatic'
         )
           return false;

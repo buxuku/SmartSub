@@ -1,3 +1,4 @@
+import { assertTaskStorageWritable } from './taskRuns/maintenance';
 import { TASK_STAGE_KEYS as STAGE_KEYS } from '../../types/taskStages';
 import { store } from './store';
 import type { IFiles, TaskProject } from '../../types';
@@ -137,6 +138,7 @@ export function flushWorkItemStore(): void {
 }
 
 function commitWorkItems(next: WorkItem[]): void {
+  assertTaskStorageWritable();
   // electron-store writes atomically and fsyncs before returning. Publish only
   // after that write succeeds, so a failed save cannot appear in subsequent reads.
   store.set(WORK_ITEMS_KEY, next);
@@ -228,6 +230,7 @@ export function saveWorkItem(
   item: WorkItem,
   options: { durable?: boolean } = {},
 ): WorkItem {
+  assertTaskStorageWritable();
   const index = workItems.findIndex((existing) => existing.id === item.id);
   const now = Date.now();
   const next: WorkItem = normalizeProofreadStatus({
