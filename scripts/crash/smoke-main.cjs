@@ -257,6 +257,38 @@ app.whenReady().then(async () => {
   const fakeAddon = path.join(work, 'fake-addon.node');
   const candidateKey = 'builtin:cpu';
 
+  if (scenario === 'whisper-probe') {
+    const probe = (addonPath) =>
+      m.runWhisperProbe({
+        request: { model: 'diagnostic-fixture', backend: 'vulkan', vad: true },
+        addonPath,
+        addonSource: 'builtin',
+        params: { pcmf32: new Float32Array([0.1, 0.2]) },
+        clean: (text) => text,
+        timeoutMs: 15000,
+        spawn: (onStderrLine) =>
+          m.spawnUtilityHost({
+            workerFile: path.resolve(
+              __dirname,
+              '../../extraResources/diagnostics/whisper-probe.cjs',
+            ),
+            serviceName: 'smartsub-whisper-diagnostic',
+            logLabel: 'whisper diagnostic',
+            env: { ...process.env },
+            onStderrLine,
+            log: (message, level) => logs.push({ message, level }),
+            recordExit: m.recordUtilityExit,
+            expectKill: m.expectUtilityKill,
+          }),
+      });
+    const report = await probe(boomFile('boom-segv'));
+    const recovery = await probe(path.join(work, 'missing-addon.node'));
+    writeResult({ ...base, report, recovery, events: readEvents(), logs });
+    m.markCleanExit();
+    app.exit(0);
+    return;
+  }
+
   if (scenario === 'main-crash') {
     // 主进程原生崩溃（访问违例）：本进程会死，转储与退出码由 smoke.mjs 在外面检查。
     // 有 boom 样本就走 process.dlopen（贴近 addon 崩溃）；没有就退回 Electron 自带的 process.crash

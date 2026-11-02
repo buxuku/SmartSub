@@ -5,6 +5,9 @@ directories:
   output: dist
   buildResources: resources
 extraResources:
+  - from: ./extraResources/diagnostics/
+    to: ./extraResources/diagnostics/
+    filter: ['*.cjs']
   - from: app/automation
     to: automation
     filter:

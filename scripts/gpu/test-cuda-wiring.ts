@@ -192,6 +192,23 @@ async function main() {
     assert.equal(graphicsCalls, 0);
   });
 
+  await test('AMD driver version reaches the GPU environment used by diagnostics', async () => {
+    resetStubs();
+    cudaUtils.clearGpuEnvironmentCache();
+    runImpl = async () =>
+      'GPU2=AMD Radeon(TM) 780M|Advanced Micro Devices, Inc.|32.0.21013.1000\n';
+    const env = await withPlatform('win32', () =>
+      cudaUtils.getGpuEnvironment(),
+    );
+    assert.deepEqual(env.gpus, [
+      {
+        name: 'AMD Radeon(TM) 780M',
+        vendor: 'amd',
+        driverVersion: '32.0.21013.1000',
+      },
+    ]);
+  });
+
   await test('Windows：探测失败 → getGpuEnvironment() 不抛错，失败原因写进警告日志', async () => {
     resetStubs();
     cudaUtils.clearGpuEnvironmentCache();

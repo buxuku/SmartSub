@@ -538,10 +538,10 @@ This bundle was generated locally by SmartSub. Nothing is uploaded automatically
 - crash/           崩溃事件、转储摘要（异常码、故障模块、CPU 型号）；勾选时才含原始转储
                    Crash events and minidump summaries; raw dumps only if you opted in
 - system.json      系统、CPU（含指令集标志）、内存 / OS, CPU (with instruction-set flags), memory
-- gpu.json         显卡与加速环境 / GPU and acceleration environment
+- gpu.json         显卡与加速环境（含可读取的 Windows 驱动版本） / GPU environment and available Windows driver versions
 - settings.json    部分设置（白名单；不含 API Key、服务商配置，路径只说明是否自定义）
                    A whitelisted subset of settings (no API keys or provider configs; paths are not included)
-- addon.json       whisper 加速包的加载记录与崩溃熔断状态 / whisper addon load history and crash-breaker state
+- addon.json       whisper 加速包加载记录、崩溃熔断状态及最近 6 次手动转写诊断 / whisper addon history, crash-breaker state and last 6 explicit diagnostic tests
 
 隐私 / Privacy
 - 不含 API Key、翻译 / 配音 / 听写服务商配置，也不含媒体与字幕文件。
@@ -570,14 +570,14 @@ export function buildBundleEntries(
   const entries: BundleEntry[] = [];
   const sizes: Array<{ name: string; bytes: number }> = [];
   const clean = (s: string) => options.redact(options.sanitize(s));
-  const redactOnly = (s: string) => options.redact(s);
 
   const addText = (name: string, content: string) => {
     entries.push({ name: `${root}/${name}`, content, mtime });
     sizes.push({ name, bytes: Buffer.byteLength(content, 'utf8') });
   };
   const addJson = (name: string, value: unknown) =>
-    addText(name, toJson(mapStringsDeep(value, redactOnly)));
+    // Native diagnostic text can contain quoted values inside JSON snapshots too.
+    addText(name, toJson(mapStringsDeep(value, clean)));
 
   addText('README.txt', README);
 

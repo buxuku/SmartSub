@@ -23,6 +23,7 @@ export interface DiagnosticsPreview {
   /** 崩溃转储是否在记录（被环境变量关闭时为 false） */
   crashReporterEnabled: boolean;
   suggestedFileName: string;
+  whisperProbe?: import('./whisperProbe').WhisperProbeOptions;
 }
 
 export interface DiagnosticsExportRequest {

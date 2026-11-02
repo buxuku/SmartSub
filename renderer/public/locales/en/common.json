@@ -243,6 +243,22 @@
       "suppressedFamily": "The built-in speech recognition addons were disabled (this computer's CPU may lack an instruction set they need). Use cloud speech recognition instead, or retry from the “GPU Acceleration” settings.",
       "suppressedBackends": "Disabled automatically: {{backends}}. Transcription will use something else; you can retry from the “GPU Acceleration” settings.",
       "listSeparator": ", "
+    },
+    "probe": {
+      "title": "Whisper transcription diagnostic",
+      "description": "Pause other transcription tasks first. Test Vulkan / CPU or VAD with the bundled short audio and an installed model. Each test takes up to 3 minutes and leaves acceleration settings unchanged.",
+      "unavailable": "An installed whisper.cpp model and Vulkan or CPU addon are required.",
+      "model": "Test model",
+      "backend": "Test backend",
+      "vad": "Enable voice activity detection (VAD)",
+      "run": "Run test",
+      "running": "Testing. You can cancel at any time…",
+      "completed": "Test completed.",
+      "error": "The test returned an error.",
+      "exited": "The test process exited unexpectedly.",
+      "timeout": "The test timed out.",
+      "cancelled": "Test cancelled.",
+      "saved": "Results saved. Export the diagnostics bundle to include the last 6 tests."
     }
   },
   "faq": {

@@ -47,9 +47,14 @@ const ALL_SCENARIOS = [
   'main-crash',
   'utility-ill',
   'restart-suppression',
+  'whisper-probe',
 ];
 /** 没有 boom 样本就没法跑的场景（main-crash 有 process.crash 兜底，不在此列） */
-const NEEDS_BOOM = new Set(['utility-ill', 'restart-suppression']);
+const NEEDS_BOOM = new Set([
+  'utility-ill',
+  'restart-suppression',
+  'whisper-probe',
+]);
 const wanted = process.argv.slice(2);
 const scenarios = wanted.length > 0 ? wanted : ALL_SCENARIOS;
 for (const s of scenarios) {
@@ -115,6 +120,7 @@ async function bundle() {
       `export { getPreviousRunAssessment, getPreviousRunNotice, markCleanExit } from '${crash('runLifecycle')}';`,
       `export { partitionCandidates, describeSuppressed } from '${crash('addonSuppression')}';`,
       `export { spawnUtilityHost } from '${crash('utilityHost')}';`,
+      `export { runWhisperProbe } from '${crash('whisperProbe')}';`,
     ].join('\n'),
     electronBundle,
     ['electron'],
@@ -449,6 +455,23 @@ const handlers = {
         `    · 触发方式 ${run.result?.via ?? '?'}；退出 ${JSON.stringify(run.exit)}；转储 ${(s.bytes / 1024 / 1024).toFixed(1)} MB，异常 ${s.exception.name || s.exception.codeHex}（${c.kind}）`,
       );
     });
+  },
+
+  async 'whisper-probe'() {
+    const run = await runScenario('whisper-probe');
+    await check(
+      'diagnostic worker native crash preserves main process and evidence',
+      () => {
+        assert.equal(run.exit.code, 0, run.output.slice(-2000));
+        assert.ok(run.result, run.output.slice(-2000));
+        assert.equal(run.result.report.status, 'exited');
+        assert.equal(run.result.report.phase, 'loading-addon');
+        assert.notEqual(run.result.report.exit.kind, 'clean');
+        assert.equal(run.result.recovery.status, 'error');
+        assert.match(run.result.recovery.error, /missing-addon/);
+        assert.ok(run.result.events.some((e) => e.source === 'utility-exit'));
+      },
+    );
   },
 
   async 'utility-ill'() {

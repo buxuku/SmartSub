@@ -243,6 +243,22 @@
       "suppressedFamily": "内置语音识别加速包已被停用（这台电脑的 CPU 可能缺少所需的指令集）。请改用云端语音识别，或在“GPU 加速”设置中重新尝试。",
       "suppressedBackends": "{{backends}} 加速后端已被自动停用，转写会改用其他方式。可在“GPU 加速”设置中重新尝试。",
       "listSeparator": "、"
+    },
+    "probe": {
+      "title": "Whisper 转写诊断",
+      "description": "请先暂停其他转写任务。使用内置短音频和已安装模型，单独测试 Vulkan / CPU 或 VAD 开关。每次测试最多 3 分钟，不会修改加速设置。",
+      "unavailable": "需要已安装的 whisper.cpp 模型及 Vulkan 或 CPU 加速包。",
+      "model": "测试模型",
+      "backend": "测试后端",
+      "vad": "启用语音活动检测（VAD）",
+      "run": "运行测试",
+      "running": "正在测试，可随时取消……",
+      "completed": "测试完成。",
+      "error": "测试返回错误。",
+      "exited": "测试进程异常结束。",
+      "timeout": "测试超时。",
+      "cancelled": "测试已取消。",
+      "saved": "结果已保存，导出诊断包即可附上最近 6 次测试记录。"
     }
   },
   "faq": {
