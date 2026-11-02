@@ -48,6 +48,8 @@ export interface StageArtifact {
   id: string;
   path: string;
   digest: string;
+  /** Cache identity before path-only relocation; digest still verifies file bytes. */
+  cacheDigest?: string;
   size: number;
   kind: string;
   provenance: 'automatic' | 'manual';

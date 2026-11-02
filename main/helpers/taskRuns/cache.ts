@@ -218,7 +218,7 @@ export function stageFingerprint(
         degraded: upstream.outcome === 'degraded',
         artifacts: upstream.artifacts.map((a) => ({
           kind: a.kind,
-          digest: a.digest,
+          digest: a.cacheDigest ?? a.digest,
         })),
       };
     });

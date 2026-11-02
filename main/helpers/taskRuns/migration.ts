@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import type { TaskStorageMigrationPreview } from '../../../types/taskStorage';
+import type { TaskDraft } from '../../../types/taskRun';
 import type { TaskRunStore } from './store';
 import { hashFile, copyIndependent } from './artifacts';
 import {
@@ -21,6 +22,11 @@ interface Transfer {
   size: number;
   remove: boolean;
 }
+interface SupersededDraft {
+  source: string;
+  target: string;
+  original: string;
+}
 export interface MigrationJournal {
   version: 1;
   id: string;
@@ -34,6 +40,7 @@ export interface MigrationJournal {
     | 'done'
     | 'failed';
   files?: Transfer[];
+  supersededDrafts?: SupersededDraft[];
   runs?: Array<{ key: string; root: string }>;
   error?: string;
 }
@@ -56,6 +63,8 @@ export function createTaskRunMigration(
   async function inventory(target: string) {
     const sources: string[] = [];
     const pairs: Array<{ source: string; target: string }> = [];
+    const drafts = new Map<string, string[]>();
+    const supersededDrafts: Array<{ source: string; target: string }> = [];
     for (const directory of store.projectDirectoriesAll()) {
       if (path.dirname(directory) === target) continue;
       if (
@@ -71,20 +80,13 @@ export function createTaskRunMigration(
           path.basename(directory),
           path.relative(directory, source),
         );
-        // A newer next-run draft may already live on the destination volume.
-        if (
-          path.basename(source) === 'draft.json' &&
-          fs.existsSync(destination)
-        ) {
-          const old = readJson<any>(source),
-            next = readJson<any>(destination);
-          if (
-            next.revision === old.revision &&
-            JSON.stringify(next) !== JSON.stringify(old)
-          )
-            throw new Error(`TASK_STORAGE_CONFLICT: ${destination}`);
-          if (next.revision >= old.revision) continue;
-        } else if (fs.existsSync(destination))
+        if (path.relative(directory, source) === 'draft.json') {
+          const candidates = drafts.get(destination) ?? [];
+          candidates.push(source);
+          drafts.set(destination, candidates);
+          continue;
+        }
+        if (fs.existsSync(destination))
           throw new Error(`TASK_STORAGE_CONFLICT: ${destination}`);
         if (source.endsWith('manifest.json')) {
           const run = readJson<any>(source);
@@ -95,7 +97,40 @@ export function createTaskRunMigration(
         pairs.push({ source, target: destination });
       }
     }
-    return { sources, pairs };
+    // Match readDraft's highest-revision selection across every known root.
+    // Resolve the winner before scheduling transfers to avoid duplicate targets.
+    for (const [destination, candidates] of drafts) {
+      if (fs.existsSync(destination)) candidates.push(destination);
+      const versions = candidates
+        .map((source) => {
+          const draft = readJson<TaskDraft>(source);
+          if (!draft || !Number.isSafeInteger(draft.revision))
+            throw new Error(`TASK_STORAGE_CONFLICT: ${source}`);
+          return { source, draft };
+        })
+        .sort((a, b) => b.draft.revision - a.draft.revision);
+      const winner = versions[0];
+      if (
+        versions.some(
+          ({ draft }) =>
+            draft.revision === winner.draft.revision &&
+            JSON.stringify(draft) !== JSON.stringify(winner.draft),
+        )
+      )
+        throw new Error(`TASK_STORAGE_CONFLICT: ${destination}`);
+      // Prefer an identical destination copy so it need not be republished.
+      const selected =
+        versions.find(
+          ({ source, draft }) =>
+            source === destination && draft.revision === winner.draft.revision,
+        ) ?? winner;
+      if (selected.source !== destination)
+        pairs.push({ source: selected.source, target: destination });
+      for (const source of candidates)
+        if (source !== selected.source && source !== destination)
+          supersededDrafts.push({ source, target: destination });
+    }
+    return { sources, pairs, supersededDrafts };
   }
   async function preview(): Promise<TaskStorageMigrationPreview> {
     const result: TaskStorageMigrationPreview = {
@@ -110,10 +145,12 @@ export function createTaskRunMigration(
       for (const [key, root] of store.locations?.entries() ?? [])
         if (!fs.existsSync(path.join(root, key, 'manifest.json')))
           throw new Error(`TASK_STORAGE_UNAVAILABLE: ${root}`);
-      const { sources, pairs } = await inventory(result.target);
+      const { sources, pairs, supersededDrafts } = await inventory(
+        result.target,
+      );
       result.sources = sources;
-      result.files = pairs.length;
-      for (const pair of pairs)
+      result.files = pairs.length + supersededDrafts.length;
+      for (const pair of [...pairs, ...supersededDrafts])
         result.bytes += (await fs.promises.stat(pair.source)).size;
       const running = store
         .all()
@@ -169,7 +206,15 @@ export function createTaskRunMigration(
       if (['scheduled', 'copying'].includes(current.phase)) {
         if (store.root !== current.target)
           throw new Error('TASK_MIGRATION_TARGET_CHANGED');
-        const { sources, pairs } = await inventory(current.target);
+        const { sources, pairs, supersededDrafts } = await inventory(
+          current.target,
+        );
+        current.supersededDrafts = await Promise.all(
+          supersededDrafts.map(async (draft) => ({
+            ...draft,
+            original: (await hashFile(draft.source)).digest,
+          })),
+        );
         const mapPath = (value: string) => {
           const source = sources.find(
             (dir) => value === dir || within(dir, value),
@@ -202,7 +247,12 @@ export function createTaskRunMigration(
         const items = [
           ...pairs.map((pair) => ({ ...pair, remove: true })),
           ...[...metadata]
-            .filter((file) => !pairs.some((pair) => pair.source === file))
+            .filter(
+              (file) =>
+                !pairs.some(
+                  (pair) => pair.source === file || pair.target === file,
+                ) && !supersededDrafts.some((draft) => draft.source === file),
+            )
             .map((source) => ({ source, target: source, remove: false })),
         ];
         const draftTargets = new Map<string, string>();
@@ -297,6 +347,11 @@ export function createTaskRunMigration(
             ) {
               const file = byPath.get(value.path);
               if (file) {
+                // Rewriting managed paths changes JSON bytes, not the cached
+                // result. Preserve the original identity across repeated moves
+                // and every manifest that reuses this artifact.
+                if (value.digest !== file.digest)
+                  value.cacheDigest ??= value.digest;
                 value.digest = file.digest;
                 value.size = file.size;
               }
@@ -341,6 +396,9 @@ export function createTaskRunMigration(
             await handle.close();
           }
         }
+        for (const draft of current.supersededDrafts)
+          if ((await hashFile(draft.source)).digest !== draft.original)
+            throw new Error('TASK_INPUT_CHANGED');
         current.phase = 'committing';
         save();
         options.checkpoint?.('committing');
@@ -408,7 +466,13 @@ export function createTaskRunMigration(
       }
       if (current.phase === 'cleanup') {
         const errors: string[] = [];
-        for (const file of current.files!) {
+        for (const file of [
+          ...current.files!,
+          ...(current.supersededDrafts ?? []).map((draft) => ({
+            ...draft,
+            remove: true,
+          })),
+        ]) {
           if (
             !file.remove ||
             file.source === file.target ||

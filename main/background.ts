@@ -1,12 +1,12 @@
+// 必须是第一个 import：放大 libuv 线程池（首个异步 I/O 后定型，不可再改）
+import './helpers/uvThreadPool';
+import { backgroundOnly } from './automation/bootstrap';
 import {
   recoverTaskStorageMigration,
   setupTaskStorageHandlers,
   cleanTaskStorage,
   taskRunMigration,
 } from './helpers/taskRuns/storageRuntime';
-// 必须是第一个 import：放大 libuv 线程池（首个异步 I/O 后定型，不可再改）
-import './helpers/uvThreadPool';
-import { backgroundOnly } from './automation/bootstrap';
 import { createWindowPort } from './automation/events';
 import { startAutomationServer } from './automation/server';
 import { AutomationService } from './automation/service';
