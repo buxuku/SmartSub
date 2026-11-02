@@ -1,5 +1,6 @@
 // 必须是第一个 import：放大 libuv 线程池（首个异步 I/O 后定型，不可再改）
 import './helpers/uvThreadPool';
+import './helpers/stdio';
 import { backgroundOnly } from './automation/bootstrap';
 import {
   recoverTaskStorageMigration,

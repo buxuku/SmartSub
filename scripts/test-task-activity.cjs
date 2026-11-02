@@ -136,7 +136,6 @@ async function main() {
     routeTranscription({
       file: { uuid: 'asr' },
       formData: {},
-      hasOpenAiWhisper: false,
       event: { sender: { send: (...args) => asrEvents.push(args) } },
     }),
   );

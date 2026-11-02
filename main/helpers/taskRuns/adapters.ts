@@ -16,7 +16,7 @@ import {
   srtHasCues,
 } from '../embeddedSubtitleParser';
 import { routeTranscription } from '../transcriptionRouter';
-import { checkOpenAiWhisper, getPath } from '../whisper';
+import { getPath } from '../whisper';
 import { runSubtitleRefineStage } from '../subtitleRefineStage';
 import { runManuscriptMatchingStage } from '../manuscriptMatchingStage';
 import {
@@ -641,7 +641,6 @@ export function createDesktopStageExecutor(sender: any) {
                 event,
                 file,
                 formData: config,
-                hasOpenAiWhisper: await checkOpenAiWhisper(),
               });
               file.tempAudioFile = upstreamAudio;
             }

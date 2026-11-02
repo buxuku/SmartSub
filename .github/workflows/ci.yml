@@ -55,6 +55,9 @@ jobs:
       - name: Unit tests (GPU enumeration and stdin EPIPE hardening)
         run: yarn test:gpu-enumeration
 
+      - name: Tests (closed stdout and stderr pipes)
+        run: yarn test:stdio
+
       - name: Tests (local speech review and warning persistence)
         run: |
           yarn test:speech-review
