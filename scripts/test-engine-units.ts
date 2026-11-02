@@ -2197,6 +2197,11 @@ eq(
   'path: whitespace -> fallback',
 );
 
+// CTranslate2 的 load_vocabulary 依次尝试 vocabulary.json、vocabulary.txt，两者都打不开
+// 才抛 "Cannot load the vocabulary from the model directory"。
+const CT2_VOCABULARY_MISSING =
+  'vocabulary.json or vocabulary.txt is missing or empty';
+
 // --- CT2 模型完整性：残缺快照不算已安装，完整快照优先 ---
 {
   const tmp = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'ct2-integrity-'));
@@ -2207,6 +2212,7 @@ eq(
   fs.mkdirSync(complete, { recursive: true });
   fs.writeFileSync(nodePath.join(incomplete, 'model.bin'), 'model');
   fs.writeFileSync(nodePath.join(complete, 'model.bin'), 'model');
+  fs.writeFileSync(nodePath.join(complete, 'vocabulary.txt'), 'token\n');
   fs.writeFileSync(
     nodePath.join(complete, 'config.json'),
     JSON.stringify({
@@ -2228,8 +2234,8 @@ eq(
   );
   eq(
     validateCt2ModelSnapshot(incomplete).issues,
-    ['config.json is missing'],
-    'ct2 integrity: missing config is diagnosed',
+    ['config.json is missing', CT2_VOCABULARY_MISSING],
+    'ct2 integrity: missing config and vocabulary are diagnosed together',
   );
   eq(
     inspectCt2SnapshotRoot(snapshots).snapshotDir,
@@ -2252,6 +2258,113 @@ eq(
       'config.json.suppress_ids_begin is missing or invalid',
     ],
     'ct2 integrity: missing native config arrays are diagnosed',
+  );
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// --- CT2 词表：只有 model.bin + config.json 的快照不算已安装 ---
+// 下载器按文件名字母序取文件（config.json → model.bin → … → tokenizer.json →
+// vocabulary.*），model.bin 之后失败、取消或退出应用会留下这种半成品；手动导入或
+// 拷贝不全的文件夹同样如此。校验若放行，界面显示已安装、转写才报 CTranslate2 的
+// 词表错误，下载器也会因「已安装」直接返回而无法补文件。
+{
+  const tmp = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'ct2-vocabulary-'));
+  const config = JSON.stringify({
+    lang_ids: [],
+    suppress_ids: [],
+    suppress_ids_begin: [],
+  });
+  const makeSnapshot = (
+    parent: string,
+    name: string,
+    extra: Record<string, string> = {},
+  ): string => {
+    const dir = nodePath.join(parent, name);
+    fs.mkdirSync(dir, { recursive: true });
+    const files = { 'model.bin': 'model', 'config.json': config, ...extra };
+    for (const [file, content] of Object.entries(files)) {
+      fs.writeFileSync(nodePath.join(dir, file), content);
+    }
+    return dir;
+  };
+  const issuesOf = (dir: string) => validateCt2ModelSnapshot(dir).issues;
+
+  eq(
+    issuesOf(makeSnapshot(tmp, 'partial', { 'tokenizer.json': '{}' })),
+    [CT2_VOCABULARY_MISSING],
+    'ct2 vocabulary: model.bin + config.json + tokenizer.json is still incomplete',
+  );
+  eq(
+    issuesOf(makeSnapshot(tmp, 'json', { 'vocabulary.json': '["a"]' })),
+    [],
+    'ct2 vocabulary: vocabulary.json is enough (large-v3, turbo, distil)',
+  );
+  eq(
+    issuesOf(makeSnapshot(tmp, 'txt', { 'vocabulary.txt': 'a\n' })),
+    [],
+    'ct2 vocabulary: vocabulary.txt is enough (tiny, base, small, medium)',
+  );
+  eq(
+    issuesOf(makeSnapshot(tmp, 'empty', { 'vocabulary.json': '' })),
+    [CT2_VOCABULARY_MISSING],
+    'ct2 vocabulary: an empty vocabulary file does not count',
+  );
+  eq(
+    issuesOf(makeSnapshot(tmp, 'misnamed', { 'vocab.txt': 'a\n' })),
+    [CT2_VOCABULARY_MISSING],
+    'ct2 vocabulary: the name must be exactly vocabulary.json or vocabulary.txt',
+  );
+
+  // HuggingFace 缓存里的文件是指向 blobs/ 的软链接：指向真实 blob 的要认；
+  // 缓存被拷走、blobs 丢了留下的悬空链接不能认。无权创建软链接的平台跳过。
+  try {
+    const blobs = nodePath.join(tmp, 'blobs');
+    fs.mkdirSync(blobs, { recursive: true });
+    fs.writeFileSync(nodePath.join(blobs, 'vocabulary-blob'), '["a"]');
+    const linked = makeSnapshot(tmp, 'linked');
+    fs.symlinkSync(
+      nodePath.join(blobs, 'vocabulary-blob'),
+      nodePath.join(linked, 'vocabulary.json'),
+    );
+    const dangling = makeSnapshot(tmp, 'dangling');
+    fs.symlinkSync(
+      nodePath.join(blobs, 'missing-blob'),
+      nodePath.join(dangling, 'vocabulary.json'),
+    );
+    eq(
+      issuesOf(linked),
+      [],
+      'ct2 vocabulary: a symlink to a real blob counts (HuggingFace cache layout)',
+    );
+    eq(
+      issuesOf(dangling),
+      [CT2_VOCABULARY_MISSING],
+      'ct2 vocabulary: a dangling symlink does not count',
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
+  }
+
+  // 半成品快照不算已安装；补上缺的文件即修复。
+  const snapshotRoot = nodePath.join(tmp, 'snapshots');
+  const stopped = makeSnapshot(snapshotRoot, 'rev-1', {
+    'tokenizer.json': '{}',
+  });
+  const stoppedInspection = inspectCt2SnapshotRoot(snapshotRoot);
+  eq(
+    [
+      stoppedInspection.snapshotDir,
+      stoppedInspection.incompleteSnapshotDir,
+      stoppedInspection.issues,
+    ],
+    [null, stopped, [CT2_VOCABULARY_MISSING]],
+    'ct2 vocabulary: a download that stopped after model.bin is incomplete, not installed',
+  );
+  fs.writeFileSync(nodePath.join(stopped, 'vocabulary.json'), '["a"]');
+  eq(
+    inspectCt2SnapshotRoot(snapshotRoot).snapshotDir,
+    stopped,
+    'ct2 vocabulary: fetching the missing file repairs the snapshot in place',
   );
   fs.rmSync(tmp, { recursive: true, force: true });
 }
