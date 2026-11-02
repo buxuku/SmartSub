@@ -91,8 +91,21 @@ export function resolveBundledDenoisePath(extraResourcesRoot: string): string {
   return path.join(extraResourcesRoot, SHERPA_DENOISE_SUBPATH);
 }
 
-/** CT2(faster-whisper) 模型导入的最小必需文件集（模型权重 + 配置）。 */
+/**
+ * CT2(faster-whisper) 模型导入的最小必需文件集（模型权重 + 配置）。
+ * 词表是二选一的，见 CT2_VOCABULARY_FILES，不在这份清单里。
+ */
 export const CT2_REQUIRED_FILES: string[] = ['model.bin', 'config.json'];
+
+/**
+ * CTranslate2 加载 Whisper 词表时依次尝试 vocabulary.json、vocabulary.txt，任何一个能
+ * 打开即可，两个都打不开才抛 "Cannot load the vocabulary from the model directory"。
+ * 内置模型两种都有（tiny/base/small/medium 用 .txt，其余用 .json），所以只要求其一。
+ */
+export const CT2_VOCABULARY_FILES: string[] = [
+  'vocabulary.json',
+  'vocabulary.txt',
+];
 
 /** CTranslate2 Whisper 转写阶段会直接迭代的配置数组。 */
 export const CT2_REQUIRED_CONFIG_ARRAYS: string[] = [
@@ -116,8 +129,11 @@ export interface Ct2SnapshotInspection extends Ct2SnapshotValidation {
 
 /**
  * 校验 faster-whisper/CT2 快照的最小可加载条件。
- * 除必需文件存在外，文件必须非空，且 config.json 必须是 JSON 对象，避免把
- * CTranslate2 的底层 JSON 异常暴露到转写阶段。
+ * 除必需文件存在外，文件必须非空，config.json 必须是 JSON 对象，并且至少有一个非空的
+ * 词表文件（CT2_VOCABULARY_FILES），避免把 CTranslate2 的底层异常（JSON 解析失败、
+ * "Cannot load the vocabulary from the model directory"）暴露到转写阶段。
+ * 文件按 statSync 判断，会跟随软链接：HuggingFace 缓存里指向 blobs/ 的有效链接算数，
+ * 悬空链接不算。
  */
 export function validateCt2ModelSnapshot(
   snapshotDir: string,
@@ -132,6 +148,18 @@ export function validateCt2ModelSnapshot(
     } catch {
       issues.push(`${rel} is missing`);
     }
+  }
+
+  const hasVocabulary = CT2_VOCABULARY_FILES.some((rel) => {
+    try {
+      const stat = fs.statSync(path.join(snapshotDir, rel));
+      return stat.isFile() && stat.size > 0;
+    } catch {
+      return false;
+    }
+  });
+  if (!hasVocabulary) {
+    issues.push(`${CT2_VOCABULARY_FILES.join(' or ')} is missing or empty`);
   }
 
   const configPath = path.join(snapshotDir, 'config.json');

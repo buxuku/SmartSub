@@ -102,6 +102,9 @@ function makeCt2Repo(dir, name, revision = REVISION) {
   write(path.join(dir, name, 'refs', 'main'), revision);
   write(path.join(snapshot, 'model.bin'), 'weights');
   write(path.join(snapshot, 'config.json'), JSON.stringify(config));
+  // CTranslate2 will not load a Whisper model without vocabulary.json or
+  // vocabulary.txt, so a complete model has one of them.
+  write(path.join(snapshot, 'vocabulary.json'), '["<|endoftext|>"]');
   return snapshot;
 }
 
@@ -200,6 +203,43 @@ function run() {
       'the snapshot at the top of the cache is the one handed to the engine',
     );
   });
+
+  step(
+    'a download that stopped before the vocabulary is not counted as installed',
+    () => {
+      modelRoot = newModelRoot('partial');
+      const hub = path.join(modelRoot, 'hub');
+      const snapshot = makeCt2Repo(hub, LARGE_V3);
+      // The downloader fetches files alphabetically, so a run that stops after
+      // model.bin leaves config.json and model.bin without vocabulary.json.
+      fs.rmSync(path.join(snapshot, 'vocabulary.json'));
+
+      assert.deepEqual(
+        catalog.getFasterWhisperModelsInstalled(),
+        [],
+        'the model list must not offer a model the engine cannot load',
+      );
+      assert.equal(catalog.resolveCt2ModelSnapshotDir('large-v3'), null);
+      assert.equal(
+        downloader.isCt2ModelInstalled('large-v3'),
+        false,
+        'download() returns early for an installed model, so a partial one could never be repaired',
+      );
+      assert.match(
+        catalog.inspectCt2ModelSnapshot('large-v3').issues.join(', '),
+        /vocabulary/,
+        'the engine error names what is missing',
+      );
+
+      write(path.join(snapshot, 'vocabulary.json'), '["<|endoftext|>"]');
+      assert.deepEqual(
+        catalog.getFasterWhisperModelsInstalled(),
+        ['large-v3'],
+        'fetching the missing file is the repair',
+      );
+      assert.equal(downloader.isCt2ModelInstalled('large-v3'), true);
+    },
+  );
 
   step('looking models up does not create a hub folder', () => {
     modelRoot = newModelRoot('empty');
