@@ -110,7 +110,14 @@ export async function collectTaskRunGarbage(
             path.basename(directory),
             path.dirname(directory),
           );
-          await remove(directory);
+          // Keep the retirement marker until every possible manifest is gone.
+          // Recursive rm(directory) can remove the marker before failing on a
+          // child, making the surviving runs visible again after a restart.
+          for (const entry of await fs.promises.readdir(directory))
+            if (entry !== 'retired.json')
+              await remove(path.join(directory, entry));
+          await remove(path.join(directory, 'retired.json'));
+          await fs.promises.rmdir(directory);
           continue;
         }
         const orphanBundles = new Set<string>();

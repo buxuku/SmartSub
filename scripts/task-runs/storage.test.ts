@@ -241,3 +241,47 @@ test('retirement reclaims projects across multiple roots without stale location 
     [],
   );
 });
+
+test('partial recursive deletion cannot revive retired manifests, including after restart', async (t) => {
+  const { old, store, run, locations } = setup(t);
+  store.write(run);
+  store.prepareRetirement(['project']).commit();
+  const project = store.projectPath('project');
+  const manifest = store.runPath('project', 'run');
+  const marker = path.join(project, 'retired.json');
+  const rm = fs.promises.rm;
+  const mock = t.mock.method(fs.promises, 'rm', async (target, options) => {
+    if (
+      options?.recursive &&
+      [project, path.dirname(manifest)].includes(String(target))
+    ) {
+      // Model rm removing the marker before encountering an inaccessible run.
+      if (String(target) === project) await rm(marker, { force: true });
+      throw Object.assign(new Error('EACCES: inaccessible run'), {
+        code: 'EACCES',
+      });
+    }
+    return rm(target, options);
+  });
+  const report = await collectTaskRunGarbage(store, { references: [] });
+  assert.ok(report.errors.some((error) => error.includes('EACCES')));
+  assert.ok(fs.existsSync(manifest));
+  assert.deepEqual(store.all(), [], 'surviving manifests must stay retired');
+  const reopened = createTaskRunStore(
+    old,
+    fs,
+    createTaskRunLocations(locations.indexPath, old, () => old),
+  );
+  assert.deepEqual(
+    reopened.all(),
+    [],
+    'restart must not resurrect the project',
+  );
+  mock.mock.restore();
+  assert.deepEqual(
+    (await collectTaskRunGarbage(reopened, { references: [] })).errors,
+    [],
+  );
+  assert.equal(fs.existsSync(project), false);
+  assert.deepEqual(reopened.locations!.entries(), []);
+});
