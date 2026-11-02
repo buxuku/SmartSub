@@ -119,6 +119,15 @@ function makeSources(
     }),
     addon: () => ({
       active: { backend: 'cpu' },
+      diagnosticProbes: [
+        {
+          backend: 'vulkan',
+          status: 'exited',
+          nativeDeviceLines: ['ggml_vulkan: 0 = AMD Radeon(TM) 780M'],
+          stderrTail: `at ${HOME}/addon.node apiKey: "${SECRET}"`,
+          exit: { code: -1073741819, kind: 'access-violation' },
+        },
+      ],
       history: [
         { backend: 'cuda', path: `${HOME}/addons/addon.node`, success: false },
       ],
@@ -387,6 +396,12 @@ async function main() {
         .includes('~/addons/addon.node'),
     );
     assert.ok(files.get(`${root}/gpu.json`)!.toString().includes('~'));
+    const probes = JSON.parse(
+      files.get(`${root}/addon.json`)!.toString(),
+    ).diagnosticProbes;
+    assert.equal(probes[0].exit.kind, 'access-violation');
+    assert.match(probes[0].nativeDeviceLines[0], /780M/);
+    assert.match(probes[0].stderrTail, /~\/addon.node/);
 
     // 清单与实际内容一致
     const parsed = JSON.parse(files.get(`${root}/manifest.json`)!.toString());

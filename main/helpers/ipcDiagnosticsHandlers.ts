@@ -12,6 +12,11 @@ import { getBuildInfo } from './buildInfo';
 import { getGpuEnvironment } from './cudaUtils';
 import { getActiveBackend } from './addonLoader';
 import {
+  cancelWhisperDiagnostic,
+  getWhisperProbeOptions,
+  runWhisperDiagnostic,
+} from './whisperDiagnostics';
+import {
   getCoreDumpShrink,
   getCrashDumpsDir,
   getCrashEventsFile,
@@ -157,6 +162,7 @@ function createSources(): DiagnosticsSources {
       active: getActiveBackend(),
       lastLoadResult: store.get('lastAddonLoadResult') ?? null,
       history: store.get('addonLoadHistory') ?? [],
+      diagnosticProbes: store.get('whisperProbeHistory') ?? [],
       ...buildCrashSnapshot(snapshotBreaker(), getPreviousRunAssessment()),
     }),
   };
@@ -222,9 +228,22 @@ export async function exportDiagnosticsFile(
 }
 
 export function setupDiagnosticsHandlers(mainWindow: BrowserWindow): void {
-  ipcMain.handle('diagnostics:preview', async () =>
-    previewDiagnostics(createSources()),
+  ipcMain.handle('diagnostics:preview', async () => {
+    const preview = await previewDiagnostics(createSources());
+    try {
+      return { ...preview, whisperProbe: getWhisperProbeOptions() };
+    } catch {
+      // A missing/unreadable model directory must not prevent exporting crash evidence.
+      return preview;
+    }
+  });
+  ipcMain.handle('diagnostics:whisper-probe', (_event, request) =>
+    runWhisperDiagnostic(request),
   );
+  ipcMain.handle('diagnostics:whisper-probe-cancel', () =>
+    cancelWhisperDiagnostic(),
+  );
+  app.on('before-quit', cancelWhisperDiagnostic);
 
   ipcMain.handle(
     'diagnostics:export',

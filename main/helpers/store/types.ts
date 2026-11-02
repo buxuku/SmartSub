@@ -183,6 +183,7 @@ export type StoreType = {
   providerVersion?: number;
   lastAddonLoadResult?: AddonLoadResultInfo;
   addonLoadHistory?: AddonLoadHistoryEntry[];
+  whisperProbeHistory?: import('../../../types/whisperProbe').WhisperProbeResult[];
   /** 已完成过 CoreML 首次编译（成功跑完一次转写）的模型名，用于「首次使用耗时」提示去重 */
   coremlCompiledModels?: string[];
   customParameters?: Record<string, CustomParameterConfig>;

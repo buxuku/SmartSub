@@ -108,6 +108,31 @@ async function main() {
     assert.deepEqual(parseWindowsGpuProbeOutput('nothing useful'), []);
   });
 
+  await test('Windows driver versions survive enumeration, including AMD and virtual adapters', () => {
+    assert.deepEqual(
+      parseWindowsGpuProbeOutput(
+        'GPU2=AMD Radeon(TM) 780M|Advanced Micro Devices, Inc.|32.0.21013.1000\r\n' +
+          'GPU2=Oray|Virtual Display|Oray|1.0.0.2\n' +
+          'GPU2=Unknown|Vendor|\n' +
+          'GPU2=bad-record',
+      ),
+      [
+        {
+          model: 'AMD Radeon(TM) 780M',
+          vendor: 'Advanced Micro Devices, Inc.',
+          driverVersion: '32.0.21013.1000',
+        },
+        {
+          model: 'Oray|Virtual Display',
+          vendor: 'Oray',
+          driverVersion: '1.0.0.2',
+        },
+        { model: 'Unknown', vendor: 'Vendor' },
+      ],
+    );
+    assert.match(buildWindowsGpuProbeCommand().args[3], /DriverVersion/);
+  });
+
   await test('probeWindowsGpus：把探测命令和超时交给 run，并解析输出', async () => {
     const seen: Array<{ file: string; args: string[]; timeoutMs: number }> = [];
     const result = await probeWindowsGpus(

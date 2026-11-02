@@ -36,6 +36,8 @@ export type RunCommand = (
 export interface RawGpu {
   model: string;
   vendor: string;
+  /** Windows Win32_VideoController.DriverVersion (all vendors). */
+  driverVersion?: string;
 }
 
 /**
@@ -63,21 +65,34 @@ export function buildWindowsGpuProbeCommand(systemRoot = 'C:\\Windows'): {
     `$ErrorActionPreference = 'SilentlyContinue'; $ProgressPreference = 'SilentlyContinue'; ` +
     // 让本地化的显卡名以 UTF-8 输出；受限语言模式下这句会失败，吞掉即可（顶多显示乱码，不影响厂商判断）
     `try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}; ` +
-    `Get-CimInstance Win32_VideoController | ForEach-Object { 'GPU=' + $_.Name + '|' + $_.AdapterCompatibility }`;
+    `Get-CimInstance Win32_VideoController | ForEach-Object { 'GPU2=' + $_.Name + '|' + $_.AdapterCompatibility + '|' + $_.DriverVersion }`;
   return {
     file: `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`,
     args: ['-NoProfile', '-NonInteractive', '-Command', script],
   };
 }
 
-/** 解析探测输出：每行形如 `GPU=名称|厂商`；BOM、编译警告之类的噪声行忽略。 */
+/** 解析 GPU2=名称|厂商|驱动版本；兼容旧 GPU=名称|厂商，忽略 BOM 与噪声行。 */
 export function parseWindowsGpuProbeOutput(output: string | null): RawGpu[] {
   const gpus: RawGpu[] = [];
   for (const rawLine of (output ?? '').split(/\r?\n/)) {
-    const match = rawLine
-      .replace(/^\uFEFF/, '')
-      .trim()
-      .match(GPU_LINE);
+    const line = rawLine.replace(/^\uFEFF/, '').trim();
+    if (line.startsWith('GPU2=')) {
+      const fields = line.slice(5).split('|');
+      if (fields.length < 3) continue;
+      const driverVersion = fields.pop()!.trim();
+      const vendor = fields.pop()!.trim();
+      const model = fields.join('|').trim();
+      if (model || vendor)
+        gpus.push({
+          model,
+          vendor,
+          ...(driverVersion ? { driverVersion } : {}),
+        });
+      continue;
+    }
+    // Older probe output remains readable (including saved reports and test fixtures).
+    const match = line.match(GPU_LINE);
     if (!match) continue;
     // 厂商名几乎不会带 |，名称里偶尔会：按最后一个 | 切分
     const body = match[1];

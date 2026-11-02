@@ -75,6 +75,58 @@ test('opening lists what goes into the bundle, with dump count and size', async 
   expect(invoke).toHaveBeenCalledWith('diagnostics:preview');
 });
 
+test('whisper diagnostics are explicit, keep export disabled while running, and support cancellation', async () => {
+  let finishProbe: (result: unknown) => void;
+  const { invoke, onOpenChange } = setup({
+    'diagnostics:preview': () => ({
+      ...PREVIEW,
+      whisperProbe: {
+        models: ['tiny', 'large-v3-turbo'],
+        defaultModel: 'large-v3-turbo',
+        backends: ['vulkan', 'cpu'],
+        vad: true,
+      },
+    }),
+    'diagnostics:whisper-probe': () =>
+      new Promise((resolve) => {
+        finishProbe = resolve;
+      }),
+    'diagnostics:whisper-probe-cancel': () => {
+      finishProbe({ status: 'cancelled' });
+    },
+  });
+  const run = await screen.findByRole('button', { name: 'Run test' });
+  expect(invoke).not.toHaveBeenCalledWith(
+    'diagnostics:whisper-probe',
+    expect.anything(),
+  );
+  fireEvent.change(screen.getByLabelText('Test backend'), {
+    target: { value: 'cpu' },
+  });
+  fireEvent.click(
+    screen.getByLabelText('Enable voice activity detection (VAD)'),
+  );
+  fireEvent.click(run);
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith('diagnostics:whisper-probe', {
+      model: 'large-v3-turbo',
+      backend: 'cpu',
+      vad: false,
+    }),
+  );
+  expect(exportButton()).toBeDisabled();
+  expect(run).toBeDisabled();
+  const cancel = screen
+    .getAllByRole('button', { name: 'Cancel' })
+    .find((button) => !button.hasAttribute('disabled'));
+  fireEvent.click(cancel!);
+  await waitFor(() =>
+    expect(screen.getByRole('status')).toHaveTextContent('Test cancelled.'),
+  );
+  expect(exportButton()).not.toBeDisabled();
+  expect(onOpenChange).not.toHaveBeenCalled();
+});
+
 test('exporting without ticking the box never asks for raw dumps', async () => {
   const exported: DiagnosticsExportResult = {
     ok: true,

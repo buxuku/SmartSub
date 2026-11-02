@@ -551,6 +551,7 @@ async function detectGpus(): Promise<GpuInfo[]> {
     const genericGpus = rawGpus.map((gpu) => ({
       name: gpu.model || gpu.vendor || 'Unknown GPU',
       vendor: normalizeGpuVendor(gpu.vendor, gpu.model),
+      ...(gpu.driverVersion ? { driverVersion: gpu.driverVersion } : {}),
     }));
     const nvidiaGpus = await nvidiaGpusPromise;
     if (nvidiaGpus.length === 0) return genericGpus;

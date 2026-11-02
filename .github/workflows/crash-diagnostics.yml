@@ -11,6 +11,8 @@ on:
       - 'main/helpers/crash/**'
       - 'main/helpers/addonLoader.ts'
       - 'main/helpers/cudaUtils.ts'
+      - 'main/helpers/whisperDiagnostics.ts'
+      - 'extraResources/diagnostics/**'
       - 'scripts/crash/**'
       - 'package.json'
       - '.github/workflows/crash-diagnostics.yml'
