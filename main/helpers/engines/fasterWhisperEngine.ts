@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'node:path';
 import type { EngineStatus, PyEngineManifest } from '../../../types/engine';
 import {
   isRuntimeInstalled,
@@ -367,7 +368,9 @@ async function transcribeFasterWhisper(
   if (review && transcription.beforeReviewSegments) {
     // Different tasks can share the same extracted WAV. Keep each task's
     // original recognition available when a later task uses another model.
-    const reviewBase = `${tempAudioFile}.${file.uuid.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const reviewBase = getTaskContext()?.stageOutputDirectory
+      ? path.join(getTaskContext()!.stageOutputDirectory!, 'speech')
+      : `${tempAudioFile}.${file.uuid.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
     const reviewPath = `${reviewBase}.review.json`;
     try {
       await fs.promises.writeFile(

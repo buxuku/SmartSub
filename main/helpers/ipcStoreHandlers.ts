@@ -1,3 +1,4 @@
+import { getRunStore } from './taskRuns/runtime';
 import { ipcMain } from '../automation/handlers';
 import { app } from 'electron';
 import os from 'os';
@@ -327,6 +328,8 @@ export function setupStoreHandlers() {
         sanitized.selectedCudaDevice,
       );
     }
+    // Remember the old root before settings switch the new-run destination.
+    getRunStore().roots();
     const nextSettings = { ...preSettings, ...sanitized };
     store.set('settings', nextSettings);
     if (

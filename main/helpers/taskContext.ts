@@ -6,6 +6,7 @@ export interface TaskRunContext {
   resolvedConfig?: Record<string, any>;
   attemptId?: string;
   fileRunDirectory?: string;
+  stageOutputDirectory?: string;
   verifyInput?: () => Promise<void>;
   activity?: TaskActivityReporter;
   projectId?: string;

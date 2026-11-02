@@ -194,6 +194,7 @@
     "test:e2e:assistant": "node scripts/e2e/assistant.mjs",
     "test:stage-artifacts": "node --import tsx --test scripts/stage-artifacts/*.test.ts",
     "test:stage-cache": "node --import tsx --test scripts/stage-cache/*.test.ts",
+    "test:e2e:task-storage": "node scripts/e2e/task-storage.mjs",
     "test:e2e:task-runs": "node scripts/e2e/task-runs.mjs"
   },
   "dependencies": {

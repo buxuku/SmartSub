@@ -1,6 +1,8 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import { createTaskRunStore } from './store';
+import { createTaskRunLocations } from './locations';
+import { resolveTaskRunsRoot } from '../storagePaths';
 import { assertValidRunInput, createTaskRunService } from './service';
 import { captureEffectiveConfiguration } from './configuration';
 import { configurationManager } from '../../service/configurationManager';
@@ -95,6 +97,14 @@ export function projectRun(run: TaskRun, durable = true) {
 export function getRunStore() {
   return (manifests ??= createTaskRunStore(
     path.join(app.getPath('userData'), 'task-runs'),
+    undefined,
+    createTaskRunLocations(
+      path.join(app.getPath('userData'), 'task-run-locations.json'),
+      path.join(app.getPath('userData'), 'task-runs'),
+      () =>
+        resolveTaskRunsRoot(store.get('settings'), app.getPath('userData'))
+          .path,
+    ),
   ));
 }
 export function getRunService() {
@@ -116,12 +126,26 @@ export function initializeTaskRuns() {
   getRunStore().reconcileRetirements(getWorkItems().map((item) => item.id));
   setTaskRunServiceResolver(getRunService);
   setManagedTaskAcceptance(acceptManagedTask);
-  setTaskRunDeletion((ids) => getRunStore().prepareRetirement(ids));
+  setTaskRunDeletion((ids) => {
+    const transaction = getRunStore().prepareRetirement(ids);
+    return {
+      rollback: transaction.rollback,
+      commit() {
+        transaction.commit();
+        // Defer until WorkItem and dubbing deletion transactions have committed.
+        setTimeout(() => {
+          void import('./storageRuntime')
+            .then(({ cleanTaskStorage }) => cleanTaskStorage())
+            .catch(console.warn);
+        }, 0);
+      },
+    };
+  });
   setTaskRunEditGuard((input) => {
     const all = getRunStore().all();
     if (
       input.path &&
-      path.resolve(input.path).startsWith(getRunStore().root + path.sep) &&
+      getRunStore().owns(path.resolve(input.path)) &&
       input.path.split(path.sep).includes('artifacts')
     )
       throw new Error('TASK_ARTIFACT_READ_ONLY');

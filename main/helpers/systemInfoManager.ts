@@ -1,3 +1,4 @@
+import { cleanTaskStorage } from './taskRuns/storageRuntime';
 import { dialogWindow } from '../automation/events';
 import { ipcMain } from '../automation/handlers';
 import { app, BrowserWindow, dialog, shell } from 'electron';
@@ -1100,6 +1101,9 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   // 清除缓存
   ipcMain.handle('clearCache', async () => {
     try {
+      const taskCleanup = await cleanTaskStorage();
+      if (taskCleanup.errors.length)
+        throw new Error(taskCleanup.errors.join('; '));
       const tempDir = getTempDir();
       const files = await fse.readdir(tempDir);
 

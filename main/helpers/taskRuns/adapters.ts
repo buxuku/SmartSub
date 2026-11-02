@@ -57,6 +57,8 @@ import {
   type StageArtifactStore,
 } from './artifacts';
 import { getRunStore, getRunService } from './runtime';
+import { getTempDir } from '../fileUtils';
+import { cleanupWorkspace, liveWorkspaces } from './cleanup';
 import { decideStageReuse, stageFingerprint } from './cache';
 import { renderTranslationDelivery } from './deliveryText';
 import {
@@ -404,7 +406,13 @@ async function exportSubtitles(
 
 /** Adapts existing implementations without changing their resource locks or providers. */
 export function createDesktopStageExecutor(sender: any) {
-  const artifacts = createStageArtifactStore(getRunStore());
+  const artifacts = createStageArtifactStore(getRunStore(), {
+    workspaceRoot: () => {
+      const root = path.join(getTempDir(), 'task-runs');
+      getRunStore().locations?.rememberWorkspaceRoot(root);
+      return root;
+    },
+  });
   return async (ctx: StageExecutionContext) =>
     runWithTaskContext(
       {
@@ -422,6 +430,14 @@ export function createDesktopStageExecutor(sender: any) {
       },
       async () => {
         const workspace = artifacts.workspace(ctx.token);
+        liveWorkspaces.add(workspace);
+        getTaskContext()!.stageOutputDirectory = workspace;
+        ctx.afterSettlement?.(async () => {
+          liveWorkspaces.delete(workspace);
+          await cleanupWorkspace(workspace, [
+            getRunStore().read(ctx.run.projectId, ctx.run.runId),
+          ]);
+        });
         const file: any = {
           ...structuredClone(ctx.file.projection),
           taskRunId: ctx.run.runId,
@@ -616,14 +632,18 @@ export function createDesktopStageExecutor(sender: any) {
               if (config.taskType === 'translateOnly')
                 throw new Error('TASK_SUBTITLE_INPUT_REQUIRED');
               file.srtFile = path.join(workspace, 'source.srt');
-              // Word timelines are written alongside audio by some adapters; give them a writable copy.
-              await writable(file, ['tempAudioFile'], workspace);
+              // External commands can modify their input. Built-in adapters use a
+              // read-only upstream WAV and write sidecars into stageOutputDirectory.
+              const upstreamAudio = file.tempAudioFile;
+              if (config.transcriptionEngine === 'localCli')
+                await writable(file, ['tempAudioFile'], workspace);
               await routeTranscription({
                 event,
                 file,
                 formData: config,
                 hasOpenAiWhisper: await checkOpenAiWhisper(),
               });
+              file.tempAudioFile = upstreamAudio;
             }
           } else if (
             stageId === 'refineSubtitle' ||
