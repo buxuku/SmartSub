@@ -3,7 +3,7 @@ import fse from 'fs-extra';
 import { backgroundEvent } from '../automation/events';
 import { BrowserWindow, Notification } from 'electron';
 import { processFile } from './fileProcessor';
-import { checkOpenAiWhisper, getPath } from './whisper';
+import { getPath } from './whisper';
 import { logMessage, store } from './storeManager';
 import path from 'path';
 import { randomUUID } from 'crypto';
@@ -105,7 +105,6 @@ let processingQueue: QueueItem[] = [];
 const projectRuntimes = new Map<string, ProjectRuntime>();
 let isProcessing = false;
 let maxConcurrentTasks = 3;
-let hasOpenAiWhisper = false;
 let activeTasksCount = 0;
 
 /** 最近一次 handleTask 的 event：resume 触发派发时复用 */
@@ -290,12 +289,6 @@ function startTaskRun(event: any, input: TaskSubmission): TaskSubmissionResult {
 }
 
 async function initializeTaskRun(event: any, formData: any, files: IFiles[]) {
-  try {
-    hasOpenAiWhisper = await checkOpenAiWhisper();
-  } catch (error) {
-    hasOpenAiWhisper = false;
-    logMessage(`Whisper CLI detection failed: ${error}`, 'warning');
-  }
   // 预热 sidecar：把冷启动成本移出首个文件关键路径（faster-whisper 等需运行时引擎）。
   // ensureStarted 成功后再 prewarm（按引擎预加载模型），与首个文件的音频抽取并行，
   // 避免 FunASR 等首个 transcribe 因首次加载原生库/ONNX 过慢而长时间卡在 0%。
@@ -784,7 +777,6 @@ async function processNextTasks(event) {
                 wrapTaskEvent(event),
                 task.file as IFiles,
                 task.formData,
-                hasOpenAiWhisper,
                 extendedProvider,
                 providerCandidates.slice(1),
               ),

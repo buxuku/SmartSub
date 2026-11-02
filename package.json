@@ -139,6 +139,7 @@
     "test:custom-parameters": "tsc renderer/lib/parameterValueUtils.ts main/helpers/parameterProcessor.ts --outDir node_modules/.cache/custom-parameter-tests --module commonjs --moduleResolution node --target es2020 --esModuleInterop --skipLibCheck && node scripts/test-custom-parameters.cjs",
     "test:renderer": "jest --runInBand",
     "test:parameter-persistence": "node scripts/test-parameter-persistence.cjs",
+    "test:stdio": "node --test scripts/test-stdio.cjs",
     "test:crash": "tsx scripts/crash/test-crash-units.ts",
     "test:crash:probe-cpu": "tsx scripts/crash/probe-cpu.ts",
     "test:crash:smoke": "node scripts/crash/smoke.mjs",

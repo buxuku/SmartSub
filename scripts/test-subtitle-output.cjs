@@ -281,7 +281,7 @@ async function task(root, name, config = {}, fileOverrides = {}, onEvent) {
       },
     },
   };
-  await processFile(event, file, form, false, { id: 'test' });
+  await processFile(event, file, form, { id: 'test' });
   return { state, file, form, event, counters: active };
 }
 
@@ -642,13 +642,9 @@ async function run(root) {
     true,
     'TTS cache remains pure translation after proofread',
   );
-  await processFile(
-    bilingual.event,
-    { ...bilingual.state },
-    bilingual.form,
-    false,
-    { id: 'test' },
-  );
+  await processFile(bilingual.event, { ...bilingual.state }, bilingual.form, {
+    id: 'test',
+  });
   check(
     [active.asr, active.translations, active.composes],
     [1, 1, 2],
@@ -752,7 +748,6 @@ async function run(root) {
     pairedRoles.event,
     { ...pairedRoles.state },
     pairedRoles.form,
-    false,
     { id: 'test' },
   );
   check(
@@ -770,7 +765,6 @@ async function run(root) {
     pairedRoles.event,
     { ...pairedRoles.state },
     pairedRoles.form,
-    false,
     { id: 'test' },
   );
   check(active.speakers, 2, 'missing sidecar rebuilds speaker metadata');
@@ -1160,7 +1154,7 @@ async function run(root) {
     'utf8',
   );
   await fs.promises.rmdir(path.join(active.root, 'clip.en.txt'));
-  await processFile(failed.event, { ...failed.state }, failed.form, false, {
+  await processFile(failed.event, { ...failed.state }, failed.form, {
     id: 'test',
   });
   check(
@@ -1207,7 +1201,7 @@ async function run(root) {
     failed.counters.asr,
     failed.counters.translations,
   ];
-  await processFile(failed.event, missing, failed.form, false, { id: 'test' });
+  await processFile(failed.event, missing, failed.form, { id: 'test' });
   check(
     failed.state.exportSubtitle,
     'error',
@@ -1283,7 +1277,6 @@ async function run(root) {
         result.event,
         JSON.parse(JSON.stringify(result.state)),
         result.form,
-        false,
         { id: 'test' },
       );
       check(
@@ -1426,7 +1419,6 @@ async function run(root) {
     cancelledTask.event,
     JSON.parse(JSON.stringify(cancelledTask.state)),
     cancelledTask.form,
-    false,
     { id: 'test' },
   );
   check(
