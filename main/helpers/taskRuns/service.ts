@@ -58,6 +58,7 @@ export function createTaskRunService(
 ) {
   const progressViews = new Map<string, TaskRun>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  const notificationTimers = new Map<string, ReturnType<typeof setTimeout>>();
   function get(projectId: string, runId?: string) {
     const pending = progressViews.get(projectId);
     if (pending && (!runId || pending.runId === runId))
@@ -73,6 +74,9 @@ export function createTaskRunService(
     progressViews.delete(run.projectId);
     clearTimeout(timers.get(run.projectId));
     timers.delete(run.projectId);
+    // A committed transition supersedes any queued, less recent progress view.
+    clearTimeout(notificationTimers.get(run.projectId));
+    notificationTimers.delete(run.projectId);
     options.onChange?.(structuredClone(run));
     return structuredClone(run);
   }
@@ -80,8 +84,24 @@ export function createTaskRunService(
     run.revision++;
     run.updatedAt = Date.now();
     progressViews.set(run.projectId, run);
-    options.onProgress?.(structuredClone(run));
+    // Coalesce before cloning/projecting the whole batch, not just before IPC.
+    // Hashing and concurrent engines can report many updates in one frame.
+    if (!notificationTimers.has(run.projectId)) {
+      const timer = setTimeout(() => {
+        notificationTimers.delete(run.projectId);
+        const pending = progressViews.get(run.projectId);
+        if (!pending) return;
+        try {
+          options.onProgress?.(structuredClone(pending));
+        } catch (error) {
+          console.error('Task progress notification failed', error);
+        }
+      }, 200);
+      timer.unref?.();
+      notificationTimers.set(run.projectId, timer);
+    }
     if (!timers.has(run.projectId)) {
+      // Progress is advisory; stage results and commands still commit at once.
       const timer = setTimeout(() => {
         timers.delete(run.projectId);
         const pending = progressViews.get(run.projectId);
@@ -91,7 +111,7 @@ export function createTaskRunService(
         } catch (error) {
           console.error('Task progress flush failed', error);
         }
-      }, 500);
+      }, 2000);
       timer.unref?.();
       timers.set(run.projectId, timer);
     }
@@ -134,8 +154,13 @@ export function createTaskRunService(
   }
   function owned(
     token: AttemptToken,
+    reuseProgress = false,
   ): { run: TaskRun; stage: StageRun } | null {
-    const run = get(token.projectId);
+    // Only progress callbacks mutate this unpublished working copy. Durable
+    // transitions/public readers retain independent copies for write failures.
+    const run =
+      (reuseProgress && progressViews.get(token.projectId)) ||
+      get(token.projectId);
     if (!run || run.runId !== token.runId) return null;
     const stage = run.files.find((f) => f.fileId === token.fileId)?.stages[
       token.stageId
@@ -147,6 +172,9 @@ export function createTaskRunService(
   return {
     get,
     list: store.list,
+    flushProgress() {
+      for (const run of [...progressViews.values()]) save(run);
+    },
     importLegacyResult(input: {
       projectId: string;
       config: Record<string, any>;
@@ -370,7 +398,7 @@ export function createTaskRunService(
       return { projectId, runId, fileId, stageId, attemptId: stage.attemptId };
     },
     progress(input: AttemptToken & { sequence: number; progress: number }) {
-      const found = owned(input);
+      const found = owned(input, true);
       if (
         !found ||
         input.sequence <= found.stage.sequence ||
@@ -383,7 +411,7 @@ export function createTaskRunService(
       return true;
     },
     activity(token: AttemptToken, activity: IFiles['taskActivity']) {
-      const found = owned(token);
+      const found = owned(token, true);
       if (!found) return false;
       found.run.files.find(
         (file) => file.fileId === token.fileId,

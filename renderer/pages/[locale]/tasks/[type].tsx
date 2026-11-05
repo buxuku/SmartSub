@@ -121,6 +121,7 @@ export default function TaskPage() {
   const { t: tHome } = useTranslation('home');
   const confirmOrUndo = useConfirmOrUndo();
   const [files, setFiles] = useState([]);
+  const taskListViewportRef = useRef<HTMLDivElement>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const { currentRun } = useTaskRuns(projectId);
   const [editableRunId, setEditableRunId] = useState<string | null>(null);
@@ -1933,7 +1934,10 @@ export default function TaskPage() {
             isDragging && 'opacity-100',
           )}
         />
-        <ScrollArea className="flex-1 min-h-0">
+        <ScrollArea
+          className="flex-1 min-h-0"
+          viewportRef={taskListViewportRef}
+        >
           {viewMode === 'grid' ? (
             <TaskGridList
               inputsLocked={configLocked}
@@ -1954,6 +1958,7 @@ export default function TaskPage() {
             />
           ) : (
             <TaskRowList
+              scrollElementRef={taskListViewportRef}
               inputsLocked={configLocked}
               files={files}
               typeDef={resultTypeDef!}

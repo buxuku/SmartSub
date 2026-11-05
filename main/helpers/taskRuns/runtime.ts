@@ -107,6 +107,9 @@ export function getRunStore() {
     ),
   ));
 }
+export function flushTaskRunProgress() {
+  singleton?.flushProgress();
+}
 export function getRunService() {
   return (singleton ??= createTaskRunService(getRunStore(), {
     onChange: (run) => {

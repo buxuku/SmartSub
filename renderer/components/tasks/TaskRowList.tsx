@@ -1,5 +1,6 @@
 import { TaskActivityDetails } from './TaskActivityDetails';
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   AudioLines,
   Captions,
@@ -76,6 +77,7 @@ interface TaskRowListProps {
     manuscriptName?: string,
   ) => void;
   onImport?: () => void;
+  scrollElementRef?: React.RefObject<HTMLDivElement>;
 }
 
 export function RailChips({
@@ -296,8 +298,26 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
   onInspectDubbing,
   onAssignManuscript,
   onImport,
+  scrollElementRef,
 }) => {
   const { t } = useTranslation('tasks');
+  const virtual = files.length >= 50 && Boolean(scrollElementRef);
+  // Stable keys preserve measurements across progress snapshots, while still
+  // invalidating them when files are inserted, removed or reordered.
+  const keySignature = JSON.stringify(files.map((file) => file.uuid));
+  const getItemKey = useMemo(() => {
+    const keys = files.map((file) => file.uuid);
+    return (index: number) => keys[index] ?? index;
+  }, [keySignature]);
+  const virtualizer = useVirtualizer({
+    enabled: virtual,
+    count: files.length,
+    getScrollElement: () => scrollElementRef?.current ?? null,
+    getItemKey,
+    estimateSize: () => 112,
+    gap: 8,
+    overscan: 5,
+  });
   const queueBusy =
     inputsLocked ||
     taskStatus === 'running' ||
@@ -425,8 +445,17 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
   }
 
   return (
-    <div data-testid="task-list" className="space-y-2">
-      {files.map((file) => {
+    <div
+      data-testid="task-list"
+      className={virtual ? 'relative' : 'space-y-2'}
+      style={virtual ? { height: virtualizer.getTotalSize() } : undefined}
+    >
+      {(virtual
+        ? virtualizer
+            .getVirtualItems()
+            .map((item) => ({ file: files[item.index], item }))
+        : files.map((file) => ({ file, item: null }))
+      ).map(({ file, item }) => {
         const stages = getFileStages(file, typeDef, formData);
         const rail = getFileRail(file, typeDef, formData);
         const dockedGate = getDockedGate(file, formData);
@@ -496,6 +525,19 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
         return (
           <div
             key={file?.uuid}
+            data-index={item?.index}
+            ref={item ? virtualizer.measureElement : undefined}
+            style={
+              item
+                ? {
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${item.start}px)`,
+                  }
+                : undefined
+            }
             data-testid="task-row"
             data-tone={tone}
             data-state={status.state}
