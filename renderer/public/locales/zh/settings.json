@@ -205,6 +205,7 @@
     "downloadSource": "下载源",
     "ghProxy": "github 国内加速",
     "downloading": "正在下载...",
+    "verifying": "正在校验...",
     "extracting": "正在解压...",
     "downloadComplete": "加速包下载完成",
     "downloadFailed": "下载失败",

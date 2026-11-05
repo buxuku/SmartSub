@@ -205,6 +205,7 @@
     "downloadSource": "Download Source",
     "ghProxy": "GitHub Mirror (China)",
     "downloading": "Downloading...",
+    "verifying": "Verifying...",
     "extracting": "Extracting...",
     "downloadComplete": "Acceleration pack downloaded successfully",
     "downloadFailed": "Download failed",

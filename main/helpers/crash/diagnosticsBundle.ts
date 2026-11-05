@@ -541,7 +541,7 @@ This bundle was generated locally by SmartSub. Nothing is uploaded automatically
 - gpu.json         显卡与加速环境（含可读取的 Windows 驱动版本） / GPU environment and available Windows driver versions
 - settings.json    部分设置（白名单；不含 API Key、服务商配置，路径只说明是否自定义）
                    A whitelisted subset of settings (no API keys or provider configs; paths are not included)
-- addon.json       whisper 加速包加载记录、崩溃熔断状态及最近 6 次手动转写诊断 / whisper addon history, crash-breaker state and last 6 explicit diagnostic tests
+- addon.json       whisper 加速包安装来源、构建版本与校验记录、加载记录、崩溃熔断状态及最近 6 次手动转写诊断 / whisper addon installation provenance and hashes, load history, crash-breaker state and last 6 explicit diagnostic tests
 
 隐私 / Privacy
 - 不含 API Key、翻译 / 配音 / 听写服务商配置，也不含媒体与字幕文件。

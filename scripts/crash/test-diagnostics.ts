@@ -119,6 +119,19 @@ function makeSources(
     }),
     addon: () => ({
       active: { backend: 'cpu' },
+      installed: [
+        {
+          version: '13.0.2',
+          info: {
+            provenance: {
+              source: 'gitcode',
+              releaseVersion: '2026.10.21',
+              packageSha256: 'a'.repeat(64),
+              addonSha256: 'b'.repeat(64),
+            },
+          },
+        },
+      ],
       diagnosticProbes: [
         {
           backend: 'vulkan',
@@ -402,6 +415,12 @@ async function main() {
     assert.equal(probes[0].exit.kind, 'access-violation');
     assert.match(probes[0].nativeDeviceLines[0], /780M/);
     assert.match(probes[0].stderrTail, /~\/addon.node/);
+    const provenance = JSON.parse(files.get(`${root}/addon.json`)!.toString())
+      .installed[0].info.provenance;
+    assert.equal(provenance.source, 'gitcode');
+    assert.equal(provenance.releaseVersion, '2026.10.21');
+    assert.equal(provenance.packageSha256, 'a'.repeat(64));
+    assert.equal(provenance.addonSha256, 'b'.repeat(64));
 
     // 清单与实际内容一致
     const parsed = JSON.parse(files.get(`${root}/manifest.json`)!.toString());

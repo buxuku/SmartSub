@@ -140,6 +140,7 @@
     "test:renderer": "jest --runInBand",
     "test:parameter-persistence": "node scripts/test-parameter-persistence.cjs",
     "test:stdio": "node --test scripts/test-stdio.cjs",
+    "test:addon-installation": "node scripts/test-addon-installation.cjs",
     "test:crash": "tsx scripts/crash/test-crash-units.ts",
     "test:crash:probe-cpu": "tsx scripts/crash/probe-cpu.ts",
     "test:crash:smoke": "node scripts/crash/smoke.mjs",

@@ -58,6 +58,9 @@ jobs:
       - name: Tests (closed stdout and stderr pipes)
         run: yarn test:stdio
 
+      - name: Tests (verified addon installation and provenance)
+        run: yarn test:addon-installation
+
       - name: Tests (local speech review and warning persistence)
         run: |
           yarn test:speech-review
