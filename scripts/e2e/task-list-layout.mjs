@@ -672,6 +672,136 @@ try {
     );
   }
 
+  await guarded('large batch virtualization', async () => {
+    const paths = await Promise.all(
+      Array.from({ length: 200 }, async (_, index) => {
+        const target = path.join(
+          output,
+          `bulk-${String(index).padStart(3, '0')}.wav`,
+        );
+        await fs.copyFile(media[0], target);
+        return target;
+      }),
+    );
+    await page.evaluate(
+      async ({ paths }) => {
+        const original = await window.ipc.invoke(
+          'getTaskProject',
+          'task-list-layout',
+        );
+        await window.ipc.invoke('saveTaskProject', {
+          ...original,
+          id: 'task-list-bulk',
+          name: 'Large batch',
+          files: paths.map((filePath, index) => ({
+            ...original.files[0],
+            uuid: `bulk-${index}`,
+            filePath,
+            fileName: `bulk-${String(index).padStart(3, '0')}`,
+          })),
+        });
+        await window.ipc.invoke('setSettings', { taskViewMode: 'list' });
+      },
+      { paths },
+    );
+    await open('task-list-bulk');
+    const rows = panel.locator('[data-testid="task-row"]');
+    const viewport = panel.locator('[data-radix-scroll-area-viewport]');
+    for (const width of [1024, 1440]) {
+      await resize(width, 900);
+      let maxMounted = 0;
+      for (let step = 0; step <= 10; step++) {
+        await viewport.evaluate((el, fraction) => {
+          el.scrollTop = fraction * (el.scrollHeight - el.clientHeight);
+        }, step / 10);
+        await page.waitForTimeout(80);
+        maxMounted = Math.max(maxMounted, await rows.count());
+      }
+      check(
+        `bulk@${width}: mounts fewer than 40 of 200 rows`,
+        maxMounted > 0 && maxMounted < 40,
+        `${maxMounted} mounted`,
+      );
+      await expect(rows.last()).toContainText('bulk-199');
+      const bounds = await rows.evaluateAll((elements) =>
+        elements.map((el) => {
+          const rect = el.getBoundingClientRect();
+          return { top: rect.top, bottom: rect.bottom };
+        }),
+      );
+      check(
+        `bulk@${width}: measured rows do not overlap`,
+        bounds
+          .slice(1)
+          .every((rect, index) => rect.top - bounds[index].bottom >= 7.5),
+      );
+      await shot(`bulk-${width}`);
+    }
+    await rows.last().hover();
+    await rows
+      .last()
+      .getByRole('button', { name: REMOVE, exact: true })
+      .click();
+    await expect(page.getByText('bulk-199', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: UNDO, exact: true }).click();
+    await viewport.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    await expect(rows.last()).toContainText('bulk-199');
+    check('bulk: removal and undo retain the last file', true);
+  });
+
+  await guarded('renderer crash recovery', async () => {
+    await app.evaluate(({ BrowserWindow, dialog }) => {
+      globalThis.__rendererRecoveryPrompts = 0;
+      dialog.showMessageBox = async () => {
+        globalThis.__rendererRecoveryPrompts++;
+        return { response: 0, checkboxChecked: false };
+      };
+      BrowserWindow.getAllWindows()
+        .find((win) => /^(app:|http:)/.test(win.webContents.getURL()))
+        .webContents.forcefullyCrashRenderer();
+    });
+    // Playwright retains a crashed Page handle after Electron reloads the same
+    // WebContents. Inspect the recovered renderer through Electron instead.
+    await expect
+      .poll(
+        () =>
+          app.evaluate(async ({ BrowserWindow }) => {
+            const win = BrowserWindow.getAllWindows().find((candidate) =>
+              /^(app:|http:)/.test(candidate.webContents.getURL()),
+            );
+            if (
+              globalThis.__rendererRecoveryPrompts !== 1 ||
+              !win ||
+              win.webContents.isCrashed() ||
+              win.webContents.isLoading()
+            )
+              return null;
+            try {
+              const view = await win.webContents.executeJavaScript(
+                `({
+                hasRows: document.querySelectorAll('[data-testid="task-row"]').length > 0,
+                project: new URL(location.href).searchParams.get('project')
+              })`,
+              );
+              return {
+                prompts: globalThis.__rendererRecoveryPrompts,
+                ...view,
+              };
+            } catch {
+              return null;
+            }
+          }),
+        { timeout: 20_000 },
+      )
+      .toEqual({ prompts: 1, project: 'task-list-bulk', hasRows: true });
+    check(
+      'renderer: reload restores the existing project after a real crash',
+      true,
+    );
+  });
+
   check('no uncaught page errors', pageErrors.length === 0, pageErrors[0]);
 } finally {
   await app.close();

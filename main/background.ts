@@ -30,7 +30,10 @@ import { setupTaskProcessor } from './helpers/taskProcessor';
 import { setupSystemInfoManager } from './helpers/systemInfoManager';
 import { setupStoreHandlers, store, logMessage } from './helpers/storeManager';
 import { setupTaskManager } from './helpers/taskManager';
-import { initializeTaskRuns } from './helpers/taskRuns/runtime';
+import {
+  initializeTaskRuns,
+  flushTaskRunProgress,
+} from './helpers/taskRuns/runtime';
 import {
   initializeWorkItemStore,
   flushWorkItemStore,
@@ -49,8 +52,10 @@ import { setupAppMenu } from './helpers/menu';
 import {
   setupWindowCloseBehavior,
   markQuitting,
+  getIsQuitting,
   confirmUnsavedWindows,
 } from './helpers/windowClose';
+import { setupRendererRecovery } from './helpers/rendererRecovery';
 import { setupParameterHandlers } from './helpers/ipcParameterHandlers';
 import { setupProofreadHandlers } from './helpers/ipcProofreadHandlers';
 import { setupSubtitleMergeHandlers } from './helpers/ipcSubtitleMergeHandlers';
@@ -145,6 +150,7 @@ app.on('before-quit', (event) => {
     return;
   }
   try {
+    flushTaskRunProgress();
     flushWorkItemStore();
   } catch (error) {
     event.preventDefault();
@@ -309,6 +315,12 @@ app.on('before-quit', (event) => {
 
     // 关窗行为（macOS 智能模式 / Win·Linux 防误杀）+ Dock 激活恢复
     setupWindowCloseBehavior(desktopWindow);
+    setupRendererRecovery(desktopWindow, {
+      isQuitting: getIsQuitting,
+      language: () => store.get('settings')?.language || userLanguage,
+      showMessageBox: (window, options) =>
+        dialog.showMessageBox(window, options),
+    });
     setupWindowChromeHandlers(desktopWindow);
     setupAppMenu(desktopWindow);
     if (!updaterRegistered) {

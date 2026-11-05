@@ -10,6 +10,8 @@ type LogEntry = {
   type?: 'info' | 'error' | 'warning';
 };
 
+const MAX_VISIBLE_LOGS = 200;
+
 const LogPanel: React.FC<{
   className?: string;
   /** 提供时只显示该工程的日志（系统/Updater 日志不再混入） */
@@ -27,15 +29,15 @@ const LogPanel: React.FC<{
     }
     setLogs([]);
     window?.ipc
-      ?.invoke('getLogs', { projectId, limit: 200 })
+      ?.invoke('getLogs', { projectId, limit: MAX_VISIBLE_LOGS })
       .then((initial: LogEntry[]) => {
-        setLogs(initial || []);
+        setLogs((initial || []).slice(-MAX_VISIBLE_LOGS));
       });
     const unsubscribe = window?.ipc?.on(
       'newLog',
       (log: LogEntry & { projectId?: string }) => {
         if (log?.projectId !== projectId) return;
-        setLogs((prev) => [...prev, log]);
+        setLogs((prev) => [...prev.slice(-(MAX_VISIBLE_LOGS - 1)), log]);
       },
     );
     return () => {
