@@ -26,6 +26,7 @@ const GpuDownloadProgress: React.FC<GpuDownloadProgressProps> = ({
   if (!downloadProgress || downloadProgress.status === 'idle') return null;
 
   const isDownloading = downloadProgress.status === 'downloading';
+  const isVerifying = downloadProgress.status === 'verifying';
   const isExtracting = downloadProgress.status === 'extracting';
   const isError = downloadProgress.status === 'error';
   const variantLabel =
@@ -41,6 +42,7 @@ const GpuDownloadProgress: React.FC<GpuDownloadProgressProps> = ({
         <span className="text-sm font-medium">
           {variantLabel && `${variantLabel}: `}
           {isDownloading && t('gpuAcceleration.downloading')}
+          {isVerifying && t('gpuAcceleration.verifying')}
           {isExtracting && t('gpuAcceleration.extracting')}
           {isError && t('gpuAcceleration.downloadFailed')}
         </span>
@@ -55,7 +57,7 @@ const GpuDownloadProgress: React.FC<GpuDownloadProgressProps> = ({
               {t('gpuAcceleration.retry')}
             </Button>
           )}
-          {isDownloading && (
+          {(isDownloading || isVerifying) && (
             <Button
               variant="ghost"
               size="sm"

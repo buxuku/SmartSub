@@ -10,6 +10,12 @@ on:
     paths:
       - 'main/helpers/crash/**'
       - 'main/helpers/addonLoader.ts'
+      - 'main/helpers/addonDownloader.ts'
+      - 'main/helpers/addonManager.ts'
+      - 'main/helpers/ipcAddonHandlers.ts'
+      - 'main/helpers/download/**'
+      - 'types/addon.ts'
+      - 'scripts/test-addon-installation.cjs'
       - 'main/helpers/cudaUtils.ts'
       - 'main/helpers/whisperDiagnostics.ts'
       - 'extraResources/diagnostics/**'
@@ -84,6 +90,9 @@ jobs:
       # 三个平台各跑一遍：Windows 与 macOS 上的路径、换行、文件锁和 Linux 不同
       - name: Unit tests (crash diagnostics)
         run: yarn test:crash
+
+      - name: Verified addon installation (real files and local mirrors)
+        run: yarn test:addon-installation
 
       - name: CPU feature probe on the real machine
         run: yarn test:crash:probe-cpu

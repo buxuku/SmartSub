@@ -300,11 +300,14 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
     setDownloadingVariant(variant);
     downloadingVariantRef.current = variant;
     try {
-      await window?.ipc?.invoke('start-addon-download', {
+      const result = await window?.ipc?.invoke('start-addon-download', {
         source: downloadSource,
         variant,
         type: downloadType,
       });
+      if (!result?.success) {
+        throw new Error(result?.error || 'Addon download did not start');
+      }
       toast.info(t('gpuAcceleration.downloadStarted'));
     } catch {
       toast.error(t('gpuAcceleration.downloadFailed'));
