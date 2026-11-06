@@ -185,11 +185,61 @@ async function main() {
     fs.readdirSync(root).some((name) => name.startsWith('.smartsub-compose-')),
     false,
   );
+
+  // Windows 对「已存在的卷根」（F:\）调用 mkdir 会抛 EPERM，即使带 recursive: true
+  // （CreateDirectory 返回 ERROR_ACCESS_DENIED 而不是 ERROR_ALREADY_EXISTS，issue #590）。
+  // 视频直接放在盘符根目录时，导出文件的父目录就是卷根。这里把一个已存在的目录当作卷根，
+  // 让 fs.mkdirSync 对它抛同样的 EPERM；真实卷根上的验证见 windows-driveroot.yml。
+  const volumeRoot = fs.mkdtempSync(path.join(root, 'volume-root-'));
+  const mkdir = fs.mkdirSync;
+  fs.mkdirSync = ((target: fs.PathLike, options?: fs.MakeDirectoryOptions) => {
+    if (path.resolve(String(target)) === volumeRoot)
+      throw Object.assign(
+        new Error(`EPERM: operation not permitted, mkdir '${target}'`),
+        { code: 'EPERM', syscall: 'mkdir', path: String(target) },
+      );
+    return mkdir(target, options);
+  }) as typeof fs.mkdirSync;
+  try {
+    const rootPath = path.join(volumeRoot, 'at-root.srt');
+    const atRoot = createComposeOutput(rootPath, [source]);
+    fs.writeFileSync(atRoot.staged, 'subtitle at the volume root');
+    const rootFile = await atRoot.publish(new AbortController().signal);
+    assert.equal(rootFile, rootPath);
+    assert.equal(
+      fs.readFileSync(rootFile, 'utf8'),
+      'subtitle at the volume root',
+    );
+    atRoot.cleanup();
+
+    // 目录确实不存在时仍然会被创建。
+    const nested = createComposeOutput(
+      path.join(volumeRoot, 'new', 'folder', 'nested.srt'),
+      [source],
+    );
+    fs.writeFileSync(nested.staged, 'nested');
+    assert.equal(
+      fs.readFileSync(
+        await nested.publish(new AbortController().signal),
+        'utf8',
+      ),
+      'nested',
+    );
+    nested.cleanup();
+  } finally {
+    fs.mkdirSync = mkdir;
+  }
+  assert.deepEqual(
+    fs
+      .readdirSync(volumeRoot)
+      .filter((name) => name.startsWith('.smartsub-compose-')),
+    [],
+  );
   console.log(
     JSON.stringify({
       root,
       checks:
-        'input/hardlink/symlink protection, existing and late-collision preservation, concurrent publication, cancellation, unsupported-link fallback, copy failure cleanup and concurrent replacement ownership, empty result, cleanup',
+        'input/hardlink/symlink protection, existing and late-collision preservation, concurrent publication, cancellation, unsupported-link fallback, copy failure cleanup and concurrent replacement ownership, empty result, cleanup, export into an existing volume root whose mkdir fails with EPERM',
     }),
   );
 }
