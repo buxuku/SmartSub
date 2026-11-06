@@ -15,6 +15,7 @@ const scripts = [
   'test:compose',
   'test:compose-canvas',
   'test:compose-output',
+  'test:ensure-directory',
   'test:compose-presets',
   'test:compose-queue',
   'test:embedded-fonts',

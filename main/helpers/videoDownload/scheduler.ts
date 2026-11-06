@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import * as fs from 'fs';
+import { ensureDirectorySync } from '../ensureDirectory';
 import { logMessage, store } from '../storeManager';
 import { getWorkItemById, saveWorkItem } from '../workItemStore';
 import {
@@ -250,7 +250,7 @@ export function startDownloadBatch(payload: StartDownloadPayload): WorkItem {
   )
     throw new Error('DOWNLOAD_PIPELINE_CONFIG_CHANGED');
   if (!payload.savePath) throw new Error('savePath is required');
-  fs.mkdirSync(payload.savePath, { recursive: true });
+  ensureDirectorySync(payload.savePath);
 
   const installed = getInstalledEngines();
   if (installed.length === 0) {

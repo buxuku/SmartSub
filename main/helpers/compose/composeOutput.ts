@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { pipeline } from 'stream/promises';
+import { ensureDirectorySync } from '../ensureDirectory';
 
 const unsupportedLinks = new Set([
   'EXDEV',
@@ -59,7 +60,7 @@ export function createComposeOutput(
     }
   }
   const parent = path.dirname(output);
-  fs.mkdirSync(parent, { recursive: true });
+  ensureDirectorySync(parent);
   // Resolve directory aliases once: cleanup is limited to this unique job directory.
   const directory = fs.mkdtempSync(
     path.join(fs.realpathSync(parent), '.smartsub-compose-'),

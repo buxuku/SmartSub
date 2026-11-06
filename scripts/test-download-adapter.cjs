@@ -361,6 +361,7 @@ async function main() {
     diskFailure = false,
     transferFailure = false,
     pending = false,
+    savePath = dir,
   } = {}) {
     const items = new Map();
     const writes = [];
@@ -429,7 +430,7 @@ async function main() {
     const start = () =>
       scheduler.startDownloadBatch({
         name: 'Batch',
-        savePath: dir,
+        savePath,
         quality: 'best',
         engine: 'auto',
         entries: [{ url: 'https://example.com/a', meta: { title: 'fixture' } }],
@@ -516,8 +517,43 @@ async function main() {
     false,
     'late transfer completion does not resurrect deleted task',
   );
+
+  // Windows 对「已存在的卷根」（F:\）调用 mkdir 会抛 EPERM，即使带 recursive: true
+  // （issue #590）。下载目录直接选成盘符根目录时，startDownloadBatch 不能因此失败。
+  // 这里把一个已存在的目录当作卷根，让 fs.mkdirSync 对它抛同样的 EPERM；
+  // 真实卷根上的验证见 windows-driveroot.yml。
+  const volumeRoot = fs.mkdtempSync(path.join(dir, 'volume-root-'));
+  const mkdir = fs.mkdirSync;
+  fs.mkdirSync = (target, options) => {
+    if (path.resolve(String(target)) === volumeRoot)
+      throw Object.assign(
+        new Error(`EPERM: operation not permitted, mkdir '${target}'`),
+        { code: 'EPERM', syscall: 'mkdir', path: String(target) },
+      );
+    return mkdir(target, options);
+  };
+  try {
+    const atRoot = schedulerHarness({ savePath: volumeRoot });
+    const rootBatch = atRoot.start();
+    await drain(atRoot);
+    assert.equal(
+      atRoot.items.get(rootBatch.id).downloadEntries[0].status,
+      'done',
+      'a download folder that is a volume root is usable',
+    );
+    const missing = path.join(volumeRoot, 'new', 'folder');
+    const created = schedulerHarness({ savePath: missing });
+    created.start();
+    await drain(created);
+    assert.ok(
+      fs.statSync(missing).isDirectory(),
+      'a missing download folder is still created',
+    );
+  } finally {
+    fs.mkdirSync = mkdir;
+  }
   console.log(
-    'Download adapter/scheduler: structured official artifacts, stale-file exclusion, split stdout, opt-out, atomic completion, storage failure, network fallback and cancellation passed.',
+    'Download adapter/scheduler: structured official artifacts, stale-file exclusion, split stdout, opt-out, atomic completion, storage failure, network fallback, cancellation and a volume-root download folder passed.',
   );
 }
 main().catch((error) => {
