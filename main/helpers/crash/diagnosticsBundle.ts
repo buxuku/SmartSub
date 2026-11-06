@@ -14,6 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 import { ZipFile } from 'yazl';
+import { ensureDirectorySync } from '../ensureDirectory';
 import type { MinidumpSummary } from './minidumpSummary';
 import type {
   DiagnosticsDumpPreview,
@@ -720,7 +721,7 @@ export async function writeZipFile(
   target: string,
   entries: BundleEntry[],
 ): Promise<number> {
-  await fs.promises.mkdir(path.dirname(target), { recursive: true });
+  ensureDirectorySync(path.dirname(target));
   const temp = `${target}.${process.pid}.tmp`;
   const zip = new ZipFile();
   for (const entry of entries) {
