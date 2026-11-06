@@ -2,7 +2,10 @@
  * 「配音服务」右栏：单个在线服务商条目的配置面板
  * （形制 CloudProviderPanel：一条目一表单，动笔才物化；测试连接真实合成）。
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { ProviderTextDrafts } from '../../hooks/useProviderPersistence';
+import { buildTtsViews } from '../../../types/ttsProvider';
+import type { TtsVoiceEntry } from '../../../types/ttsVoice';
 import { useTranslation } from 'next-i18next';
 import {
   AlertTriangle,
@@ -67,6 +70,7 @@ interface TtsProviderPanelProps {
   ) => void;
   onMaterialize: (typeId: string, presetId?: string) => string | null;
   onRemove: (id: string) => void;
+  drafts?: ProviderTextDrafts<TtsProvider>;
 }
 
 const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
@@ -74,6 +78,7 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
   onUpdateField,
   onMaterialize,
   onRemove,
+  drafts,
 }) => {
   const { t } = useTranslation('resources');
   const { t: commonT } = useTranslation('common');
@@ -86,7 +91,9 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
   const [testing, setTesting] = useState(false);
   const [fetchingVoices, setFetchingVoices] = useState(false);
   // 音色标签录入的「输入中」草稿（回车/分隔符提交为标签，形制 ASR models 录入）。
-  const [voiceDraft, setVoiceDraft] = useState('');
+  const [localVoiceDraft, setLocalVoiceDraft] = useState('');
+  const draftKey = `${view.viewId}:voices`;
+  const voiceDraft = drafts ? drafts.getDraft(draftKey) : localVoiceDraft;
   // 自动补全高亮项（-1 = 未选中，回车按原文提交）。
   const [suggestIdx, setSuggestIdx] = useState(-1);
   // 展开中的 select 字段（可搜索 combobox，单面板同刻只开一个）。
@@ -94,12 +101,28 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
   const [testResult, setTestResult] = useState<{
     ok: boolean;
     message: string;
+    details?: string;
   } | null>(null);
+  const [voiceError, setVoiceError] = useState('');
+  const operationEpoch = useRef(0);
+  const operationIdentity = JSON.stringify([view.viewId, instance]);
+  const identityRef = useRef(operationIdentity);
+  identityRef.current = operationIdentity;
+  useEffect(() => {
+    operationEpoch.current++;
+    setTesting(false);
+    setFetchingVoices(false);
+    setTestResult(null);
+    setVoiceError('');
+    return () => {
+      operationEpoch.current++;
+    };
+  }, [operationIdentity]);
 
   useEffect(() => {
     setTestResult(null);
     setClearConfirmOpen(false);
-    setVoiceDraft('');
+    setLocalVoiceDraft('');
     setSuggestIdx(-1);
   }, [view.viewId]);
 
@@ -118,6 +141,11 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
   };
 
   const handleTest = async () => {
+    if (testing || fetchingVoices) return;
+    const token = ++operationEpoch.current;
+    const identity = identityRef.current;
+    const current = () =>
+      token === operationEpoch.current && identity === identityRef.current;
     const target = instance ?? defaults;
     setTesting(true);
     setTestResult(null);
@@ -127,6 +155,7 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
         needsConfig?: boolean;
         detail?: string;
       };
+      if (!current()) return;
       if (res?.needsConfig) {
         setTestResult({ ok: false, message: t('cloudAsr.testNeedsConfig') });
       } else if (res?.ok) {
@@ -143,17 +172,21 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
             : t('cloudAsr.testFailed'),
         });
       }
-    } catch {
-      setTestResult({ ok: false, message: t('cloudAsr.testFailed') });
+    } catch (cause) {
+      if (current())
+        setTestResult({
+          ok: false,
+          message: t('cloudAsr.testFailed'),
+          details: cause instanceof Error ? cause.message : String(cause),
+        });
     } finally {
-      setTesting(false);
+      if (current()) setTesting(false);
     }
   };
 
   /** 零凭据类型（Edge）：显式「启用」即物化实例（默认值即已配置）。 */
   const handleEnable = () => {
     onMaterialize(type.id, preset?.id);
-    toast.success(t('ttsServices.enabled'));
   };
 
   /**
@@ -163,14 +196,21 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
    * 标签与工作台下拉均按名称展示。
    */
   const handleFetchVoices = async () => {
+    if (testing || fetchingVoices) return;
+    const token = ++operationEpoch.current;
+    const identity = identityRef.current;
+    const current = () =>
+      token === operationEpoch.current && identity === identityRef.current;
     const target = instance ?? defaults;
     setFetchingVoices(true);
+    setVoiceError('');
     try {
       const res = (await window?.ipc?.invoke('listTtsVoices', target)) as {
         ok?: boolean;
-        voices?: Array<{ id: string; name: string }>;
+        voices?: TtsVoiceEntry[];
         detail?: string;
       };
+      if (!current()) return;
       if (res?.ok && res.voices?.length) {
         const id = instance?.id ?? onMaterialize(type.id, preset?.id);
         if (!id) return;
@@ -184,6 +224,18 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
             Object.fromEntries(res.voices.map((v) => [v.id, v.name])),
           ),
         );
+        onUpdateField(
+          id,
+          'voiceMetadata',
+          JSON.stringify(
+            Object.fromEntries(
+              res.voices.map(({ id: voiceId, name, ...metadata }) => [
+                voiceId,
+                metadata,
+              ]),
+            ),
+          ),
+        );
         toast.success(
           type.voiceListMode === 'replace'
             ? t('ttsServices.fetchVoicesDone', { count: res.voices.length })
@@ -192,16 +244,17 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
               }),
         );
       } else {
-        toast.error(
+        setVoiceError(
           res?.detail
             ? `${t('ttsServices.fetchVoicesFailed')} ${res.detail}`
             : t('ttsServices.fetchVoicesFailed'),
         );
       }
-    } catch {
-      toast.error(t('ttsServices.fetchVoicesFailed'));
+    } catch (cause) {
+      if (current())
+        setVoiceError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setFetchingVoices(false);
+      if (current()) setFetchingVoices(false);
     }
   };
 
@@ -212,8 +265,34 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
     handleField('voices', voices.join(', '));
   };
 
+  const setVoiceDraft = (raw: string) => {
+    if (!drafts) return setLocalVoiceDraft(raw);
+    drafts.stageDraft(draftKey, raw, (providers) => {
+      const target = buildTtsViews(providers).find(
+        (item) => item.viewId === view.viewId,
+      );
+      if (!target) throw new Error('PROVIDER_DRAFT_TARGET_MISSING');
+      const provider = target.instance ?? defaults;
+      const voices = Array.from(
+        new Set([
+          ...parseTtsVoices(provider),
+          ...raw.split(/[,，、;；\s]+/).filter(Boolean),
+        ]),
+      );
+      const updated = { ...provider, voices: voices.join(', ') };
+      return target.instance
+        ? providers.map((entry) => (entry.id === provider.id ? updated : entry))
+        : [updated, ...providers];
+    });
+  };
+
   /** 把草稿按分隔符拆成标签并入清单（去空去重），供回车/分隔符/失焦提交。 */
   const commitVoiceDraft = (raw: string) => {
+    if (drafts) {
+      setVoiceDraft(raw);
+      drafts.commitDraft(draftKey);
+      return;
+    }
     const current = currentVoices();
     const pieces = raw
       .split(/[,，、;；\s]+/)
@@ -374,6 +453,7 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
           <div className="flex items-center gap-1.5">
             <Input
               type={showPassword[field.key] ? 'text' : 'password'}
+              aria-label={label}
               value={value}
               onChange={(e) => handleField(field.key, e.target.value)}
               placeholder={placeholder}
@@ -449,6 +529,7 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
         ) : field.type === 'number' ? (
           <Input
             type="number"
+            aria-label={label}
             step={field.step}
             value={value}
             onChange={(e) => handleField(field.key, e.target.value)}
@@ -457,6 +538,7 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
         ) : (
           <Input
             type={field.type === 'url' ? 'url' : 'text'}
+            aria-label={label}
             value={value}
             onChange={(e) => handleField(field.key, e.target.value)}
             placeholder={placeholder}
@@ -494,6 +576,7 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
           <AlertDialogAction
             className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
             onClick={() => {
+              drafts?.stageDraft(draftKey, '', (providers) => providers);
               if (removeTarget) onRemove(removeTarget.id);
               setRemoveTarget(null);
             }}
@@ -649,6 +732,7 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
 
       {testResult && (
         <div
+          role={testResult.ok ? 'status' : 'alert'}
           className={cn(
             'rounded-md border px-3 py-2 text-sm',
             testResult.ok
@@ -657,6 +741,43 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
           )}
         >
           {testResult.message}
+          {!testResult.ok && (
+            <>
+              <details>
+                <summary>{commonT('saveState.details')}</summary>
+                <p className="break-all">
+                  {testResult.details || testResult.message}
+                </p>
+              </details>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={testing || fetchingVoices}
+                onClick={handleTest}
+              >
+                <FlaskConical className="mr-2 h-4 w-4" />
+                {t('cloudAsr.testConnection')}
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+      {voiceError && (
+        <div role="alert" className="space-y-2 bg-destructive/10 p-3 text-sm">
+          <p>{t('ttsServices.fetchVoicesFailed')}</p>
+          <details>
+            <summary>{commonT('saveState.details')}</summary>
+            <p className="break-all">{voiceError}</p>
+          </details>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={testing || fetchingVoices}
+            onClick={handleFetchVoices}
+          >
+            <ListRestart className="mr-2 h-4 w-4" />
+            {commonT('saveState.retry')}
+          </Button>
         </div>
       )}
 
@@ -696,6 +817,7 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
             <AlertDialogAction
               className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
+                drafts?.stageDraft(draftKey, '', (providers) => providers);
                 if (instance) onRemove(instance.id);
                 setClearConfirmOpen(false);
               }}

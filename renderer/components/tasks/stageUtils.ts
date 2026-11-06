@@ -1,17 +1,12 @@
 import { isSubtitleFile } from '../../lib/utils';
 import type { TaskTypeDef } from '../../lib/taskTypes';
-import { isSpeakerDiarizationStandardTaskContext } from '../../../types/speakerDiarization';
+import {
+  getTaskFileStageKeys,
+  TASK_STAGE_LABELS,
+  type TaskStageKey,
+} from '../../../types/taskStages';
 
-export type StageKey =
-  | 'extractAudio'
-  | 'extractSubtitle'
-  | 'refineSubtitle'
-  | 'manuscriptMatch'
-  | 'translateSubtitle'
-  | 'speakerDiarization'
-  | 'exportSubtitle'
-  | 'dubbing'
-  | 'composeVideo';
+export type StageKey = Exclude<TaskStageKey, 'prepareSubtitle'>;
 export type StageStatus = 'pending' | 'loading' | 'done' | 'error';
 
 export interface StageDef {
@@ -29,66 +24,68 @@ export function getFileStages(
   typeDef: TaskTypeDef,
   formData: any,
 ): StageDef[] {
-  const subtitleInput = isSubtitleFile(file?.filePath || '');
-  // 配对模式（媒体携带既有字幕）：跳过提取/听写，不在轨道上展示
-  const hasProvidedSubtitle = Boolean(file?.providedSubtitlePath);
-  const stages: StageDef[] = [];
-  if (!subtitleInput && !hasProvidedSubtitle) {
-    stages.push({ key: 'extractAudio', labelKey: 'stage.extract' });
-    stages.push({ key: 'extractSubtitle', labelKey: 'stage.transcribe' });
-    // AI 字幕精修：配置快照声明开启，或文件上已有阶段状态（旧记录无该阶段不渲染）
-    if (
-      formData?.aiSegmentation === true ||
-      formData?.aiCorrection === true ||
-      file?.refineSubtitle !== undefined
-    ) {
-      stages.push({ key: 'refineSubtitle', labelKey: 'stage.refine' });
-    }
-    if (formData?.manuscriptPath || file?.manuscriptMatch !== undefined) {
-      stages.push({
-        key: 'manuscriptMatch',
-        labelKey: 'stage.manuscript',
-      });
-    }
-  }
-  if (typeDef.hasTranslate && formData?.translateProvider !== '-1') {
-    stages.push({ key: 'translateSubtitle', labelKey: 'stage.translate' });
-  }
-  // 角色分离是标准转写任务的独立后处理阶段：翻译之后、任何附加阶段之前。
-  if (
-    !subtitleInput &&
-    !hasProvidedSubtitle &&
-    isSpeakerDiarizationStandardTaskContext(formData) &&
-    (formData?.speakerDiarization === true ||
-      file?.speakerDiarization !== undefined)
-  ) {
-    stages.push({
-      key: 'speakerDiarization',
-      labelKey: 'stage.speakerDiarization',
-    });
-  }
-  if (
-    file?.exportSubtitle !== undefined ||
-    formData?.subtitleOutputFormats?.length > 1
-  ) {
-    stages.push({ key: 'exportSubtitle', labelKey: 'stage.export' });
-  }
-  // 附加阶段：配置快照声明，或文件上已有阶段状态（快照缺失时兜底）
-  if (formData?.dub || file?.dubbing !== undefined) {
-    stages.push({ key: 'dubbing', labelKey: 'stage.dubbing' });
-  }
-  if (formData?.compose || file?.composeVideo !== undefined) {
-    stages.push({ key: 'composeVideo', labelKey: 'stage.compose' });
-  }
-  return stages;
+  return getTaskFileStageKeys(file, formData, typeDef.taskType)
+    .filter((key): key is StageKey => key !== 'prepareSubtitle')
+    .map((key) => ({ key, labelKey: TASK_STAGE_LABELS[key] }));
 }
 
 export function getStageStatus(file: any, key: StageKey): StageStatus {
+  const stage = file?.stageRuns?.[key];
+  if (stage)
+    return stage.status === 'succeeded'
+      ? 'done'
+      : stage.status === 'running'
+        ? 'loading'
+        : ['failed', 'interrupted'].includes(stage.status)
+          ? 'error'
+          : 'pending';
   const value = file?.[key];
   if (value === 'loading') return 'loading';
   if (value === 'done') return 'done';
   if (value === 'error') return 'error';
   return 'pending';
+}
+
+/** One persistent status slot for every task lifecycle state. */
+export function getTaskDisplayStatus(
+  file: any,
+  stages: StageDef[],
+  taskStatus: string,
+  gate: GateDef | null,
+) {
+  const loading = stages.find(
+    (stage) => getStageStatus(file, stage.key) === 'loading',
+  );
+  const failed = stages.find(
+    (stage) => getStageStatus(file, stage.key) === 'error',
+  );
+  const done =
+    stages.length > 0 &&
+    stages.every((stage) => getStageStatus(file, stage.key) === 'done');
+  const state = failed
+    ? 'error'
+    : gate
+      ? 'gate'
+      : loading
+        ? taskStatus === 'cancelling'
+          ? 'cancelling'
+          : 'running'
+        : done
+          ? 'done'
+          : file?.taskActivity?.status === 'cancelled'
+            ? 'cancelled'
+            : file?.taskActivity?.status === 'interrupted'
+              ? 'interrupted'
+              : taskStatus === 'paused'
+                ? 'paused'
+                : taskStatus === 'running'
+                  ? 'queued'
+                  : 'idle';
+  return {
+    state,
+    stage: loading?.key ?? null,
+    labelKey: loading?.labelKey ?? gate?.labelKey,
+  };
 }
 
 // ── 人工检查点（白话：字幕校对 / 配音确认）────────────────────────────────
@@ -144,6 +141,7 @@ export function getFileRail(
   const dubbingGate = gates.find((g) => g.key === 'dubbingGate');
   const hasDub = stages.some((s) => s.key === 'dubbing');
   const hasCompose = stages.some((s) => s.key === 'composeVideo');
+  const hasManagedTrack = Boolean(file.stageRuns?.dubbingTrack);
 
   const rail: RailItem[] = [];
   for (const stage of stages) {
@@ -155,13 +153,19 @@ export function getFileRail(
       rail.push({ kind: 'gate', gate: subtitleGate });
     }
     // 配音确认点：配音之后、合成之前
-    if (dubbingGate && stage.key === 'composeVideo' && hasDub) {
+    if (
+      dubbingGate &&
+      hasDub &&
+      (hasManagedTrack
+        ? stage.key === 'dubbingTrack'
+        : stage.key === 'composeVideo')
+    ) {
       rail.push({ kind: 'gate', gate: dubbingGate });
     }
     rail.push({ kind: 'stage', stage });
   }
   // 仅配音无合成：配音确认点收尾
-  if (dubbingGate && hasDub && !hasCompose) {
+  if (dubbingGate && hasDub && !hasCompose && !hasManagedTrack) {
     rail.push({ kind: 'gate', gate: dubbingGate });
   }
   return rail;
@@ -184,7 +188,11 @@ export function getFilePercent(file: any, stages: StageDef[]): number {
     if (status === 'done') {
       total += 1;
     } else if (status === 'loading' || status === 'error') {
-      const progress = Number(file?.[`${stage.key}Progress`] || 0);
+      const progress = Number(
+        file?.stageRuns?.[stage.key]?.progress ??
+          file?.[`${stage.key}Progress`] ??
+          0,
+      );
       total += Math.min(Math.max(progress, 0), 100) / 100;
     }
   }
@@ -227,7 +235,10 @@ export function getFileWarning(file: any, stages: StageDef[]): string {
   for (const stage of stages) {
     if (
       getStageStatus(file, stage.key) === 'done' &&
-      file?.[`${stage.key}Error`]
+      file?.[`${stage.key}Error`] &&
+      // Older records can retain this marker after a successful retry.
+      // A completed stage no longer needs the user to resume it.
+      file[`${stage.key}Error`] !== 'TASK_INTERRUPTED'
     ) {
       return file[`${stage.key}Error`];
     }
@@ -258,8 +269,16 @@ export function isProofreadReady(
         return false;
       }
     }
-  } else if (file?.translateSubtitle !== 'done') {
+  } else if (file?.translateSubtitle === 'loading') {
     return false;
+  } else if (file?.translateSubtitle !== 'done') {
+    if (
+      file?.proofreadDataReady !== 'done' ||
+      file?.exportSubtitle !== 'done' ||
+      !file?.proofreadDataFile
+    ) {
+      return false;
+    }
   }
 
   // 角色分离会在 sidecar 落盘前保持 loading；必须等 done 才能进入校对。

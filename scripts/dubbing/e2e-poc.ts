@@ -223,7 +223,6 @@ async function main() {
         ? { type: 'preSpeed', speed: decision.preSpeed }
         : { type: 'none' };
     let overlong = false;
-    let resynthesized = false;
 
     // 复测环:重合成至多一次,之后 atempo 兜底;超红线判过长。
     for (;;) {
@@ -231,28 +230,15 @@ async function main() {
         wavDurationMs(wav),
         slot.slotMs,
         appliedSpeed,
-        { canResynthesize: true, alreadyResynthesized: resynthesized },
+        { canResynthesize: false },
       );
       if (recheck.type === 'fit') break;
       if (recheck.type === 'overlong') {
         overlong = true;
         console.log(
-          `  ⚠ 行${cue.index + 1} 过长:需 ${recheck.requiredFactor.toFixed(2)}x > 1.5x(进人工清单,truncate 兜底)`,
+          `  行${cue.index + 1} 超限:需 ${recheck.requiredFactor.toFixed(2)}x > 1.15x，请在工作台显式处理`,
         );
         break;
-      }
-      if (recheck.type === 'resynthesize') {
-        r = await workerCall('synthesize', {
-          model,
-          text: cue.text,
-          sid,
-          speed: recheck.speed,
-          outWavPath: wav,
-        });
-        appliedSpeed = recheck.speed;
-        action = { type: 'preSpeed', speed: recheck.speed };
-        resynthesized = true;
-        continue;
       }
       // atempo 兜底
       const tempo = path.join(segDir, `cue-${cue.index}-atempo.wav`);
@@ -277,6 +263,10 @@ async function main() {
     );
   }
 
+  if (finals.some((cue) => cue.overlong))
+    throw new Error(
+      'Unresolved overlong speech: output has not been truncated.',
+    );
   const plan = buildAlignmentPlan(finals, slots, { overflow: 'truncate' });
   const track = path.join(outDir, 'dub-track.wav');
   await assembleTrack(

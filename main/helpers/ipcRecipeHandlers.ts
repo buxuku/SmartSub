@@ -1,22 +1,19 @@
+import { ipcMain } from '../automation/handlers';
 /**
  * 任务配方 IPC（薄 CRUD，形制同 workItemHandlers）：
  * recipes:list / save / rename / delete。内置配方为 renderer 代码常量不落库，
  * 这里只管理用户配方；save 按 id 幂等 upsert（保留首次创建时间）。
  */
-import { ipcMain } from 'electron';
 import { randomUUID } from 'crypto';
 import { store, logMessage } from './storeManager';
 import type { TaskRecipe } from '../../types/recipe';
-import { stripSpeakerDiarizationConfig } from '../../types/speakerDiarization';
 
 function readRecipes(): TaskRecipe[] {
   const list = store.get('taskRecipes');
   return Array.isArray(list)
     ? list.map((recipe) => ({
         ...recipe,
-        config: recipe.config
-          ? stripSpeakerDiarizationConfig(recipe.config)
-          : undefined,
+        config: recipe.config ? structuredClone(recipe.config) : undefined,
       }))
     : [];
 }
@@ -33,9 +30,7 @@ export function setupRecipeHandlers(): void {
       name,
       goals: recipe.goals,
       accepts: recipe.accepts,
-      config: recipe.config
-        ? stripSpeakerDiarizationConfig(recipe.config)
-        : undefined,
+      config: recipe.config ? structuredClone(recipe.config) : undefined,
       createdAt: Date.now(),
     };
     const index = list.findIndex((r) => r.id === saved.id);

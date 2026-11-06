@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Languages, Plus, Trash2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Languages, Plus, Trash2, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'next-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -22,32 +22,24 @@ import {
 
 const builtInCodes = supportedLanguage.map((language) => language.value);
 
-export default function CustomLanguageManager() {
+export default function CustomLanguageManager({
+  languages,
+  onSave,
+  saveError,
+  onRetry,
+}: {
+  languages: CustomLanguage[];
+  onSave: (languages: CustomLanguage[]) => Promise<boolean>;
+  saveError: string;
+  onRetry: () => Promise<boolean>;
+}) {
   const { t } = useTranslation('settings');
   const [open, setOpen] = useState(false);
-  const [languages, setLanguages] = useState<CustomLanguage[]>([]);
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    let mounted = true;
-    window?.ipc
-      ?.invoke('getSettings')
-      .then((settings) => {
-        if (mounted) {
-          setLanguages(
-            sanitizeCustomLanguages(settings?.customLanguages, builtInCodes),
-          );
-        }
-      })
-      .catch(() => {
-        if (mounted) setLanguages([]);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const [validationError, setValidationError] = useState('');
 
   const sortedLanguages = useMemo(
     () =>
@@ -61,20 +53,19 @@ export default function CustomLanguageManager() {
     setSaving(true);
     try {
       const sanitized = sanitizeCustomLanguages(next, builtInCodes);
-      await window?.ipc?.invoke('setSettings', { customLanguages: sanitized });
-      setLanguages(sanitized);
-      return true;
-    } catch {
-      toast.error(t('saveFailed'));
-      return false;
+      return await onSave(sanitized);
     } finally {
       setSaving(false);
     }
   };
 
   const handleAdd = async () => {
+    if (saving) return;
+    setValidationError('');
     if (languages.length >= CUSTOM_LANGUAGE_LIMIT) {
-      toast.error(t('customLanguagesLimit', { count: CUSTOM_LANGUAGE_LIMIT }));
+      setValidationError(
+        t('customLanguagesLimit', { count: CUSTOM_LANGUAGE_LIMIT }),
+      );
       return;
     }
     const error = validateCustomLanguage(
@@ -85,18 +76,21 @@ export default function CustomLanguageManager() {
       },
     );
     if (error) {
-      toast.error(t(`customLanguageErrors.${error}`));
+      setValidationError(t(`customLanguageErrors.${error}`));
       return;
     }
     const next = [...languages, { name: name.trim(), value: code.trim() }];
+    // The parent retains the staged language for retry even if storage fails.
+    setName('');
+    setCode('');
     if (await persist(next)) {
-      setName('');
-      setCode('');
       toast.success(t('customLanguageAdded'));
     }
   };
 
   const handleRemove = async (value: string) => {
+    if (saving) return;
+    setValidationError('');
     const next = languages.filter(
       (language) => language.value.toLowerCase() !== value.toLowerCase(),
     );
@@ -132,6 +126,41 @@ export default function CustomLanguageManager() {
               {t('customLanguagesDialogDesc')}
             </DialogDescription>
           </DialogHeader>
+          {validationError && (
+            <p role="alert" className="text-sm text-destructive">
+              {validationError}
+            </p>
+          )}
+          {saveError && (
+            <div
+              role="alert"
+              className="space-y-2 bg-destructive/10 p-3 text-sm"
+            >
+              <p>{t('saveFailed')}</p>
+              <p>{t('persistence.repair')}</p>
+              <details>
+                <summary>{t('saveFailed')}</summary>
+                <p className="break-all">{saveError}</p>
+              </details>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={saving}
+                onClick={async () => {
+                  if (saving) return;
+                  setSaving(true);
+                  try {
+                    await onRetry();
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                {t('persistence.retry')}
+              </Button>
+            </div>
+          )}
 
           <div className="space-y-4 overflow-y-auto">
             <div className="grid grid-cols-[minmax(0,1fr)_140px_auto] gap-2">

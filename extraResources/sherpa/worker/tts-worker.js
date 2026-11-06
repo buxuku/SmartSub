@@ -23,6 +23,8 @@ const channel = (() => {
 })();
 
 const sherpa = require(path.join(__dirname, '..', 'vendor', 'sherpa-onnx.js'));
+// wav 读写：Windows 非 ASCII 路径上原生 readWave/writeWave 打不开，改由 JS 读写（见 wav-io.js）。
+const wavIo = require(path.join(__dirname, 'wav-io.js'));
 const {
   buildTtsConfig,
   buildTtsCacheKey,
@@ -45,7 +47,7 @@ function getRefAudio(refWavPath) {
   const hit = refAudioCache.get(refWavPath);
   if (hit) return hit;
   // Electron worker 下 enableExternalBuffer=false（同 ASR worker readWave）。
-  const wave = sherpa.readWave(refWavPath, false);
+  const wave = wavIo.readWave(sherpa, refWavPath, false);
   if (refAudioCache.size >= REF_CACHE_MAX) {
     refAudioCache.delete(refAudioCache.keys().next().value);
   }
@@ -136,7 +138,7 @@ async function synthesizeClone(req, sid, speed) {
     offset += parts[i].length + (i < parts.length - 1 ? gap : 0);
   }
 
-  sherpa.writeWave(req.outWavPath, { samples, sampleRate });
+  wavIo.writeWave(sherpa, req.outWavPath, { samples, sampleRate });
   channel.post({
     type: 'done',
     id: req.id,
@@ -178,7 +180,7 @@ async function synthesize(req) {
     return postError(req.id, 'tts generated empty audio');
   }
 
-  sherpa.writeWave(req.outWavPath, {
+  wavIo.writeWave(sherpa, req.outWavPath, {
     samples: audio.samples,
     sampleRate: audio.sampleRate,
   });

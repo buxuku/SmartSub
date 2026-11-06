@@ -1,11 +1,12 @@
 /**
  * 站点 Cookie 档案存储：元数据存 electron-store（settings.videoDownloadCookieProfiles），
- * cookie 内容单独落盘 userData/downloader-cookies/{id}.cookies（safeStorage 可用即加密）。
+ * cookie 内容单独落盘 userData/downloader-cookies/{id}.{generation}.cookies（safeStorage 可用即加密）。
  * lux 对文件内 cookie 不做域名匹配，故导入时按档案 cookieDomains 过滤，内容按站点隔离。
  */
 import { app, safeStorage } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { store, logMessage } from '../storeManager';
 import {
   COOKIE_SITE_PRESETS,
@@ -18,6 +19,8 @@ import type {
   CookieProfileMeta,
   CookieProfileSource,
   CookieProfileView,
+  CookieBatchImportResult,
+  CookieImportOrigin,
 } from '../../../types/download';
 import {
   computeCookieStatus,
@@ -33,13 +36,19 @@ function getCookiesDir(): string {
   return path.join(app.getPath('userData'), 'downloader-cookies');
 }
 
-function getContentPath(id: string): string {
+function getContentPath(id: string, contentFile?: string): string {
   // 兜底执法：id 来自渲染进程/持久化元数据，拼路径前必须过白名单
   //（readMetas 过滤 + import/delete 前置校验后，此处正常不会触发）
   if (!isValidCookieProfileId(id)) {
     throw new Error(`Invalid cookie profile id: ${id}`);
   }
-  return path.join(getCookiesDir(), `${id}.cookies`);
+  if (
+    contentFile &&
+    !new RegExp(`^${id}\\.[0-9a-f-]{36}\\.cookies$`, 'i').test(contentFile)
+  ) {
+    throw new Error('Invalid cookie content file');
+  }
+  return path.join(getCookiesDir(), contentFile || `${id}.cookies`);
 }
 
 function readMetas(): CookieProfileMeta[] {
@@ -87,13 +96,35 @@ interface ReadContentResult {
   needsReimport: boolean;
 }
 
+/** 已知平台只保留公开视频主机及可适用的父域 Cookie，不收集后台兄弟主机。 */
+function filterProfileCookies(
+  cookies: NetscapeCookie[],
+  definition: Pick<
+    CookieProfileMeta,
+    'id' | 'kind' | 'matchDomains' | 'cookieDomains'
+  >,
+): NetscapeCookie[] {
+  const preset =
+    getCookiePresetById(definition.id) ||
+    getCookiePresetById(coveredPreset(definition) || '');
+  if (!preset)
+    return filterCookiesByDomains(cookies, definition.cookieDomains ?? []);
+  const hosts =
+    preset.cookieHosts ??
+    preset.cookieDomains.flatMap((domain) => [
+      domain,
+      `www.${domain}`,
+      `m.${domain}`,
+    ]);
+  return filterCookiesByDomains(cookies, hosts, false);
+}
+
 /** 读取并解密档案内容（不存在 → cookies:null；解密失败 → needsReimport） */
 function readProfileCookies(meta: CookieProfileMeta): ReadContentResult {
-  const contentPath = getContentPath(meta.id);
-  if (!fs.existsSync(contentPath)) {
-    return { cookies: null, needsReimport: false };
-  }
   try {
+    const contentPath = getContentPath(meta.id, meta.contentFile);
+    if (!fs.existsSync(contentPath))
+      return { cookies: null, needsReimport: true };
     let text: string;
     if (meta.encrypted) {
       const buf = fs.readFileSync(contentPath);
@@ -105,32 +136,77 @@ function readProfileCookies(meta: CookieProfileMeta): ReadContentResult {
     } else {
       text = fs.readFileSync(contentPath, 'utf8');
     }
-    return { cookies: parseNetscapeCookies(text), needsReimport: false };
+    const cookies = filterProfileCookies(parseNetscapeCookies(text), meta);
+    return { cookies, needsReimport: cookies.length === 0 };
   } catch (error) {
     logMessage(`cookie profile ${meta.id} read failed: ${error}`, 'warning');
     return { cookies: null, needsReimport: true };
   }
 }
 
-/** 加密（可用时）落盘 cookie 内容，返回是否加密 */
-function writeProfileCookies(id: string, cookies: NetscapeCookie[]): boolean {
-  fs.mkdirSync(getCookiesDir(), { recursive: true });
-  const text = serializeNetscapeCookies(cookies);
-  const contentPath = getContentPath(id);
-  // 0o600：明文回退（Linux 无 keyring）时凭据仅属主可读；加密件同权限保持一致
-  const encrypted = safeStorage.isEncryptionAvailable();
-  fs.writeFileSync(
-    contentPath,
-    encrypted ? safeStorage.encryptString(text) : text,
-    { mode: 0o600 },
-  );
+function removeContent(meta: CookieProfileMeta): void {
   try {
-    // writeFileSync 的 mode 仅在新建时生效，chmod 覆盖修复历史 0644 文件
-    fs.chmodSync(contentPath, 0o600);
+    fs.rmSync(getContentPath(meta.id, meta.contentFile), { force: true });
   } catch {
-    // Windows 上 chmod 语义有限，失败不阻断
+    logMessage(`cookie profile ${meta.id} cleanup failed`, 'warning');
   }
-  return encrypted;
+}
+
+/** 将旧版手动添加的已知站点收敛到预设，避免旧的窄域档案遮住新登录态。 */
+function coveredPreset(
+  meta: Pick<CookieProfileMeta, 'kind' | 'matchDomains' | 'cookieDomains'>,
+): string | undefined {
+  if (meta.kind !== 'custom') return undefined;
+  const covered = (domains: string[] | undefined, allowed: string[]) =>
+    Boolean(domains?.length) &&
+    domains!.every((domain) =>
+      allowed.some(
+        (parent) => domain === parent || domain.endsWith(`.${parent}`),
+      ),
+    );
+  return COOKIE_SITE_PRESETS.find(
+    (preset) =>
+      covered(meta.matchDomains, preset.matchDomains) &&
+      covered(meta.cookieDomains, preset.cookieDomains),
+  )?.id;
+}
+
+/** 先写不可变内容，全部成功后一次发布元数据；任何失败都保留原档案。 */
+function commitProfiles(
+  entries: Array<{ meta: CookieProfileMeta; cookies: NetscapeCookie[] }>,
+  previous: CookieProfileMeta[],
+): CookieProfileView[] {
+  fs.mkdirSync(getCookiesDir(), { recursive: true, mode: 0o700 });
+  const staged: CookieProfileMeta[] = [];
+  const updatedIds = new Set(entries.map(({ meta }) => meta.id));
+  const replacedIds = new Set([
+    ...updatedIds,
+    ...previous
+      .filter((meta) => updatedIds.has(coveredPreset(meta) || ''))
+      .map((meta) => meta.id),
+  ]);
+  try {
+    for (const { meta, cookies } of entries) {
+      meta.encrypted = safeStorage.isEncryptionAvailable();
+      meta.contentFile = `${meta.id}.${randomUUID()}.cookies`;
+      staged.push(meta);
+      const text = serializeNetscapeCookies(cookies);
+      fs.writeFileSync(
+        getContentPath(meta.id, meta.contentFile),
+        meta.encrypted ? safeStorage.encryptString(text) : text,
+        { mode: 0o600, flag: 'wx' },
+      );
+    }
+    saveMetas([
+      ...previous.filter((meta) => !replacedIds.has(meta.id)),
+      ...staged,
+    ]);
+  } catch (error) {
+    staged.forEach(removeContent);
+    throw error;
+  }
+  previous.filter((meta) => replacedIds.has(meta.id)).forEach(removeContent);
+  return staged.map(toView);
 }
 
 /** 组装单个档案视图（合并预设/自定义定义 + 内容计算状态） */
@@ -153,6 +229,8 @@ function toView(meta: CookieProfileMeta): CookieProfileView {
     hasRiskNote: preset?.hasRiskNote,
     configured,
     source: meta.source,
+    browser: meta.browser,
+    browserProfile: meta.browserProfile,
     importedAt: meta.importedAt,
     encrypted: meta.encrypted,
     needsReimport,
@@ -199,29 +277,25 @@ export function listCookieProfiles(): CookieProfileView[] {
   return views;
 }
 
-/** 已配置档案的匹配列表（供 URL→档案 匹配，configured 恒为 true） */
-function configuredMatchList(): Array<{
-  id: string;
-  matchDomains: string[];
-  configured: true;
-}> {
-  return listCookieProfiles()
-    .filter((v) => v.configured)
-    .map((v) => ({ id: v.id, matchDomains: v.matchDomains, configured: true }));
-}
-
 /**
  * 按 URL 解析应注入的 cookie 明文（未命中/损坏 → null）。
  * 注入侧（withCookieFile）据此写临时副本；返回明文以便加密档案也能落临时文件。
  */
 export function resolveCookieTextForUrl(url: string): string | null {
-  const matchedId = matchCookieProfile(url, configuredMatchList());
-  if (!matchedId) return null;
-  const meta = readMetas().find((m) => m.id === matchedId);
-  if (!meta) return null;
-  const { cookies } = readProfileCookies(meta);
-  if (!cookies || !cookies.length) return null;
-  return serializeNetscapeCookies(cookies);
+  // 只解密匹配的档案；不为每条下载链接读取所有站点凭据。
+  const candidates = readMetas().map((meta) => ({
+    ...meta,
+    ...resolveDomains(meta),
+  }));
+  while (candidates.length) {
+    const matchedId = matchCookieProfile(url, candidates);
+    if (!matchedId) return null;
+    const index = candidates.findIndex((meta) => meta.id === matchedId);
+    const [meta] = candidates.splice(index, 1);
+    const { cookies } = readProfileCookies(meta);
+    if (cookies?.length) return serializeNetscapeCookies(cookies);
+  }
+  return null;
 }
 
 export interface ImportResult {
@@ -261,12 +335,18 @@ function normalizeCustomDef(customDef: {
  * 导入 cookie 到指定档案：解析 → 按 cookieDomains 过滤 → 落盘 + 更新元数据。
  * customDef 用于自定义档案首次创建（name/域定义）。过滤后为空视为导入失败。
  */
-export function importCookiesToProfile(params: {
-  id: string;
-  cookies: NetscapeCookie[];
-  source: CookieProfileSource;
-  customDef?: { name: string; matchDomains: string[]; cookieDomains: string[] };
-}): ImportResult {
+export function importCookiesToProfile(
+  params: {
+    id: string;
+    cookies: NetscapeCookie[];
+    source: CookieProfileSource;
+    customDef?: {
+      name: string;
+      matchDomains: string[];
+      cookieDomains: string[];
+    };
+  } & CookieImportOrigin,
+): ImportResult {
   const { id, cookies, source } = params;
   if (!isValidCookieProfileId(id)) {
     throw new Error(`Invalid cookie profile id: ${id}`);
@@ -289,20 +369,26 @@ export function importCookiesToProfile(params: {
     throw new Error('custom profile definition required');
   }
 
-  const filtered = filterCookiesByDomains(cookies, cookieDomains);
+  const filtered = filterProfileCookies(cookies, {
+    id,
+    kind: isPreset ? 'preset' : 'custom',
+    cookieDomains,
+    matchDomains: customDef?.matchDomains ?? existing?.matchDomains,
+  });
   if (filtered.length === 0) {
     throw new Error(
       `No cookies matched profile domains (${cookieDomains.join(', ')})`,
     );
   }
 
-  const encrypted = writeProfileCookies(id, filtered);
   const meta: CookieProfileMeta = {
     id,
     kind: isPreset ? 'preset' : 'custom',
     importedAt: Date.now(),
     source,
-    encrypted,
+    encrypted: false,
+    browser: params.browser,
+    browserProfile: params.browserProfile,
     ...(isPreset
       ? {}
       : {
@@ -311,12 +397,59 @@ export function importCookiesToProfile(params: {
           cookieDomains: customDef?.cookieDomains ?? existing?.cookieDomains,
         }),
   };
-  const nextMetas = existing
-    ? metas.map((m) => (m.id === id ? meta : m))
-    : [...metas, meta];
-  saveMetas(nextMetas);
+  const [profile] = commitProfiles([{ meta, cookies: filtered }], metas);
+  return { profile, cookieCount: filtered.length };
+}
 
-  return { profile: toView(meta), cookieCount: filtered.length };
+/** 全量读入，但仅持久化目录内站点和用户已经定义的站点。未知站点不落盘。 */
+export function importCookiesForSites(
+  params: {
+    cookies: NetscapeCookie[];
+    source: CookieProfileSource;
+  } & CookieImportOrigin,
+): CookieBatchImportResult {
+  const metas = readMetas();
+  const definitions = [
+    ...COOKIE_SITE_PRESETS.map((preset) => ({
+      id: preset.id,
+      kind: 'preset' as const,
+      cookieDomains: preset.cookieDomains,
+    })),
+    ...metas.filter((meta) => meta.kind === 'custom'),
+  ];
+  const refreshedPresets = new Set(
+    COOKIE_SITE_PRESETS.filter(
+      (preset) =>
+        filterProfileCookies(params.cookies, { ...preset, kind: 'preset' })
+          .length > 0,
+    ).map((preset) => preset.id),
+  );
+  const matchedCookies = new Set<NetscapeCookie>();
+  const entries = definitions.flatMap((definition) => {
+    if (
+      definition.kind === 'custom' &&
+      refreshedPresets.has(coveredPreset(definition as CookieProfileMeta) || '')
+    )
+      return [];
+    const cookies = filterProfileCookies(params.cookies, definition);
+    if (!cookies.length) return [];
+    cookies.forEach((cookie) => matchedCookies.add(cookie));
+    const meta: CookieProfileMeta = {
+      ...definition,
+      importedAt: Date.now(),
+      source: params.source,
+      encrypted: false,
+      browser: params.browser,
+      browserProfile: params.browserProfile,
+    };
+    return [{ meta, cookies }];
+  });
+  if (!entries.length) throw new Error('NO_SUPPORTED_SITE_COOKIES');
+  return {
+    profiles: commitProfiles(entries, metas),
+    cookieCount: matchedCookies.size,
+    ignoredCookieCount: params.cookies.length - matchedCookies.size,
+  };
 }
 
 /** 档案的 cookie 过滤域（预设取常量 / customDef 优先 / 回退已存元数据） */
@@ -333,14 +466,15 @@ export function getProfileCookieDomains(
 /** 删除档案：清内容文件与元数据 */
 export function deleteCookieProfile(id: string): boolean {
   if (!isValidCookieProfileId(id)) return false;
-  const contentPath = getContentPath(id);
-  try {
-    if (fs.existsSync(contentPath)) fs.rmSync(contentPath, { force: true });
-  } catch (error) {
-    logMessage(`cookie profile ${id} file remove failed: ${error}`, 'warning');
-  }
   const metas = readMetas();
   const next = metas.filter((m) => m.id !== id);
   saveMetas(next);
+  metas.filter((meta) => meta.id === id).forEach(removeContent);
   return next.length !== metas.length;
+}
+
+/** 清空本应用的 Cookie（包括未被元数据引用的旧文件），不触碰浏览器源数据库。 */
+export function clearCookieProfiles(): void {
+  fs.rmSync(getCookiesDir(), { recursive: true, force: true });
+  saveMetas([]);
 }

@@ -1,4 +1,4 @@
-export { isProviderConfigured } from '../../types/provider';
+export { isProviderConfigured } from '../../types/providerUtils';
 import type { Provider } from '../../types/provider';
 
 export function isFallbackProviderInstance(

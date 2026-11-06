@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'node:path';
 import type { EngineStatus, PyEngineManifest } from '../../../types/engine';
 import {
   isRuntimeInstalled,
@@ -22,6 +23,8 @@ import {
   composeWordCues,
   getSubtitleCueOptions,
   wordsToTriples,
+  resplitSubtitleCues,
+  type TokenTriple,
   type TimedWord,
 } from '../subtitleSegmentation';
 import { writeWordTimelineSidecar } from '../wordTimelineSidecar';
@@ -202,6 +205,7 @@ async function transcribeFasterWhisper(
     // faster-whisper #1119：开启词级时间戳，让 segment.end 对齐到真实末词，
     // 避免开 VAD 时段尾时间被拉到下一段开头。旧 sidecar 忽略该参数也无害。
     word_timestamps: true,
+    speech_review: true,
     vad: settings.useVAD !== false,
     vad_threshold: getNumericSetting(settings.vadThreshold, 0.5),
     vad_min_speech_duration_ms: getNumericSetting(
@@ -235,6 +239,11 @@ async function transcribeFasterWhisper(
       `fasterWhisperParams: ${JSON.stringify(params, null, 2)}`,
       'info',
     );
+    ctx.onActivity?.({
+      phase: 'preparing',
+      units: [],
+      processedSeconds: undefined,
+    });
     event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
 
     // 诊断：记录「下发 transcribe → sidecar 首个 progress」的墙钟间隔。首任务卡 0% 时，
@@ -247,7 +256,32 @@ async function transcribeFasterWhisper(
     );
     let firstProgressLogged = false;
     const { id, result } = manager.transcribe(params, {
+      onSegment: (segment) => {
+        if (!signal?.aborted && Number.isFinite(segment.end))
+          ctx.onActivity?.({
+            phase: 'recognizing',
+            processedSeconds: segment.end,
+            durationSeconds: (file as any).duration,
+          });
+      },
+      onReview: ({ stage, completed, total }) => {
+        if (signal?.aborted) return;
+        ctx.onActivity?.({
+          phase: 'reviewing',
+          completed,
+          total,
+          unit: 'chunks',
+        });
+        file.speechReviewStage = stage;
+        event.sender.send('taskFileChange', { ...file });
+      },
       onProgress: (percent) => {
+        if (signal?.aborted) return;
+        // 语音复核期间（长音频的 VAD 扫描尤其久）sidecar 只发 progress、不发 review，
+        // 这里同样要刷新活动时间，否则 60 秒后界面会提示「暂未收到新的处理进度」。
+        ctx.onActivity?.({
+          phase: file.speechReviewStage ? 'reviewing' : 'recognizing',
+        });
         if (!firstProgressLogged) {
           firstProgressLogged = true;
           logMessage(
@@ -325,12 +359,73 @@ async function transcribeFasterWhisper(
     throw new TaskCancelledError();
   }
 
-  // 任务级 maxSubtitleChars：仅「正数上限」才从词级时间戳重建成句（composeWordCues
-  // 统一出口，含硬切回溯，宽度由真实词时间保证）；0 = 智能断句与 -1 = 不限制长度都
-  // 沿用引擎段级断句——whisper 原生按句分段，本就不按宽度硬切。
+  // Explicit task limits use real word times when available. Legacy defaults
+  // retain native segment boundaries; missing word times use segment fallback.
+  ctx.onActivity?.({ phase: 'organizing', units: [] });
   const segments = transcription?.segments || [];
+  file.speechReviewStage = undefined;
+  const review = transcription?.speechReview;
+  if (review && transcription.beforeReviewSegments) {
+    // Different tasks can share the same extracted WAV. Keep each task's
+    // original recognition available when a later task uses another model.
+    const reviewBase = getTaskContext()?.stageOutputDirectory
+      ? path.join(getTaskContext()!.stageOutputDirectory!, 'speech')
+      : `${tempAudioFile}.${file.uuid.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const reviewPath = `${reviewBase}.review.json`;
+    try {
+      await fs.promises.writeFile(
+        reviewPath,
+        JSON.stringify({
+          version: 1,
+          engine: 'fasterWhisper',
+          originalSegments: transcription.beforeReviewSegments,
+          review,
+        }),
+      );
+      file.speechReviewFile = reviewPath;
+      if (review.recovered || review.retimed) {
+        const originalPath = `${reviewBase}.before-review.srt`;
+        await fs.promises.writeFile(
+          originalPath,
+          formatSrtContent(
+            transcription.beforeReviewSegments.map(subtitleCueFromSegment),
+          ),
+        );
+        file.speechReviewOriginalFile = originalPath;
+      }
+    } catch (error) {
+      logMessage(`speech review audit save failed: ${error}`, 'warning');
+    }
+  }
+  file.speechReviewSummary = review
+    ? {
+        status: review.status,
+        checked: review.checked,
+        recovered: review.recovered,
+        retimed: review.retimed,
+        pending: review.pending,
+        changes: review.changes?.map(({ start, end, original, text }) => ({
+          start,
+          end,
+          original,
+          text,
+        })),
+      }
+    : undefined;
   ctx.onDiagnostics?.({
     vadAvailable: false,
+    reviewSpeechSegments: transcription?.reviewSpeechSegments?.map((s) => ({
+      startMs: s.start * 1000,
+      endMs: s.end * 1000,
+    })),
+    reviewCompleted: review?.status === 'complete',
+    reviewPending: review?.unresolved?.map((s) => ({
+      startMs: s.start * 1000,
+      endMs: s.end * 1000,
+      suggestedText: s.suggestedText,
+      originalText: s.originalText,
+      issue: s.issue,
+    })),
     wordSegments: segments.flatMap((segment: any) =>
       (segment?.words || []).map((word: any) => ({
         startMs: Number(word.start) * 1000,
@@ -340,20 +435,37 @@ async function transcribeFasterWhisper(
   });
   const cueOptions = getSubtitleCueOptions(formData as Record<string, unknown>);
   let subtitles;
-  if (cueOptions && Number.isFinite(cueOptions.maxWidth)) {
-    const wordTriples = segments.flatMap((segment) => {
+  if (
+    cueOptions &&
+    (Number.isFinite(cueOptions.maxWidth) ||
+      cueOptions.maxDurationSeconds !== undefined ||
+      cueOptions.maxGapSeconds !== undefined ||
+      formData.preserveSpeechPauses === true)
+  ) {
+    const config = formData as Record<string, unknown>;
+    let pendingWords: TokenTriple[] = [];
+    subtitles = [] as TokenTriple[];
+    const flushWords = () => {
+      subtitles.push(...composeWordCues(pendingWords, config));
+      pendingWords = [];
+    };
+    for (const segment of segments) {
       const triples = wordsToTriples(segment?.words);
-      return triples.length > 0 ? triples : [subtitleCueFromSegment(segment)];
-    });
-    subtitles = composeWordCues(
-      wordTriples,
-      formData as Record<string, unknown>,
-    );
+      if (triples.length) pendingWords.push(...triples);
+      else {
+        flushWords();
+        subtitles.push(
+          ...resplitSubtitleCues([subtitleCueFromSegment(segment)], config),
+        );
+      }
+    }
+    flushWords();
   } else {
     subtitles = segments.map(subtitleCueFromSegment);
   }
   subtitles = trimSubtitleTrailingSilence(subtitles, tempAudioFile);
   const formattedSrt = formatSrtContent(subtitles);
+  ctx.onActivity?.({ phase: 'saving' });
   await fs.promises.writeFile(srtFile, formattedSrt);
 
   // 词级时间轴 sidecar（openspec: add-ai-subtitle-refine D6）：word_timestamps 恒开，

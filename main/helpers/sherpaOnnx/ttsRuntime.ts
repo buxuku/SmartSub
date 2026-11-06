@@ -1,8 +1,14 @@
 import path from 'path';
-import { utilityProcess, type UtilityProcess } from 'electron';
 import { logMessage } from '../storeManager';
 import { getExtraResourcesPath } from '../utils';
 import { getSherpaLibDir, isSherpaLibInstalled } from './sherpaLibPaths';
+import { spawnAppUtilityHost } from '../crash/appUtilityHost';
+import { beginCrashContext } from '../crash/crashContext';
+import {
+  buildSherpaWorkerEnv,
+  describeHostExit,
+  type UtilityHost,
+} from '../crash/utilityHost';
 
 /**
  * TTS 模型加载请求：文件绝对路径由 catalog / 调用方拼好。
@@ -55,7 +61,7 @@ function workerPath(): string {
 export const TTS_POOL_MAX = 3;
 
 interface TtsWorkerHandle {
-  proc: UtilityProcess;
+  proc: UtilityHost;
   /** 在途请求数（派发选最闲者）。 */
   busy: number;
   alive: boolean;
@@ -118,28 +124,16 @@ class SherpaTtsRuntime {
     if (!isSherpaLibInstalled()) {
       throw new Error('sherpa native lib not installed');
     }
-    const libDir = getSherpaLibDir();
-    const proc = utilityProcess.fork(workerPath(), [], {
+    // fork / stderr 日志 / 退出分类 / Linux core 限制由共用底座处理（crash/utilityHost.ts）
+    const proc = spawnAppUtilityHost({
+      workerFile: workerPath(),
       serviceName: 'smartsub-tts-worker',
-      stdio: 'pipe',
-      env: {
-        ...process.env,
-        SHERPA_ONNX_LIB_DIR: libDir,
-        // Windows DLL / Linux SO 依赖解析（macOS 靠 @loader_path 重写）。
-        PATH: `${libDir}${path.delimiter}${process.env.PATH ?? ''}`,
-        LD_LIBRARY_PATH: `${libDir}${path.delimiter}${
-          process.env.LD_LIBRARY_PATH ?? ''
-        }`,
-      },
+      logLabel: 'tts worker',
+      env: buildSherpaWorkerEnv(getSherpaLibDir()),
     });
     const handle: TtsWorkerHandle = { proc, busy: 0, alive: true };
-    proc.on('message', (msg: any) => this.onMessage(handle, msg));
-    // native 崩溃前的 stderr 是关键诊断线索（onnxruntime/sherpa 报错都走这里）。
-    proc.stderr?.on('data', (d: Buffer) => {
-      const line = String(d).trim();
-      if (line) logMessage(`tts worker stderr: ${line}`, 'warning');
-    });
-    proc.on('exit', (code) => {
+    proc.onMessage((msg: any) => this.onMessage(handle, msg));
+    proc.onExit((info) => {
       // shrinkTo/dispose 先置 alive=false 再 kill：此时的非零退出码是
       // 信号终止的垃圾值（如 0x6B0E7680），属预期停止，不按异常处理。
       const expected = !handle.alive;
@@ -152,14 +146,17 @@ class SherpaTtsRuntime {
         );
         return;
       }
-      if (code !== 0) {
+      if (info.code !== 0) {
         this.failOwn(
           handle,
           new Error(
-            `本地 TTS 引擎异常退出（code ${code}），已自动重置，请重试`,
+            `本地 TTS 引擎异常退出（code ${info.code}），已自动重置，请重试`,
           ),
         );
-        logMessage(`tts worker exited abnormally (code ${code})`, 'error');
+        logMessage(
+          `tts worker exited abnormally (${describeHostExit(info)})`,
+          'error',
+        );
       }
     });
     this.pool.push(handle);
@@ -238,6 +235,14 @@ class SherpaTtsRuntime {
     const result = new Promise<TtsSynthesisResult>((resolve, reject) => {
       this.pending.set(id, { resolve, reject, handle });
     });
+    // 崩溃现场：请求结束（成功、失败、被拒）时移除；then 的两个分支都接住，
+    // 避免派生出一个无人处理的 rejected promise
+    const endContext = beginCrashContext({
+      engine: 'sherpa-tts',
+      model: req.model.modelType,
+      phase: 'synthesize',
+    });
+    result.then(endContext, endContext);
     handle.proc.postMessage({ type: 'synthesize', id, ...req });
     return { id, result };
   }

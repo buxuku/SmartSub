@@ -48,10 +48,7 @@ export function shouldExtractAudioForEmbeddedSubtitle(
     | null
     | undefined,
 ): boolean {
-  return (
-    config?.speakerDiarization === true &&
-    isSpeakerDiarizationStandardTaskContext(config)
-  );
+  return config?.speakerDiarization === true;
 }
 
 /** 合并、拆分等校对操作共用的角色编号归一化。 */
@@ -92,17 +89,14 @@ export function realignSpeakerIdsForCue(
   return aligned.length ? aligned : mergeSpeakerIds(fallback);
 }
 
-/**
- * v1 产品边界：角色分离仅用于标准「转写 / 转写+翻译」任务。
- * 向导附加阶段和用户配方暂不接入，避免在配音映射就绪前产生半成品配置。
- */
-export function isSpeakerDiarizationStandardTaskContext(
-  config: Pick<IFormData, 'dub' | 'compose' | 'recipeName'> | null | undefined,
+/** Media pipelines support roles before dubbing/composition; text-only tasks do not. */
+export function supportsSpeakerDiarizationTask(
+  config: Pick<IFormData, 'taskType'> | null | undefined,
 ): boolean {
-  return !config?.dub && !config?.compose && !config?.recipeName;
+  return config?.taskType !== 'translateOnly';
 }
 
-/** 保存配方或构造向导 payload 时移除全部角色分离字段。 */
+/** Remove inapplicable audio analysis settings from text-only submissions. */
 export function stripSpeakerDiarizationConfig<T extends Record<string, any>>(
   config: T,
 ): T {
@@ -117,7 +111,7 @@ export function stripSpeakerDiarizationConfig<T extends Record<string, any>>(
 export function enforceSpeakerDiarizationTaskBoundary<
   T extends Record<string, any>,
 >(config: T): T {
-  return isSpeakerDiarizationStandardTaskContext(config)
+  return supportsSpeakerDiarizationTask(config)
     ? config
     : stripSpeakerDiarizationConfig(config);
 }

@@ -1,7 +1,9 @@
-import { app } from 'electron';
+import { assertTaskStorageWritable } from './taskRuns/maintenance';
+import { TASK_STAGE_KEYS as STAGE_KEYS } from '../../types/taskStages';
 import { store } from './store';
 import type { IFiles, TaskProject } from '../../types';
 import type { ProofreadTask } from '../../types/proofread';
+import { deriveProofreadTaskStatus } from '../../types/proofread';
 import type { WorkItem } from '../../types/workItem';
 import { WORK_ITEM_MIGRATION_VERSION } from '../../types/workItem';
 import {
@@ -13,15 +15,19 @@ import {
 const WORK_ITEMS_KEY = 'workItems';
 const MIGRATION_VERSION_KEY = 'workItemsMigrationVersion';
 
-const STAGE_KEYS = [
-  'extractAudio',
-  'extractSubtitle',
-  'translateSubtitle',
-  'prepareSubtitle',
-  'exportSubtitle',
-  'dubbing',
-  'composeVideo',
-] as const;
+function normalizeProofreadStatus(item: WorkItem): WorkItem {
+  if (item.type !== 'proofread') return item;
+  const status =
+    deriveProofreadTaskStatus(item.proofreadEntries || []) === 'completed'
+      ? 'done'
+      : 'running';
+  return {
+    ...item,
+    status,
+    finishedAt:
+      status === 'done' ? (item.finishedAt ?? item.updatedAt) : undefined,
+  };
+}
 
 function markInterruptedFile(file: IFiles): IFiles {
   const next: Record<string, any> = { ...file };
@@ -31,12 +37,24 @@ function markInterruptedFile(file: IFiles): IFiles {
       next[`${key}Error`] = 'TASK_INTERRUPTED';
     }
   }
+  if (
+    next.taskActivity &&
+    ['running', 'cancelling'].includes(next.taskActivity.status)
+  ) {
+    next.taskActivity = {
+      ...next.taskActivity,
+      status: 'interrupted',
+      units: [],
+      sequence: next.taskActivity.sequence + 1,
+      updatedAt: Date.now(),
+    };
+  }
   return next as IFiles;
 }
 
 function applyInterruptedMarkToWorkItems() {
   workItems = workItems.map((item) => {
-    if (item.type === 'proofread') return item;
+    if (item.type === 'proofread') return normalizeProofreadStatus(item);
     if (item.type === 'download') {
       // 下载可断点续传：执行中的条目退回待下载（''），任务标记中断，
       // 「继续下载」时对未完成条目重新入列即可从断点恢复。
@@ -47,6 +65,11 @@ function applyInterruptedMarkToWorkItems() {
       return item.status === 'running'
         ? { ...item, downloadEntries, status: 'interrupted' as const }
         : { ...item, downloadEntries };
+    }
+    if (item.type === 'compose' || item.type === 'toolbox') {
+      return item.status === 'running' || item.status === 'waiting'
+        ? { ...item, status: 'interrupted' as const }
+        : item;
     }
     if (item.type === 'dubbing') {
       // 配音是会话级工作项（无 pipelineFiles）：上次退出时仍在跑 → 标记中断。
@@ -65,21 +88,63 @@ function applyInterruptedMarkToWorkItems() {
 
 let workItems: WorkItem[] = [];
 let writeTimer: NodeJS.Timeout | null = null;
+let initialized = false;
+let hasPendingWrite = false;
+type DeleteTransaction = { commit: () => void; rollback: () => void };
+let prepareDeletion: ((items: WorkItem[]) => DeleteTransaction) | undefined;
+export function setWorkItemDeletionHandler(
+  handler: typeof prepareDeletion,
+): void {
+  prepareDeletion = handler;
+}
 
-function scheduleWrite() {
+function commitDeletion(items: WorkItem[], next: WorkItem[]): void {
+  const transaction = prepareDeletion?.(items);
+  try {
+    commitWorkItems(next);
+  } catch (error) {
+    transaction?.rollback();
+    throw error;
+  }
+  transaction?.commit();
+}
+
+function scheduleWrite(delay = 800) {
   if (writeTimer) return;
   writeTimer = setTimeout(() => {
     writeTimer = null;
-    store.set(WORK_ITEMS_KEY, workItems);
-  }, 800);
+    try {
+      flushWorkItemStore();
+    } catch (error) {
+      console.error('[workItemStore] Failed to persist task progress:', error);
+      scheduleWrite(5000);
+    }
+  }, delay);
+  writeTimer.unref?.();
 }
 
-function flushWrite() {
+function clearWriteTimer() {
   if (writeTimer) {
     clearTimeout(writeTimer);
     writeTimer = null;
   }
+}
+
+export function flushWorkItemStore(): void {
+  if (!initialized || !hasPendingWrite) return;
   store.set(WORK_ITEMS_KEY, workItems);
+  hasPendingWrite = false;
+  clearWriteTimer();
+}
+
+function commitWorkItems(next: WorkItem[]): void {
+  assertTaskStorageWritable();
+  // electron-store writes atomically and fsyncs before returning. Publish only
+  // after that write succeeds, so a failed save cannot appear in subsequent reads.
+  store.set(WORK_ITEMS_KEY, next);
+  workItems = next;
+  hasPendingWrite = false;
+  clearWriteTimer();
 }
 
 function readMigrationVersion(): number {
@@ -121,7 +186,6 @@ function runMigrationIfNeeded() {
         updatedAt: now,
       },
     ];
-    store.delete('tasks');
   }
 
   if (!mergedTaskProjects.length && !proofreadTasks.length) {
@@ -134,9 +198,11 @@ function runMigrationIfNeeded() {
     proofreadTasks,
   });
 
+  store.set({
+    [WORK_ITEMS_KEY]: result.items,
+    [MIGRATION_VERSION_KEY]: WORK_ITEM_MIGRATION_VERSION,
+  });
   workItems = result.items;
-  store.set(MIGRATION_VERSION_KEY, WORK_ITEM_MIGRATION_VERSION);
-  flushWrite();
 
   console.log(
     `[workItemStore] Migrated ${result.fromTaskProjects} taskProjects + ${result.fromProofreadTasks} proofreadTasks → ${workItems.length} workItems`,
@@ -148,7 +214,8 @@ export function initializeWorkItemStore(): void {
   workItems = Array.isArray(stored) ? stored : [];
   runMigrationIfNeeded();
   applyInterruptedMarkToWorkItems();
-  flushWrite();
+  commitWorkItems(workItems);
+  initialized = true;
 }
 
 export function getWorkItems(): WorkItem[] {
@@ -159,30 +226,40 @@ export function getWorkItemById(id: string): WorkItem | null {
   return workItems.find((item) => item.id === id) || null;
 }
 
-export function saveWorkItem(item: WorkItem): WorkItem {
+export function saveWorkItem(
+  item: WorkItem,
+  options: { durable?: boolean } = {},
+): WorkItem {
+  assertTaskStorageWritable();
   const index = workItems.findIndex((existing) => existing.id === item.id);
   const now = Date.now();
-  const next: WorkItem = {
-    ...item,
+  const next: WorkItem = normalizeProofreadStatus({
+    ...structuredClone(item),
     updatedAt: item.updatedAt || now,
     createdAt: item.createdAt || now,
-  };
+  });
 
-  if (index >= 0) {
-    workItems[index] = next;
+  const updated = [...workItems];
+  if (index >= 0) updated[index] = next;
+  else updated.unshift(next);
+
+  if (options.durable) {
+    commitWorkItems(updated);
   } else {
-    workItems.unshift(next);
+    workItems = updated;
+    hasPendingWrite = true;
+    scheduleWrite();
   }
-
-  scheduleWrite();
-  return next;
+  return structuredClone(next);
 }
 
 export function deleteWorkItem(id: string): boolean {
   const index = workItems.findIndex((item) => item.id === id);
   if (index < 0) return false;
-  workItems.splice(index, 1);
-  flushWrite();
+  commitDeletion(
+    [workItems[index]],
+    workItems.filter((item) => item.id !== id),
+  );
   return true;
 }
 
@@ -191,18 +268,13 @@ export function renameWorkItem(id: string, name: string): WorkItem | null {
   const trimmed = name.trim();
   if (!item || !trimmed) return item || null;
 
-  item.name = trimmed;
-  item.updatedAt = Date.now();
-  flushWrite();
-  return item;
+  return saveWorkItem(
+    { ...item, name: trimmed, updatedAt: Date.now() },
+    { durable: true },
+  );
 }
 
 export function clearAllWorkItems(): void {
   if (workItems.length === 0) return;
-  workItems = [];
-  flushWrite();
-}
-
-export function setupWorkItemStoreLifecycle(): void {
-  app.on('before-quit', flushWrite);
+  commitDeletion(workItems, []);
 }

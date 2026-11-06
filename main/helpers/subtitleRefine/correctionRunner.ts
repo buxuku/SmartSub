@@ -1,3 +1,4 @@
+import type { ActivityObserver } from '../../../types/taskActivity';
 /**
  * 校正遍编排（遍 B，design D7）：cues 文本 → 共享校正服务（anchored 协议）→ 写回。
  * **非纯逻辑层**（依赖翻译客户端/任务上下文），不经 index.ts 导出。
@@ -14,6 +15,7 @@ import { TRANSLATOR_MAP } from '../../translate/services/translationProvider';
 import type { Provider, TranslatorFunction } from '../../translate/types';
 
 export interface AiCorrectionParams {
+  onActivity?: ActivityObserver;
   cues: TokenTriple[];
   formData: Record<string, unknown>;
   provider: Provider;
@@ -29,6 +31,7 @@ export interface AiCorrectionOutcome {
   changed: number;
   /** 整体降级（服务商不可用等）：cues 与输入一致。 */
   degraded: boolean;
+  failedCount?: number;
 }
 
 /** 模型偶发在校正文本里带换行：字幕单条内折叠为空格，避免交付层格式扰动。 */
@@ -73,8 +76,15 @@ export async function runAiCorrection(
     maxRetries: 2,
     signal,
     useGlossary: true,
+    glossaryIds: formData?.glossaryIds as string[] | undefined,
     glossaryLabel: 'AI 字幕校正',
     suspectWords,
+    fillerPolicy:
+      formData.subtitleFillerPolicy === 'preserve' ||
+      formData.subtitleFillerPolicy === 'remove-hesitations'
+        ? formData.subtitleFillerPolicy
+        : undefined,
+    onActivity: params.onActivity,
     onBatchProgress: (info) =>
       onProgress?.(info.processedCount, info.totalCount),
   });
@@ -85,7 +95,7 @@ export async function runAiCorrection(
   let errorCount = 0;
   const out: TokenTriple[] = cues.map((cue, i): TokenTriple => {
     const r = byIndex.get(i);
-    if (r?.status === 'error') errorCount += 1;
+    if (r?.status !== 'success') errorCount += 1;
     const corrected =
       r?.status === 'success' ? sanitizeCorrectedText(r.corrected) : '';
     const text = corrected || (cue?.[2] ?? '');
@@ -99,5 +109,5 @@ export async function runAiCorrection(
     `AI correction done: ${changed}/${cues.length} entries changed, errors ${errorCount}${degraded ? ' (degraded)' : ''}`,
     degraded ? 'warning' : 'info',
   );
-  return { cues: out, changed, degraded };
+  return { cues: out, changed, degraded, failedCount: errorCount };
 }

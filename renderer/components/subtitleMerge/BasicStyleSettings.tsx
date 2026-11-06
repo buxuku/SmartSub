@@ -7,27 +7,24 @@ import { useTranslation } from 'next-i18next';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import type { SubtitleStyle } from '../../../types/subtitleMerge';
-import { FONT_LIST, FONT_SIZE_RANGE } from './constants';
+import { FONT_SIZE_RANGE } from './constants';
 import AlignmentSelector from './AlignmentSelector';
+import FontSelector from './FontSelector';
+import { subtitleColorSwatch } from '../../../types/subtitleColor';
 
 interface BasicStyleSettingsProps {
   style: SubtitleStyle;
   onUpdateStyle: (updates: Partial<SubtitleStyle>) => void;
   disabled?: boolean;
+  subtitlePath?: string | null;
 }
 
 export default function BasicStyleSettings({
   style,
   onUpdateStyle,
   disabled = false,
+  subtitlePath,
 }: BasicStyleSettingsProps) {
   const { t } = useTranslation('subtitleMerge');
 
@@ -37,22 +34,12 @@ export default function BasicStyleSettings({
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label className="text-sm">{t('fontFamily')}</Label>
-          <Select
+          <FontSelector
+            subtitlePath={subtitlePath}
             value={style.fontName}
-            onValueChange={(value) => onUpdateStyle({ fontName: value })}
+            onChange={(value) => onUpdateStyle({ fontName: value })}
             disabled={disabled}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder={t('selectFont')} />
-            </SelectTrigger>
-            <SelectContent>
-              {FONT_LIST.map((font) => (
-                <SelectItem key={font.value} value={font.value}>
-                  <span style={{ fontFamily: font.value }}>{font.label}</span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          />
         </div>
 
         <div className="space-y-2">
@@ -82,13 +69,15 @@ export default function BasicStyleSettings({
         <div className="flex items-center gap-2">
           <Input
             type="color"
-            value={style.primaryColor}
+            aria-label={t('fontColor')}
+            value={subtitleColorSwatch(style.primaryColor)}
             onChange={(e) => onUpdateStyle({ primaryColor: e.target.value })}
             disabled={disabled}
             className="w-10 h-9 p-1 cursor-pointer shrink-0"
           />
           <Input
             type="text"
+            aria-label={t('fontColor')}
             value={style.primaryColor}
             onChange={(e) => onUpdateStyle({ primaryColor: e.target.value })}
             disabled={disabled}
@@ -103,7 +92,13 @@ export default function BasicStyleSettings({
         <Label className="mb-3 block text-sm">{t('position')}</Label>
         <AlignmentSelector
           value={style.alignment}
-          onChange={(value) => onUpdateStyle({ alignment: value })}
+          onChange={(value) =>
+            onUpdateStyle({
+              alignment: value,
+              positionY: undefined,
+              positionReferenceY: undefined,
+            })
+          }
           disabled={disabled}
         />
       </div>

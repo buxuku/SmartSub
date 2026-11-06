@@ -1,6 +1,9 @@
-import { ipcMain } from 'electron';
+import { ipcMain } from '../automation/handlers';
+import { latestTaskActivity } from '../../types/taskActivity';
 import { IFiles, TaskProject, TaskProjectType } from '../../types';
-import { isPipelineWorkItem } from '../../types/workItem';
+import { isPipelineWorkItem, type WorkItem } from '../../types/workItem';
+import { getTaskContext } from './taskContext';
+import { assertLegacyTaskWriteAllowed, requireTaskRunService as getRunService } from './taskRuns/access';
 import {
   deleteWorkItem,
   getWorkItemById,
@@ -37,9 +40,11 @@ function listTaskProjects(): TaskProject[] {
     .filter((project): project is TaskProject => project !== null);
 }
 
-function findWorkItemByFileUuid(uuid: string) {
+function findWorkItemByFileUuid(uuid: string, owner?: string) {
+  const projectId = getTaskContext()?.projectId ?? owner;
   return getWorkItems().find(
     (item) =>
+      (!projectId || item.id === projectId) &&
       isPipelineWorkItem(item) &&
       item.pipelineFiles?.some((file) => file.uuid === uuid),
   );
@@ -56,13 +61,18 @@ export function applyTaskEventToProjects(
   const uuid = file?.uuid;
   if (!uuid) return;
 
-  const workItem = findWorkItemByFileUuid(uuid);
+  const workItem = findWorkItemByFileUuid(uuid, file.taskProjectId);
   if (!workItem || !isPipelineWorkItem(workItem)) return;
+  // New run projections are only published by the run service after a durable commit.
+  if (workItem.currentRunId) return;
 
   const pipelineFiles = (workItem.pipelineFiles || []).map((item) => {
     if (item.uuid !== uuid) return item;
     const next: Record<string, any> = { ...item };
     switch (channel) {
+      case 'taskActivityChange':
+        next.taskActivity = latestTaskActivity(item.taskActivity, args[1]);
+        break;
       case 'taskStatusChange':
         next[args[1]] = args[2];
         break;
@@ -73,7 +83,7 @@ export function applyTaskEventToProjects(
         next[`${args[1]}Error`] = args[2];
         break;
       case 'taskFileChange':
-        Object.assign(next, file);
+        Object.assign(next, file, { taskActivity: item.taskActivity });
         break;
       default:
         return item;
@@ -81,16 +91,29 @@ export function applyTaskEventToProjects(
     return next as IFiles;
   });
 
-  saveWorkItem({
-    ...workItem,
-    pipelineFiles,
-    status: derivePipelineWorkItemStatus(pipelineFiles),
-    updatedAt: Date.now(),
-  });
+  // A new session must be reachable after a crash before synthesis may begin.
+  const linkChanged = pipelineFiles.some(
+    (next, index) =>
+      next.dubbingSessionId !==
+      workItem.pipelineFiles?.[index]?.dubbingSessionId,
+  );
+  saveWorkItem(
+    {
+      ...workItem,
+      pipelineFiles,
+      status: derivePipelineWorkItemStatus(pipelineFiles),
+      updatedAt: Date.now(),
+    },
+    { durable: linkChanged },
+  );
 }
 
 /** @deprecated 请使用 getWorkItems；保留兼容 shim */
 export function setupTaskManager() {
+  ipcMain.handle('taskRuns:get', (_event, { projectId, runId }) => getRunService().get(projectId, runId));
+  ipcMain.handle('taskRuns:list', (_event, projectId: string) => getRunService().list(projectId));
+  ipcMain.handle('taskRuns:getDraft', (_event, projectId: string) => getRunService().getDraft(projectId));
+  ipcMain.handle('taskRuns:saveDraft', (_event, input) => getRunService().saveDraft(input));
   ipcMain.handle('getTaskProjects', () => listTaskProjects());
 
   ipcMain.handle('getTaskProject', (_event, id: string) => {
@@ -107,39 +130,70 @@ export function setupTaskManager() {
         taskType?: TaskProjectType;
         files: IFiles[];
         name?: string;
+        taskDraft?: WorkItem['taskDraft'];
+        preserveTaskProgress?: boolean;
       },
     ) => {
-      const { id, taskType, files, name } = payload || {};
+      const { id, taskType, files, name, taskDraft } = payload || {};
       if (!id) return null;
+      assertLegacyTaskWriteAllowed(id);
 
-      if (!Array.isArray(files) || files.length === 0) {
+      if (!Array.isArray(files)) throw new Error('TASK_FILES_INVALID');
+      if (
+        taskDraft &&
+        (!taskDraft.config || !Array.isArray(taskDraft.manuscripts))
+      )
+        throw new Error('TASK_DRAFT_INVALID');
+      if (files.length === 0 && !taskDraft) {
         deleteWorkItem(id);
         return null;
       }
 
       const now = Date.now();
       const existing = getWorkItemById(id);
-      const status = derivePipelineWorkItemStatus(files);
+      if (existing && !isPipelineWorkItem(existing))
+        throw new Error('TASK_PROJECT_TYPE_CONFLICT');
+      const currentFiles = new Map(
+        existing?.pipelineFiles?.map((file) => [file.uuid, file]),
+      );
+      const pipelineFiles = payload.preserveTaskProgress
+        ? files.map((file) => ({
+            ...file,
+            ...currentFiles.get(file.uuid),
+            manuscriptPath: file.manuscriptPath,
+            manuscriptName: file.manuscriptName,
+          }))
+        : files;
+      const status = derivePipelineWorkItemStatus(pipelineFiles);
 
       if (existing && isPipelineWorkItem(existing)) {
-        const saved = saveWorkItem({
-          ...existing,
-          pipelineFiles: files,
-          status,
-          updatedAt: now,
-        });
+        const saved = saveWorkItem(
+          {
+            ...existing,
+            type: taskType ? normalizeTaskType(taskType) : existing.type,
+            pipelineFiles,
+            ...(taskDraft ? { taskDraft: structuredClone(taskDraft) } : {}),
+            status,
+            updatedAt: now,
+          },
+          { durable: true },
+        );
         return workItemToTaskProject(saved);
       }
 
       const saved = saveWorkItem(
-        taskProjectToWorkItem({
-          id,
-          name: name?.trim() || buildTaskName(files),
-          taskType: normalizeTaskType(taskType),
-          files,
-          createdAt: now,
-          updatedAt: now,
-        }),
+        {
+          ...taskProjectToWorkItem({
+            id,
+            name: name?.trim() || buildTaskName(files),
+            taskType: normalizeTaskType(taskType),
+            files: pipelineFiles,
+            createdAt: now,
+            updatedAt: now,
+          }),
+          ...(taskDraft ? { taskDraft: structuredClone(taskDraft) } : {}),
+        },
+        { durable: true },
       );
       return workItemToTaskProject(saved);
     },

@@ -89,6 +89,7 @@ export async function detectSubtitlesForVideo(
   videoPath: string,
   sourceLanguage: string,
   targetLanguage: string,
+  options: { strict?: boolean } = {},
 ): Promise<SubtitleDetectionResult> {
   const directory = path.dirname(videoPath);
   const videoName = path.basename(videoPath, path.extname(videoPath));
@@ -99,6 +100,7 @@ export async function detectSubtitlesForVideo(
     const allFiles = await fs.readdir(directory);
     files = allFiles.filter((f) => isSubtitleExtension(f));
   } catch (error) {
+    if (options.strict) throw error;
     console.error('Error reading directory:', error);
     return { videoFile: videoPath, detectedSubtitles: [] };
   }
@@ -371,6 +373,7 @@ export async function matchSubtitlesByRules(
  */
 export async function scanDirectoryForSubtitles(
   directoryPath: string,
+  options: { strict?: boolean } = {},
 ): Promise<string[]> {
   const subtitleFiles: string[] = [];
 
@@ -386,6 +389,7 @@ export async function scanDirectoryForSubtitles(
       }
     }
   } catch (error) {
+    if (options.strict) throw error;
     console.error('Error scanning directory:', error);
   }
 
@@ -397,6 +401,7 @@ export async function scanDirectoryForSubtitles(
  */
 export async function smartScanDirectory(
   directoryPath: string,
+  options: { strict?: boolean } = {},
 ): Promise<{ videos: string[]; subtitles: string[] }> {
   const videos: string[] = [];
   const subtitles: string[] = [];
@@ -417,6 +422,7 @@ export async function smartScanDirectory(
       }
     }
   } catch (error) {
+    if (options.strict) throw error;
     console.error('Error scanning directory:', error);
   }
 

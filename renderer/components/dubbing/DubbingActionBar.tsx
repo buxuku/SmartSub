@@ -23,10 +23,12 @@ function baseName(p: string): string {
 export default function DubbingActionBar({
   dub,
   hideExport = false,
+  onReviewTiming,
 }: {
   dub: UseDubbingReturn;
   /** 检查员模式：产出由任务的合成阶段负责，隐藏导出入口 */
   hideExport?: boolean;
+  onReviewTiming?: () => void;
 }) {
   const { t } = useTranslation('dubbing');
   const {
@@ -154,6 +156,16 @@ export default function DubbingActionBar({
           <Play className="mr-1 h-3.5 w-3.5" />
           {t('startDubbing')}
         </Button>
+      ) : summary.generated === summary.total &&
+        summary.overlong > 0 &&
+        summary.needsUpdate === 0 &&
+        summary.failed === 0 ? (
+        <>
+          <Button size="sm" onClick={onReviewTiming} disabled={exporting}>
+            {t('reviewTiming')}
+          </Button>
+          {exportButton('outline')}
+        </>
       ) : allDone ? (
         // 全部完成：重跑（副）+ 导出（主）
         <>

@@ -1,3 +1,4 @@
+import type { ActivityUnit } from '../../../types/taskActivity';
 import fs from 'fs';
 import type { EngineStatus } from '../../../types/engine';
 import { getAsrProviderById, getAsrProviders } from '../asrProviderManager';
@@ -199,7 +200,9 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
         // 单请求路径：整段上传。整个 transcriber 调用占一个服务商槽
         // （订单制服务商含轮询等待，对应其"并发转写路数"配额）。
         event.sender.send('taskProgressChange', file, 'extractSubtitle', 10);
+        ctx.onActivity?.({ phase: 'queued' });
         const releaseSlot = await gate.acquire(signal);
+        ctx.onActivity?.({ phase: 'requesting' });
         let result: AsrTranscribeResult;
         try {
           result = await transcriber(provider, {
@@ -264,6 +267,7 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
   }
 
   throwIfSignalCancelled(signal);
+  ctx.onActivity?.({ phase: 'organizing', units: [] });
   // 词级/段级路径统一补一次「裁尾」护栏（基于原始 16kHz WAV 能量）。
   ctx.onDiagnostics?.({
     vadAvailable: false,
@@ -276,6 +280,7 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
   });
   const subtitles = trimSubtitleTrailingSilence(cues, tempAudioFile);
   const formattedSrt = formatSrtContent(subtitles);
+  ctx.onActivity?.({ phase: 'saving', units: [] });
   await fs.promises.writeFile(srtFile, formattedSrt);
 
   // 词级时间轴 sidecar（openspec: add-ai-subtitle-refine D6）：仅词级路径落盘；
@@ -319,6 +324,16 @@ async function transcribeChunkedDegrade(
     signal: opts.signal,
   });
   let completed = 0;
+  const active = new Map<number, ActivityUnit>();
+  const publish = () =>
+    ctx.onActivity?.({
+      phase: 'recognizing',
+      completed,
+      total: chunks.length,
+      unit: 'chunks',
+      units: [...active.values()],
+    });
+  publish();
 
   try {
     const results = await mapWithConcurrency(
@@ -326,7 +341,17 @@ async function transcribeChunkedDegrade(
       opts.concurrency,
       async (chunk) => {
         throwIfSignalCancelled(opts.signal);
+        const id = chunks.indexOf(chunk) + 1;
+        active.set(id, { id, phase: 'queued', startedAt: Date.now() });
+        publish();
         const releaseSlot = await opts.gate.acquire(opts.signal);
+        active.set(id, {
+          id,
+          phase: 'requesting',
+          startedAt: Date.now(),
+          requestStartedAt: Date.now(),
+        });
+        publish();
         let r: AsrTranscribeResult;
         try {
           r = await opts.transcriber!(opts.provider, {
@@ -339,6 +364,8 @@ async function transcribeChunkedDegrade(
           releaseSlot();
         }
         completed += 1;
+        active.delete(id);
+        publish();
         const percent = Math.min(
           99,
           Math.round((completed / chunks.length) * 100),

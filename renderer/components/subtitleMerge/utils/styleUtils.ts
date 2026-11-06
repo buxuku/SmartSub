@@ -7,6 +7,12 @@ import type {
   SubtitleStyle,
   SubtitleAlignment,
 } from '../../../../types/subtitleMerge';
+import {
+  absoluteSubtitleY,
+  subtitleAnchor,
+} from '../../../../types/subtitleCanvas';
+import { subtitleGlow } from '../../../../types/subtitleAppearance';
+import { parseSubtitleColor } from '../../../../types/subtitleColor';
 
 /**
  * libass 烧录字幕的「等效脚本高度」：FontSize 以它为基准，再等比缩放到视频实际高度。
@@ -60,7 +66,7 @@ export function subtitleStyleToCSS(
   if (style.borderStyle === 3) {
     // 背景框模式：颜色与不透明度取用户设置（与烧录一致）；
     // libass 的背景框是直角矩形，不加圆角，保证降级预览不失真
-    css.backgroundColor = hexToRgba(style.backColor, backAlpha);
+    css.backgroundColor = colorWithOpacity(style.backColor, backAlpha);
   } else {
     // 边框 + 阴影模式
     const shadows: string[] = [];
@@ -80,13 +86,16 @@ export function subtitleStyleToCSS(
     // 阴影效果（阴影色同样应用背景不透明度，与烧录端 BackColour alpha 一致）
     if (style.shadow > 0) {
       shadows.push(
-        `${style.shadow * s}px ${style.shadow * s}px ${style.shadow * s}px ${hexToRgba(style.backColor, backAlpha)}`,
+        `${style.shadow * s}px ${style.shadow * s}px ${style.shadow * s}px ${colorWithOpacity(style.backColor, backAlpha)}`,
       );
     }
 
     if (shadows.length > 0) {
       css.textShadow = shadows.join(', ');
     }
+    const glow = subtitleGlow(style);
+    if (glow)
+      css.filter = `drop-shadow(0 0 ${glow * s}px ${style.glowColor || '#FFFFFF'})`;
   }
 
   return css;
@@ -116,7 +125,13 @@ export function getSubtitleContainerStyle(
 
   // 根据垂直对齐设置位置
   const verticalPosition = getVerticalPosition(style.alignment);
-  if (verticalPosition === 'top') {
+  const absoluteY = absoluteSubtitleY(style);
+  if (absoluteY !== undefined) {
+    css.paddingTop = 0;
+    css.paddingBottom = 0;
+    css.top = `${absoluteY}%`;
+    css.transform = `translateY(-${subtitleAnchor(style).vertical * 100}%)`;
+  } else if (verticalPosition === 'top') {
     css.top = 0;
   } else if (verticalPosition === 'middle') {
     css.top = '50%';
@@ -183,18 +198,13 @@ function getVerticalPosition(
 }
 
 /**
- * 十六进制颜色转 rgba
+ * Complete colors only; incomplete draft input has no CSS preview.
  */
-function hexToRgba(hex: string, alpha: number = 1): string {
-  // 移除 # 前缀
-  const cleanHex = hex.replace('#', '');
-
-  // 解析 RGB 值
-  const r = parseInt(cleanHex.substr(0, 2), 16);
-  const g = parseInt(cleanHex.substr(2, 2), 16);
-  const b = parseInt(cleanHex.substr(4, 2), 16);
-
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+function colorWithOpacity(value: string, opacity: number = 1): string {
+  const color = parseSubtitleColor(value);
+  return color
+    ? `rgba(${color.red}, ${color.green}, ${color.blue}, ${color.opacity * opacity})`
+    : 'transparent';
 }
 
 /**

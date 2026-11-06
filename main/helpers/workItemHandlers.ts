@@ -1,4 +1,5 @@
-import { ipcMain } from 'electron';
+import { ipcMain } from '../automation/handlers';
+import { BrowserWindow } from 'electron';
 import {
   deleteWorkItem,
   getWorkItemById,
@@ -6,44 +7,89 @@ import {
   renameWorkItem,
   saveWorkItem,
   clearAllWorkItems,
+  setWorkItemDeletionHandler,
 } from './workItemStore';
-import { deleteDubbingSessionData } from './dubbing/dubbingProcessor';
+import {
+  forgetDubbingSession,
+  getDubbingSession,
+} from './dubbing/dubbingProcessor';
+import { stageSessionDeletion } from './dubbing/sessionStore';
+import { dubbingSessionOwnership } from './dubbing/sessionOwnership';
+import { workItemSessionIds } from './dubbing/workItemSessions';
 import { cancelDownloadBatch } from './videoDownload/scheduler';
+import {
+  planManagedDeletion,
+  removeManagedProofreadData,
+} from './proofreadDataStorage';
+import { logMessage } from './storeManager';
 import type { WorkItem } from '../../types/workItem';
-
-/** 工作项删除时联动清理配音会话目录（行级 wav + 元数据） */
-function cleanupDubbingSession(item: WorkItem | null): void {
-  if (!item) return;
-  if (item.type === 'download') {
-    // 删除进行中的下载批次：先停进程/清队列（已落盘文件保留）
-    cancelDownloadBatch(item.id);
-    return;
-  }
-  if (item.type === 'dubbing') {
-    const sessionId = (
-      item.configSnapshot as { sessionId?: string } | undefined
-    )?.sessionId;
-    if (sessionId) deleteDubbingSessionData(sessionId);
-    return;
-  }
-  // 流水线任务：各文件的配音阶段会话一并清理
-  for (const file of item.pipelineFiles ?? []) {
-    const sessionId = (file as { dubbingSessionId?: string }).dubbingSessionId;
-    if (sessionId) deleteDubbingSessionData(sessionId);
-  }
-}
+import { isTaskProjectBusy } from './taskProcessor';
+import { assertLegacyTaskWriteAllowed, retireTaskRuns } from './taskRuns/access';
 
 export function setupWorkItemHandlers(): void {
+  setWorkItemDeletionHandler((items: WorkItem[]) => {
+    const deleting = new Set(items.map((item) => item.id));
+    const allIds = [...new Set(items.flatMap(workItemSessionIds))];
+    if (
+      items.some(
+        (item) =>
+          (item.type === 'compose' || item.type === 'toolbox') &&
+          ['waiting', 'running'].includes(item.status),
+      ) ||
+      items.some(
+        (item) => item.type !== 'download' && isTaskProjectBusy(item.id),
+      ) ||
+      allIds.some(
+        (id) =>
+          dubbingSessionOwnership.isBusy(id) || getDubbingSession(id)?.running,
+      )
+    )
+      throw new Error(
+        'Project is open or running. Close its dubbing editor and stop the task before deleting it.',
+      );
+    const remaining = getWorkItems().filter((item) => !deleting.has(item.id));
+    const referenced = new Set(remaining.flatMap(workItemSessionIds));
+    const ids = allIds.filter((id) => !referenced.has(id));
+    // 只回收托管目录里不再被剩余工作项引用的校对 sidecar；旧邻居目录不碰
+    const proofreadFiles = planManagedDeletion(items, remaining);
+    const staged = stageSessionDeletion(ids);
+    let runDeletion: ReturnType<typeof retireTaskRuns>;
+    try { runDeletion = retireTaskRuns(items.map(item => item.id)); }
+    catch (error) { staged.rollback(); throw error; }
+    return {
+      rollback: () => { runDeletion?.rollback(); staged.rollback(); },
+      commit: () => {
+        // Retain referenced history on disk, but never reconstruct a deleted project at startup.
+        runDeletion?.commit();
+        // 工作项列表已落盘才会走到这里；删除失败只记日志，留下的文件不影响本次删除
+        removeManagedProofreadData(proofreadFiles, {
+          onError: (message) => logMessage(message, 'warning'),
+        });
+        ids.forEach(forgetDubbingSession);
+        staged.commit();
+        for (const window of BrowserWindow.getAllWindows()) {
+          try {
+            window.webContents.send('dubbing:sessionsDeleted', ids);
+          } catch {
+            /* closed window */
+          }
+        }
+        items
+          .filter((item) => item.type === 'download')
+          .forEach((item) => cancelDownloadBatch(item.id));
+      },
+    };
+  });
   ipcMain.handle('getWorkItems', () => getWorkItems());
 
   ipcMain.handle('getWorkItem', (_event, id: string) => getWorkItemById(id));
 
-  ipcMain.handle('saveWorkItem', (_event, item: WorkItem) =>
-    saveWorkItem(item),
-  );
+  ipcMain.handle('saveWorkItem', (_event, item: WorkItem) => {
+    assertLegacyTaskWriteAllowed(item.id);
+    return saveWorkItem(item, { durable: true });
+  });
 
   ipcMain.handle('deleteWorkItem', (_event, id: string) => {
-    cleanupDubbingSession(getWorkItemById(id));
     return deleteWorkItem(id);
   });
 
@@ -54,9 +100,6 @@ export function setupWorkItemHandlers(): void {
   );
 
   ipcMain.handle('clearAllWorkItems', () => {
-    for (const item of getWorkItems()) {
-      cleanupDubbingSession(item);
-    }
     clearAllWorkItems();
     return true;
   });

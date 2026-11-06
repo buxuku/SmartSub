@@ -34,6 +34,35 @@ export interface PendingFile {
 // 支持的字幕类型
 export type SubtitleType = 'source' | 'translated' | 'bilingual' | 'unknown';
 
+type ReadOptions = { strict?: boolean };
+
+function assertDetectedSubtitles(
+  value: unknown,
+): asserts value is DetectedSubtitle[] {
+  if (
+    !Array.isArray(value) ||
+    !value.every(
+      (item) =>
+        item &&
+        typeof item.filePath === 'string' &&
+        item.filePath.length > 0 &&
+        ['source', 'translated', 'bilingual', 'unknown'].includes(item.type) &&
+        Number.isFinite(item.confidence),
+    )
+  )
+    throw new Error('INVALID_SUBTITLE_DETECTION_RESPONSE');
+}
+
+function assertResponse(result: any): void {
+  if (result?.success !== true)
+    throw new Error(result?.error || 'INVALID_SUBTITLE_DETECTION_RESPONSE');
+}
+
+async function assertExistingFile(filePath: string): Promise<void> {
+  const result = await window.ipc.invoke('checkFileExists', { filePath });
+  if (result?.exists !== true) throw new Error(`File not found: ${filePath}`);
+}
+
 /**
  * 按用户任务语向判定字幕是原文还是译文;语向不匹配时回退「en=原文」启发式。
  * 与 main/helpers/subtitleDetector.ts 的同名逻辑保持一致(进程边界无法共享模块)。
@@ -85,17 +114,27 @@ export function selectBestSubtitles(
  */
 export async function createPendingFileFromVideo(
   videoPath: string,
+  options: ReadOptions = {},
 ): Promise<PendingFile> {
+  if (options.strict) await assertExistingFile(videoPath);
   // 检测关联的字幕
   const detectResult = await window.ipc.invoke('detectSubtitles', {
     videoPath,
+    strict: options.strict,
   });
+
+  if (options.strict) {
+    assertResponse(detectResult);
+    assertDetectedSubtitles(detectResult.data?.detectedSubtitles);
+  }
 
   const detectedSubtitles: DetectedSubtitle[] = detectResult.success
     ? detectResult.data.detectedSubtitles
     : [];
 
-  const { bestSource, bestTarget } = selectBestSubtitles(detectedSubtitles);
+  const { bestSource, bestTarget } = selectBestSubtitles(
+    detectedSubtitles.filter((subtitle) => subtitle.confidence > 30),
+  );
 
   return {
     id: uuidv4(),
@@ -118,7 +157,9 @@ export async function createPendingFileFromVideo(
 export async function createPendingFileFromSubtitle(
   sourceFilePath: string,
   detectRelated: boolean = true,
+  options: ReadOptions = {},
 ): Promise<PendingFile> {
+  if (options.strict) await assertExistingFile(sourceFilePath);
   const sourceFileName = path.basename(sourceFilePath);
   const sourceBaseName = sourceFileName.replace(/\.[^.]+$/, '');
 
@@ -126,6 +167,7 @@ export async function createPendingFileFromSubtitle(
   const sourceLangResult = await window.ipc.invoke('detectLanguage', {
     filePath: sourceFilePath,
   });
+  if (options.strict) assertResponse(sourceLangResult);
   const sourceLanguage = sourceLangResult.success
     ? sourceLangResult.data?.code
     : undefined;
@@ -136,7 +178,13 @@ export async function createPendingFileFromSubtitle(
     // 使用检测逻辑获取同目录下的相关字幕
     const detectResult = await window.ipc.invoke('detectSubtitles', {
       videoPath: sourceFilePath.replace(/\.[^.]+$/, '.mp4'), // 伪造视频路径以复用检测逻辑
+      strict: options.strict,
     });
+
+    if (options.strict) {
+      assertResponse(detectResult);
+      assertDetectedSubtitles(detectResult.data?.detectedSubtitles);
+    }
 
     if (detectResult.success && detectResult.data.detectedSubtitles) {
       detectedSubtitles = detectResult.data.detectedSubtitles;
@@ -160,12 +208,29 @@ export async function createPendingFileFromSubtitle(
     sourceInList.confidence = 100;
   }
 
-  // 找到置信度最高的翻译字幕（排除源字幕）
-  const translatedSubtitles = detectedSubtitles
-    .filter((s) => s.filePath !== sourceFilePath && s.type !== 'source')
-    .sort((a, b) => b.confidence - a.confidence);
-
-  const bestTranslated = translatedSubtitles[0];
+  // A directory neighbor is only a candidate, not permission to edit it.
+  // Reuse the backend's filename grouping, with the user's source kept fixed.
+  let bestTranslated: DetectedSubtitle | undefined;
+  if (detectRelated && detectedSubtitles.length > 1) {
+    const matches = await window.ipc.invoke('matchSubtitleFiles', {
+      files: detectedSubtitles.map((subtitle) => subtitle.filePath),
+    });
+    if (options.strict) {
+      assertResponse(matches);
+      if (!Array.isArray(matches.data))
+        throw new Error('INVALID_SUBTITLE_MATCH_RESPONSE');
+    }
+    const pair = matches?.data?.find(
+      (match) =>
+        match.source === sourceFilePath || match.target === sourceFilePath,
+    );
+    const companion =
+      pair?.source === sourceFilePath ? pair.target : pair?.source;
+    bestTranslated = detectedSubtitles.find(
+      (subtitle) =>
+        subtitle.filePath === companion && companion !== sourceFilePath,
+    );
+  }
 
   return {
     id: uuidv4(),
@@ -190,12 +255,23 @@ export async function getAvailableSubtitles(
   subtitlePath: string,
   sourceLanguage?: string,
   targetLanguage?: string,
+  options: ReadOptions = {},
 ): Promise<DetectedSubtitle[]> {
   const dir = path.dirname(subtitlePath);
 
   const scanResult = await window.ipc.invoke('scanDirectorySubtitles', {
     directoryPath: dir,
+    strict: options.strict,
   });
+
+  if (options.strict) {
+    assertResponse(scanResult);
+    if (
+      !Array.isArray(scanResult.data) ||
+      !scanResult.data.every((file) => typeof file === 'string')
+    )
+      throw new Error('INVALID_SUBTITLE_SCAN_RESPONSE');
+  }
 
   if (!scanResult.success || !scanResult.data) {
     return [];
@@ -207,6 +283,7 @@ export async function getAvailableSubtitles(
       const langResult = await window.ipc.invoke('detectLanguage', {
         filePath,
       });
+      if (options.strict) assertResponse(langResult);
       const lang = langResult.success ? langResult.data?.code : undefined;
 
       // 计算置信度：与源字幕同名的文件置信度更高
@@ -271,17 +348,42 @@ export function ensureSubtitleInList(
  * 从 ProofreadItem 加载 PendingFile（包括检测可用字幕）
  * @param item ProofreadItem 数据
  */
-export async function loadPendingFileFromItem(item: {
-  id: string;
-  videoPath?: string;
-  sourceSubtitlePath: string;
-  targetSubtitlePath?: string;
-  proofreadDataFile?: string;
-  sourceLanguage?: string;
-  targetLanguage?: string;
-  status: 'pending' | 'in_progress' | 'completed';
-  detectedSubtitles?: DetectedSubtitle[];
-}): Promise<PendingFile> {
+export async function loadPendingFileFromItem(
+  item: {
+    id: string;
+    videoPath?: string;
+    sourceSubtitlePath: string;
+    targetSubtitlePath?: string;
+    proofreadDataFile?: string;
+    sourceLanguage?: string;
+    targetLanguage?: string;
+    status: 'pending' | 'in_progress' | 'completed';
+    detectedSubtitles?: DetectedSubtitle[];
+  },
+  options: ReadOptions = {},
+): Promise<PendingFile> {
+  if (options.strict) {
+    if (
+      !item ||
+      typeof item.id !== 'string' ||
+      !item.id ||
+      typeof item.sourceSubtitlePath !== 'string' ||
+      (!item.sourceSubtitlePath && !item.videoPath) ||
+      !['pending', 'in_progress', 'completed'].includes(item.status) ||
+      [
+        'videoPath',
+        'targetSubtitlePath',
+        'proofreadDataFile',
+        'sourceLanguage',
+        'targetLanguage',
+      ].some(
+        (field) => item[field] !== undefined && typeof item[field] !== 'string',
+      )
+    )
+      throw new Error('INVALID_PROOFREAD_ITEM');
+    if (item.detectedSubtitles !== undefined)
+      assertDetectedSubtitles(item.detectedSubtitles);
+  }
   let detectedSubtitles: DetectedSubtitle[] = [];
   const isSubtitleOnlyMode = !item.videoPath;
 
@@ -299,7 +401,12 @@ export async function loadPendingFileFromItem(item: {
       // 有视频：使用视频检测
       const detectResult = await window.ipc.invoke('detectSubtitles', {
         videoPath: item.videoPath,
+        strict: options.strict,
       });
+      if (options.strict) {
+        assertResponse(detectResult);
+        assertDetectedSubtitles(detectResult.data?.detectedSubtitles);
+      }
       if (detectResult.success) {
         detectedSubtitles = detectResult.data.detectedSubtitles || [];
       }
@@ -308,8 +415,9 @@ export async function loadPendingFileFromItem(item: {
       const userConfig = await window.ipc.invoke('getUserConfig');
       detectedSubtitles = await getAvailableSubtitles(
         item.sourceSubtitlePath,
-        userConfig?.sourceLanguage,
-        userConfig?.targetLanguage,
+        item.sourceLanguage || userConfig?.sourceLanguage,
+        item.targetLanguage || userConfig?.targetLanguage,
+        options,
       );
     }
   }
@@ -340,7 +448,12 @@ export async function loadPendingFileFromItem(item: {
     proofreadDataFile: item.proofreadDataFile,
     sourceLanguage: item.sourceLanguage,
     targetLanguage: item.targetLanguage,
-    status: item.status === 'completed' ? 'completed' : 'pending',
+    status:
+      item.status === 'completed'
+        ? 'completed'
+        : item.status === 'in_progress'
+          ? 'proofreading'
+          : 'pending',
     isSubtitleOnlyMode,
   };
 }

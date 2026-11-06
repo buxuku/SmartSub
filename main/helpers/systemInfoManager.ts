@@ -1,11 +1,14 @@
-import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron';
+import { cleanTaskStorage } from './taskRuns/storageRuntime';
+import { dialogWindow } from '../automation/events';
+import { ipcMain } from '../automation/handlers';
+import { app, BrowserWindow, dialog, shell } from 'electron';
 import os from 'os';
 import { randomUUID } from 'crypto';
 import { getModelsInstalled, getPath, deleteModel } from './whisper';
 import {
   getFasterWhisperModelsInstalled,
   getFasterWhisperModelsPath,
-  toCt2CacheDirName,
+  getCt2ModelCacheDir,
 } from './modelCatalog';
 import {
   validateModelLayout,
@@ -19,6 +22,11 @@ import {
   readEngineManifest,
   getEngineDownloadUrl,
   normalizePyEngineVariant,
+  getEngineDir,
+  getRuntimePythonPath,
+  getEngineSitePackages,
+  getEngineMainPy,
+  getPyEnginesRoot,
 } from './pythonRuntime/paths';
 import { getHfHost, getModelScopeBase } from './config/downloadConfig';
 import type { EngineStatus, PyEngineVariant } from '../../types/engine';
@@ -27,6 +35,7 @@ import {
   getCt2ProgressKey,
   getFasterWhisperModelDownloader,
   deleteCt2Model,
+  getCt2DeleteTargets,
 } from './fasterWhisperModelDownloader';
 import {
   getFunasrModelDownloader,
@@ -116,6 +125,7 @@ import { getTempDir } from './fileUtils';
 import { logMessage, store } from './storeManager';
 import { resolveModelRoot, type StorageKind } from './storagePaths';
 import { testTranslation } from '../translate';
+import { recordProviderHealth } from './providerHealth';
 import { getBuildInfo } from './buildInfo';
 import { getSpeakerDiarizationModelDownloader } from './speakerDiarization/modelDownloader';
 import {
@@ -131,6 +141,10 @@ import {
 import { getSpeakerDiarizationRuntime } from './speakerDiarization/runtime';
 
 let downloadingModels = new Set<string>();
+export function isModelDownloadBusy() {
+  return downloadingModels.size > 0;
+}
+let quickDownloadOwner: { senderId: number; requestId: string } | null = null;
 
 /** 可文件夹导入的引擎类型（builtin 走单文件导入，不在此列）。 */
 type FolderImportEngine =
@@ -163,7 +177,8 @@ function validateImportLayout(
 /**
  * 解析「从文件夹导入」的校验集与目的地（按指定引擎+模型槽消歧）。
  * - sherpa ASR 引擎：落 `<engine root>/<dirName>`，校验集取 catalog requiredFiles；
- * - fasterWhisper：落合成快照目录，使 resolveCt2ModelSnapshotDir 命中，校验集为 CT2 关键文件。
+ * - fasterWhisper：落合成快照目录，使 resolveCt2ModelSnapshotDir 命中，校验集为 CT2 关键文件；
+ *   与下载一致落在 `<模型路径>/hub/` 下，不在用户的模型路径根上新增 models--*（#519）。
  * 返回 null 表示模型 id 非法/缺失。
  */
 function resolveImportPlan(
@@ -208,8 +223,7 @@ function resolveImportPlan(
     return {
       requiredFiles: CT2_REQUIRED_FILES,
       destDir: path.join(
-        getFasterWhisperModelsPath(),
-        toCt2CacheDirName(modelId),
+        getCt2ModelCacheDir(modelId),
         'snapshots',
         CT2_IMPORT_SNAPSHOT_REV,
       ),
@@ -267,6 +281,31 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     const userDataPath = app.getPath('userData');
     const sourceOf = (kind: StorageKind) =>
       resolveModelRoot(kind, settingsSnapshot, userDataPath).source;
+
+    let logsDir = '';
+    try {
+      logsDir = app.getPath('logs');
+    } catch {
+      logsDir = path.join(userDataPath, 'logs');
+    }
+
+    const fasterWhisperDir = getEngineDir('faster-whisper');
+    const fasterWhisperInstalled = isRuntimeInstalled('faster-whisper');
+    const fasterWhisperManifest = readEngineManifest('faster-whisper');
+    const fasterWhisperVariant = normalizePyEngineVariant(
+      fasterWhisperManifest?.variant,
+    );
+    const isGpuVariantSupported =
+      process.platform === 'win32' || process.platform === 'linux';
+
+    const ttsModelsPath = resolveModelRoot(
+      'tts',
+      settingsSnapshot,
+      userDataPath,
+    ).path;
+    const tempDir = getTempDir();
+    const cpus = os.cpus() || [];
+
     return {
       modelsInstalled: getModelsInstalled(),
       modelsPath: getPath('modelsPath'),
@@ -303,7 +342,84 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       parakeetModelsInstalled: getInstalledParakeetModels(),
       parakeetModelsPath: getParakeetModelsRoot(),
       speakerDiarizationModelInstalled: isSpeakerDiarizationModelInstalled(),
+      speakerDiarizationRuntimeInstalled: isSherpaLibInstalled(),
       speakerDiarizationModelsPath: getSpeakerDiarizationModelsRoot(),
+      // 增强的拓扑结构，供 AI 助手、自动化工具与问题排查全面反射
+      storageTopology: {
+        userData: userDataPath,
+        storageRoot: settingsSnapshot?.storageRoot?.trim() || null,
+        pyEnginesRoot: getPyEnginesRoot(),
+        logsDir,
+        tempDir,
+        modelsDirs: {
+          whisper: getPath('modelsPath'),
+          fasterWhisper: getFasterWhisperModelsPath(),
+          funasr: getFunasrModelsRoot(),
+          qwen: getQwenModelsRoot(),
+          firered: getFireRedModelsRoot(),
+          parakeet: getParakeetModelsRoot(),
+          speakerDiarization: getSpeakerDiarizationModelsRoot(),
+          tts: ttsModelsPath,
+        },
+      },
+      engineRuntimes: {
+        fasterWhisper: {
+          engineType: 'python-portable',
+          engineDir: fasterWhisperDir,
+          pythonExecutable: getRuntimePythonPath(fasterWhisperDir),
+          sitePackages: getEngineSitePackages('faster-whisper'),
+          mainScript: getEngineMainPy('faster-whisper'),
+          installed: fasterWhisperInstalled,
+          version: fasterWhisperManifest?.version || null,
+          activeVariant: fasterWhisperVariant,
+          supportedVariants: isGpuVariantSupported ? ['cpu', 'cuda'] : ['cpu'],
+          requiresExternalPython: false,
+          notes:
+            'Isolated self-contained portable Python runtime. Does not depend on system Python. CUDA GPU acceleration is supported only on Windows and Linux with NVIDIA drivers. Inactive variants are parked locally in .parked/ for offline switching.',
+        },
+        sherpaOnnx: {
+          engineType: 'sherpa-onnx-native',
+          engines: ['funasr', 'qwen', 'firered', 'parakeet'],
+          installed: isSherpaLibInstalled(),
+          requiresExternalPython: false,
+          notes:
+            'Native C++ dynamic addon bindings via sherpa-onnx. Completely offline and requires no Python.',
+        },
+        whisperCpp: {
+          engineType: 'whisper-cpp-native',
+          requiresExternalPython: false,
+          notes: 'Native C/C++ binary runtime loading GGML models.',
+        },
+      },
+      hardwareEnvironment: {
+        platform: process.platform,
+        arch: process.arch,
+        osRelease: os.release(),
+        totalMemoryGB: Math.round(os.totalmem() / (1024 * 1024 * 1024)),
+        freeMemoryGB: Math.round(os.freemem() / (1024 * 1024 * 1024)),
+        cpuCount: cpus.length,
+        cpuModel: cpus[0]?.model || 'unknown',
+        gpuAcceleration:
+          process.platform === 'darwin'
+            ? 'Apple Silicon (Metal/CoreML acceleration available, NVIDIA CUDA not available on macOS)'
+            : 'NVIDIA CUDA acceleration available for faster-whisper when NVIDIA GPU and driver are present; CPU fallback supported',
+      },
+      architectureNotes: {
+        storageRule:
+          'Settings storageRoot takes precedence over userData for all model, runtime, and temp directories. Modifying storageRoot changes where new files are saved and looked up, but does not move existing files automatically.',
+        qualityRules:
+          'Reading speed (CPS) calculates non-whitespace characters / duration. Standard reference thresholds are 8 CPS for Chinese and 20 CPS for English/other languages. A 15% tolerance buffer is applied before warning (Chinese warns at >9.2 CPS, English at >23.0 CPS).',
+        pipelineStages:
+          'Pipeline order: Media -> Extract Audio -> VAD Speech Detection -> ASR Transcription -> AI Refine/Segmentation -> Translation -> Dubbing -> Video Composition. ASR works completely offline with local engines. AI Refinement and Translation require a configured cloud or local LLM translation provider. Standard tasks pause at review gates for user proofreading before downstream steps.',
+        troubleshootingTips: {
+          downloadFailed:
+            'Switch download source to mirror in Settings -> Advanced Download Sources, or configure a network proxy.',
+          cudaOnMac:
+            'macOS hardware does not have NVIDIA CUDA support; faster-whisper on macOS always runs in CPU mode with Apple Silicon optimizations.',
+          modelMissingAfterPathChange:
+            'If models disappeared after setting a unified storage root, either move existing model folders into the new storage directory or re-download them.',
+        },
+      },
     };
   });
 
@@ -311,6 +427,11 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     await deleteModel(modelName?.toLowerCase());
     return true;
   });
+
+  // 删除确认框的预览：只读，列出 deleteCt2Model 将删除的目录。
+  ipcMain.handle('getCt2DeleteTargets', (_event, modelId) =>
+    getCt2DeleteTargets(modelId),
+  );
 
   ipcMain.handle('deleteCt2Model', async (_event, modelId) => {
     deleteCt2Model(modelId);
@@ -320,12 +441,16 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
 
   ipcMain.handle(
     'downloadModel',
-    async (event, { model, source, needsCoreML }) => {
+    async (event, { model, source, needsCoreML, requestId }) => {
       if (downloadingModels.size > 0) {
         return { success: false, error: 'anotherDownloadInProgress' };
       }
 
       downloadingModels.add(model);
+      quickDownloadOwner =
+        typeof requestId === 'string'
+          ? { senderId: event.sender.id, requestId }
+          : null;
       try {
         await modelDownloader.download(
           model?.toLowerCase(),
@@ -338,6 +463,8 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         logMessage(`Model download error: ${error}`, 'error');
         downloadingModels.delete(model);
         return { success: false, error: String(error) };
+      } finally {
+        quickDownloadOwner = null;
       }
     },
   );
@@ -754,21 +881,33 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     },
   );
 
-  ipcMain.handle('cancelModelDownload', async () => {
-    modelDownloader.cancel();
-    ct2ModelDownloader.cancel();
-    funasrModelDownloader.cancel();
-    qwenModelDownloader.cancel();
-    fireRedModelDownloader.cancel();
-    ttsModelDownloader.cancel();
-    speakerDiarizationModelDownloader.cancel();
-    // Parakeet 等待当前会话真正退出并完成 finally 清理，避免取消后立即重试时
-    // 旧任务清掉新任务的进度键/互斥状态。
-    await parakeetModelDownloader.cancel();
-    // 不提前清空下载锁：各下载 session 在真正响应 abort 并退出后自行移除 key。
-    // 否则 UI 可立即启动新任务，让旧异步链复用新 controller / 混写进度与文件。
-    return true;
-  });
+  ipcMain.handle(
+    'cancelModelDownload',
+    async (event, request?: { requestId?: string }) => {
+      // Quick-install cancellation must never abort another window's download.
+      if (request?.requestId) {
+        if (
+          quickDownloadOwner?.senderId === event.sender.id &&
+          quickDownloadOwner.requestId === request.requestId
+        )
+          modelDownloader.cancel();
+        return true;
+      }
+      modelDownloader.cancel();
+      ct2ModelDownloader.cancel();
+      funasrModelDownloader.cancel();
+      qwenModelDownloader.cancel();
+      fireRedModelDownloader.cancel();
+      ttsModelDownloader.cancel();
+      speakerDiarizationModelDownloader.cancel();
+      // Parakeet 等待当前会话真正退出并完成 finally 清理，避免取消后立即重试时
+      // 旧任务清掉新任务的进度键/互斥状态。
+      await parakeetModelDownloader.cancel();
+      // 不提前清空下载锁：各下载 session 在真正响应 abort 并退出后自行移除 key。
+      // 否则 UI 可立即启动新任务，让旧异步链复用新 controller / 混写进度与文件。
+      return true;
+    },
+  );
 
   ipcMain.handle(
     'importModel',
@@ -777,16 +916,21 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       options?: {
         engine?: 'builtin' | FolderImportEngine;
         modelId?: string;
+        sourcePath?: string;
       },
     ) => {
       const engine = options?.engine;
 
       // builtin（默认/无参）：维持单文件导入（.bin / .mlmodelc → builtin 模型目录）
       if (!engine || engine === 'builtin') {
-        const result = await dialog.showOpenDialog(mainWindow, {
-          properties: ['openFile'],
-          filters: [{ name: 'Model Files', extensions: ['bin', 'mlmodelc'] }],
-        });
+        const result = options?.sourcePath
+          ? { canceled: false, filePaths: [options.sourcePath] }
+          : await dialog.showOpenDialog(dialogWindow(mainWindow), {
+              properties: ['openFile'],
+              filters: [
+                { name: 'Model Files', extensions: ['bin', 'mlmodelc'] },
+              ],
+            });
 
         if (!result.canceled && result.filePaths.length > 0) {
           const sourcePath = result.filePaths[0];
@@ -811,9 +955,11 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         return { success: false, reason: 'invalid-model' };
       }
 
-      const picked = await dialog.showOpenDialog(mainWindow, {
-        properties: ['openDirectory'],
-      });
+      const picked = options?.sourcePath
+        ? { canceled: false, filePaths: [options.sourcePath] }
+        : await dialog.showOpenDialog(dialogWindow(mainWindow), {
+            properties: ['openDirectory'],
+          });
       if (picked.canceled || picked.filePaths.length === 0) {
         return { success: false, canceled: true };
       }
@@ -955,6 +1101,9 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   // 清除缓存
   ipcMain.handle('clearCache', async () => {
     try {
+      const taskCleanup = await cleanTaskStorage();
+      if (taskCleanup.errors.length)
+        throw new Error(taskCleanup.errors.join('; '));
       const tempDir = getTempDir();
       const files = await fse.readdir(tempDir);
 
@@ -981,8 +1130,19 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   ipcMain.handle('testTranslation', async (_, args) => {
     const { provider, sourceLanguage, targetLanguage } = args;
     try {
-      return await testTranslation(provider, sourceLanguage, targetLanguage);
+      const result = await testTranslation(
+        provider,
+        sourceLanguage,
+        targetLanguage,
+      );
+      recordProviderHealth(
+        'translation',
+        provider,
+        Boolean(result?.translation),
+      );
+      return result;
     } catch (error) {
+      recordProviderHealth('translation', provider, false);
       throw error;
     }
   });

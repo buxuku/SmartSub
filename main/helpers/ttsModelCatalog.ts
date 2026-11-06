@@ -48,7 +48,7 @@ export interface TtsVoice {
   /** 英文展示名。 */
   labelEn: string;
   lang: 'zh' | 'en';
-  gender: 'f' | 'm';
+  gender?: 'f' | 'm';
 }
 
 /** 附加独立工件（整包之外的单文件，如 zipvoice 的 vocos vocoder 位于独立 release 路径）。 */
@@ -155,7 +155,6 @@ function aishell3Voices(): TtsVoice[] {
       label: `中文说话人 ${n}`,
       labelEn: `Chinese Speaker ${n}`,
       lang: 'zh',
-      gender: 'f',
     });
   }
   return voices;

@@ -1,0 +1,171 @@
+name: Windows non-ASCII paths
+
+# 中文 Windows 用户名下，默认安装目录、userData、%TEMP% 都含中文。原生库（sherpa-onnx、
+# whisper.cpp 的音频解码）用窄字符 API 打开文件，在非 UTF-8 代码页下打不开这些路径：
+#   - sherpa VAD 创建失败后只在 stderr 打印 `vad is nullptr`，不抛错，结果是 0 个语音段；
+#   - sherpa writeWave 失败只返回 false；
+#   - whisper 读不到音频时 Promise 仍 resolve，只是没有任何分段。
+# ci.yml 只在 ubuntu 上跑，覆盖不到只会在 Windows 上出现的问题。
+# 这里在 windows-latest 上用含中文的目录做两件事：
+#   1. probe：复现上述原生库的限制（只报告，证明这台机器上缺陷确实存在，对策的验证才有意义）；
+#   2. verify：断言应用里的对策有效（随包模型暂存到 ASCII 目录、worker 里 JS 读写 wav、
+#      whisper 用 PCM 缓冲输入、静默失败变成错误），并在 Windows 上跑一遍引擎单测。
+# runner 的 ANSI 代码页通常是 1252，不是中文系统的 936，但同属“窄字符 API 打不开含中文路径”
+# 这一类失败；脚本会打印实际的 ACP。
+# 只在相关文件变化时触发，不拖慢其他 PR。不使用任何 secrets，不发布任何产物。
+on:
+  pull_request:
+    paths:
+      - 'main/helpers/sherpaOnnx/**'
+      - 'main/helpers/engines/whisperAudioInput.ts'
+      - 'main/helpers/engines/builtinEngine.ts'
+      - 'main/helpers/addonLoader.ts'
+      - 'main/helpers/audioProcessor.ts'
+      - 'main/helpers/crash/utilityHost.ts'
+      - 'extraResources/sherpa/worker/**'
+      - 'extraResources/sherpa/vad/**'
+      - 'extraResources/sherpa/denoise/**'
+      - 'extraResources/sherpa/vendor/**'
+      - 'scripts/windows-nonascii/**'
+      - 'scripts/fetch-sherpa-native.mjs'
+      - 'scripts/fetch-whisper-addon.mjs'
+      - 'scripts/test-engine-units.ts'
+      - 'scripts/test-wav-io.cjs'
+      - 'scripts/test-sherpa-worker.cjs'
+      - 'scripts/test-sherpa-runtime-failures.cjs'
+      - '.github/workflows/windows-nonascii.yml'
+  push:
+    branches:
+      - main
+      - 'fix/windows-nonascii-*'
+    paths:
+      - 'main/helpers/sherpaOnnx/**'
+      - 'main/helpers/engines/whisperAudioInput.ts'
+      - 'main/helpers/engines/builtinEngine.ts'
+      - 'main/helpers/addonLoader.ts'
+      - 'main/helpers/audioProcessor.ts'
+      - 'main/helpers/crash/utilityHost.ts'
+      - 'extraResources/sherpa/worker/**'
+      - 'extraResources/sherpa/vad/**'
+      - 'extraResources/sherpa/denoise/**'
+      - 'extraResources/sherpa/vendor/**'
+      - 'scripts/windows-nonascii/**'
+      - 'scripts/fetch-sherpa-native.mjs'
+      - 'scripts/fetch-whisper-addon.mjs'
+      - 'scripts/test-engine-units.ts'
+      - 'scripts/test-wav-io.cjs'
+      - 'scripts/test-sherpa-worker.cjs'
+      - 'scripts/test-sherpa-runtime-failures.cjs'
+      - '.github/workflows/windows-nonascii.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-nonascii-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Engine unit tests on Windows
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: yarn
+
+      # 不需要 Electron 二进制和原生库：不跑 postinstall
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-scripts
+
+      # 路径处理、暂存、wav 读写、PCM 输入适配、静默失败转错误都按 Windows 的语义跑一遍。
+      # 单测会加载 funasrModelCatalog 等模块，它们（以及 electron-store）在模块顶层
+      # `require('electron')`；跳过 postinstall 后 electron 包没有 path.txt，require 会直接抛
+      # “Electron failed to install correctly”。ELECTRON_OVERRIDE_DIST_PATH 让它像开发机上一样
+      # 返回一个路径字符串（单测不会用到 Electron 的 API）。
+      - name: Unit tests (engines)
+        env:
+          ELECTRON_OVERRIDE_DIST_PATH: ${{ runner.temp }}
+        run: yarn test:engines
+
+  sherpa:
+    name: sherpa-onnx with a non-ASCII path
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: yarn
+
+      # 不跑 postinstall：不需要 Electron 二进制，原生库由下面的脚本单独拉取
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-scripts
+
+      - name: Fetch sherpa-onnx native libraries
+        run: node scripts/fetch-sherpa-native.mjs
+
+      # 只报告：原生库在含中文的路径下确实打不开文件
+      - name: Probe sherpa-onnx (native limitation)
+        run: node scripts/windows-nonascii/probe-sherpa.mjs
+
+      - name: Verify the sherpa-onnx fixes
+        run: node scripts/windows-nonascii/verify-sherpa.mjs
+
+  whisper:
+    name: whisper.cpp addon with a non-ASCII path
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-scripts
+
+      - name: Fetch whisper.cpp addon
+        run: node scripts/fetch-whisper-addon.mjs
+
+      - name: Download ggml-tiny model
+        run: |
+          curl -fL --retry 5 --retry-delay 5 --retry-all-errors \
+            -o "$RUNNER_TEMP/ggml-tiny.bin" \
+            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
+          ls -l "$RUNNER_TEMP/ggml-tiny.bin"
+
+      # 只报告：addon 在含中文的音频路径下读不到文件
+      - name: Probe whisper.cpp addon (native limitation)
+        env:
+          WHISPER_MODEL: ${{ runner.temp }}\ggml-tiny.bin
+        run: node scripts/windows-nonascii/probe-whisper.mjs
+
+      - name: Verify the whisper.cpp fix
+        env:
+          WHISPER_MODEL: ${{ runner.temp }}\ggml-tiny.bin
+        run: node scripts/windows-nonascii/verify-whisper.mjs

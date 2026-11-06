@@ -1,4 +1,7 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { dialogWindow } from '../automation/events';
+import { ipcMain } from '../automation/handlers';
+import { BrowserWindow, dialog } from 'electron';
+import { invalidEngineSettings } from '../../types/engineSettings';
 import fs from 'fs';
 import { logMessage, store } from './storeManager';
 import { listEngineAdapters } from './engines/registry';
@@ -47,7 +50,7 @@ export function registerEngineIpcHandlers(): void {
       return statuses;
     } catch (error) {
       logMessage(`Error getting engine status: ${error}`, 'error');
-      return {};
+      throw error;
     }
   });
 
@@ -83,6 +86,9 @@ export function registerEngineIpcHandlers(): void {
           coerceEngineId(engineId),
           mainWindow || undefined,
         );
+        if (downloader.isBusy()) {
+          return { success: false, error: 'operation_in_progress' };
+        }
         // 不支持 cuda 的平台（macOS）会被 normalize 收敛为 cpu，避免下载不存在的产物。
         downloader
           .download(source, normalizePyEngineVariant(variant))
@@ -168,11 +174,18 @@ export function registerEngineIpcHandlers(): void {
         if (isTranscriptionBusy()) {
           return { success: false, error: 'engine_busy' };
         }
+        const engineId = coerceEngineId(payload?.engineId);
+        const downloader = getPyEngineDownloader(
+          engineId,
+          mainWindow || undefined,
+        );
+        if (downloader.isBusy()) {
+          return { success: false, error: 'operation_in_progress' };
+        }
         await shutdownPythonRuntime();
 
         // 整个引擎包目录（含内部 manifest.json）一并删除即回到未安装态；
         // 变体切换驻留的副本一并清理，避免卸载后残留大体积目录。
-        const engineId = coerceEngineId(payload?.engineId);
         const engineDir = getEngineDir(engineId);
         if (fs.existsSync(engineDir)) {
           fs.rmSync(engineDir, { recursive: true, force: true });
@@ -193,6 +206,65 @@ export function registerEngineIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    'import-py-engine',
+    async (
+      _event,
+      payload?: {
+        engineId?: PyEngineId;
+        sourcePath?: string;
+      },
+    ) => {
+      try {
+        if (isTranscriptionBusy()) {
+          return { success: false, error: 'engine_busy' };
+        }
+        const engineId = coerceEngineId(payload?.engineId);
+        const downloader = getPyEngineDownloader(
+          engineId,
+          mainWindow || undefined,
+        );
+        if (downloader.isBusy()) {
+          return { success: false, error: 'operation_in_progress' };
+        }
+
+        let sourcePath = payload?.sourcePath;
+        if (!sourcePath) {
+          const properties: Array<'openFile' | 'openDirectory'> =
+            process.platform === 'darwin'
+              ? ['openFile', 'openDirectory']
+              : ['openFile'];
+          const picked = await dialog.showOpenDialog(
+            mainWindow ? dialogWindow(mainWindow) : undefined,
+            {
+              title: '选择 faster-whisper 运行时压缩包或目录',
+              properties,
+              filters: [
+                {
+                  name: 'Runtime Package',
+                  extensions: ['tar.gz', 'tgz', 'gz', 'tar', 'zip'],
+                },
+                { name: 'All Files', extensions: ['*'] },
+              ],
+            },
+          );
+          if (picked.canceled || picked.filePaths.length === 0) {
+            return { success: false, canceled: true };
+          }
+          sourcePath = picked.filePaths[0];
+        }
+
+        return await downloader.importRuntime(sourcePath);
+      } catch (error) {
+        logMessage(`Error importing py-engine: ${error}`, 'error');
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
     'set-faster-whisper-settings',
     async (
       _event,
@@ -205,13 +277,18 @@ export function registerEngineIpcHandlers(): void {
       },
     ) => {
       try {
-        const settings = store.get('settings');
-        store.set('settings', {
-          ...settings,
+        const patch = {
           ...(device !== undefined ? { fasterWhisperDevice: device } : {}),
           ...(computeType !== undefined
             ? { fasterWhisperComputeType: computeType }
             : {}),
+        };
+        if (invalidEngineSettings(patch).length)
+          return { success: false, error: 'INVALID_ENGINE_SETTINGS' };
+        const settings = store.get('settings');
+        store.set('settings', {
+          ...settings,
+          ...patch,
         });
         return { success: true };
       } catch (error) {

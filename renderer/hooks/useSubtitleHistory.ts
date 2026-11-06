@@ -5,6 +5,7 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
+import type { QualityReviewState } from '../../types/qualityReview';
 import { Subtitle } from './useSubtitles';
 import {
   normalizePrimarySpeakerId,
@@ -22,15 +23,16 @@ export interface RangeCommand {
   inserted: Subtitle[];
 }
 
-const MAX_HISTORY = 200;
-
 interface ProofreadCommand {
+  qualityBefore?: QualityReviewState;
+  qualityAfter?: QualityReviewState;
   range?: RangeCommand;
   speakersBefore?: SpeakerInfo[];
   speakersAfter?: SpeakerInfo[];
 }
 
 export interface ProofreadHistoryState {
+  qualityReview?: QualityReviewState;
   subtitles: Subtitle[];
   speakers: SpeakerInfo[];
 }
@@ -54,6 +56,8 @@ export const subtitleRowEquals = (a: Subtitle, b: Subtitle): boolean =>
     a.startEndTime === b.startEndTime &&
     (a.sourceContent ?? '') === (b.sourceContent ?? '') &&
     (a.targetContent ?? '') === (b.targetContent ?? '') &&
+    a.translationStatus === b.translationStatus &&
+    a.translationError === b.translationError &&
     speakerAssignmentEquals(a, b));
 
 /**
@@ -99,11 +103,18 @@ export function useSubtitleHistory() {
   const bump = useCallback(() => setVersion((v) => v + 1), []);
 
   const push = useCallback(
-    (cmd: RangeCommand) => {
+    (
+      cmd: RangeCommand,
+      quality?: { before: QualityReviewState; after: QualityReviewState },
+    ) => {
       // 新命令入栈：丢弃 redo 分支
-      const cmds = commandsRef.current.slice(0, cursorRef.current);
-      cmds.push({ range: cmd });
-      while (cmds.length > MAX_HISTORY) cmds.shift();
+      const cmds = commandsRef.current;
+      cmds.splice(cursorRef.current);
+      cmds.push({
+        range: cmd,
+        qualityBefore: quality?.before,
+        qualityAfter: quality?.after,
+      });
       commandsRef.current = cmds;
       cursorRef.current = cmds.length;
       bump();
@@ -122,7 +133,8 @@ export function useSubtitleHistory() {
         computeRangeDiff(beforeSubtitles, afterSubtitles) || undefined;
       const speakersChanged = !speakerListsEqual(beforeSpeakers, afterSpeakers);
       if (!range && !speakersChanged) return;
-      const cmds = commandsRef.current.slice(0, cursorRef.current);
+      const cmds = commandsRef.current;
+      cmds.splice(cursorRef.current);
       cmds.push({
         range,
         ...(speakersChanged
@@ -132,8 +144,18 @@ export function useSubtitleHistory() {
             }
           : {}),
       });
-      while (cmds.length > MAX_HISTORY) cmds.shift();
       commandsRef.current = cmds;
+      cursorRef.current = cmds.length;
+      bump();
+    },
+    [bump],
+  );
+
+  const pushQuality = useCallback(
+    (before: QualityReviewState, after: QualityReviewState) => {
+      const cmds = commandsRef.current;
+      cmds.splice(cursorRef.current);
+      cmds.push({ qualityBefore: before, qualityAfter: after });
       cursorRef.current = cmds.length;
       bump();
     },
@@ -164,17 +186,22 @@ export function useSubtitleHistory() {
         reset();
         return null;
       }
-      const next = current.slice();
-      if (range) {
-        next.splice(range.start, range.inserted.length, ...range.removed);
-      }
+      const next = range
+        ? current
+            .slice(0, range.start)
+            .concat(
+              range.removed,
+              current.slice(range.start + range.inserted.length),
+            )
+        : current;
       cursorRef.current -= 1;
       bump();
       return {
+        qualityReview: cmd.qualityBefore,
         subtitles: next,
-        speakers: (cmd.speakersBefore || currentSpeakers).map((speaker) => ({
-          ...speaker,
-        })),
+        speakers: cmd.speakersBefore
+          ? cmd.speakersBefore.map((speaker) => ({ ...speaker }))
+          : currentSpeakers,
       };
     },
     [bump, reset],
@@ -196,17 +223,22 @@ export function useSubtitleHistory() {
         reset();
         return null;
       }
-      const next = current.slice();
-      if (range) {
-        next.splice(range.start, range.removed.length, ...range.inserted);
-      }
+      const next = range
+        ? current
+            .slice(0, range.start)
+            .concat(
+              range.inserted,
+              current.slice(range.start + range.removed.length),
+            )
+        : current;
       cursorRef.current += 1;
       bump();
       return {
+        qualityReview: cmd.qualityAfter,
         subtitles: next,
-        speakers: (cmd.speakersAfter || currentSpeakers).map((speaker) => ({
-          ...speaker,
-        })),
+        speakers: cmd.speakersAfter
+          ? cmd.speakersAfter.map((speaker) => ({ ...speaker }))
+          : currentSpeakers,
       };
     },
     [bump, reset],
@@ -215,6 +247,7 @@ export function useSubtitleHistory() {
   return {
     push,
     pushDocument,
+    pushQuality,
     undo,
     redo,
     reset,

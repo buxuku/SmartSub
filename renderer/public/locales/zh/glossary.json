@@ -1,6 +1,7 @@
 {
+  "scope": { "project": "仅当前项目", "global": "全局" },
   "list": {
-    "title": "全局词库",
+    "title": "术语词库",
     "priorityHint": "从上到下优先",
     "toggleAria": "启用或停用词库「{{name}}」",
     "entryCount": "{{count}} 条词条"
@@ -33,7 +34,7 @@
     "noGlossaries": "还没有词库",
     "noGlossariesHint": "按剧集或领域建立多套词库，需要使用时打开启用开关。",
     "selectGlossary": "选择一个词库",
-    "selectGlossaryHint": "词库是全局资源，不需要在每个任务里重复选择。",
+    "selectGlossaryHint": "项目术语仅在所属项目内生效，全局术语跨项目生效。",
     "noEntries": "这个词库还没有词条",
     "noEntriesHint": "新增词条，或从 CSV / TXT 文件批量导入。",
     "noSearchResults": "没有匹配的词条",
@@ -45,7 +46,7 @@
   },
   "aiGuide": {
     "title": "AI 翻译自动使用已启用词库",
-    "description": "每个 AI/LLM 批次只注入当前源字幕实际命中的词条；翻译任务、校对重译和翻译 AI 优化使用同一规则。多个启用词库出现相同原文时，采用列表中最靠上的词条并写入日志。"
+    "description": "每个 AI/LLM 批次只注入当前项目及全局词库中命中的词条。项目术语优先于全局术语，同一范围内采用列表中最靠上的启用词条，冲突会写入日志。"
   },
   "traditionalGuide": {
     "title": "传统机翻请在厂商控制台维护术语",

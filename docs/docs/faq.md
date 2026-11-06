@@ -15,7 +15,7 @@ keywords:
 
 # 常见问题
 
-遇到问题先来这里查。没找到答案的话，打开[日志中心](/advanced/logs)复制相关日志，到 [GitHub Issues](https://github.com/buxuku/SmartSub/issues) 反馈，或加入微信交流群。
+遇到问题先来这里查。没找到答案的话，打开[日志中心](/advanced/logs)复制相关日志，到 [GitHub Issues](https://github.com/buxuku/SmartSub/issues) 反馈，或加入 QQ 交流群。
 
 ## 安装与启动
 
@@ -72,7 +72,9 @@ sudo xattr -dr com.apple.quarantine /Applications/SmartSub.app
 
 ### 字幕一行太长 / 断句不理想
 
-任务高级设置里调「每条字幕最大字数」与断句模式；选「效果档位」也会自动优化断句策略。
+1. 工具栏的「断句与精修」里设置「单条最长字数」，或改用 AI 语义断句
+2. 在「场景」里选一个贴近内容的场景（如会议访谈 / 播客、影视 / Vlog、短剧 / 短视频），会一并套用更合适的断句
+3. 仍不理想，到「更多设置 › 专家」的「断句精调」里调整单条字幕最长时长与停顿断句间隔
 
 ## 翻译
 
@@ -131,4 +133,4 @@ Edge 免费通道为逆向接口（曾大规模断供），**不承诺可用性*
 
 1. 打开[日志中心](/advanced/logs)复制错误前后的日志
 2. 附上应用版本、系统信息与复现步骤，[提交 Issue](https://github.com/buxuku/SmartSub/issues)
-3. 或加入微信交流群交流（入口见 [GitHub 仓库](https://github.com/buxuku/SmartSub)）
+3. 或加入 QQ 交流群交流（入口见 [GitHub 仓库](https://github.com/buxuku/SmartSub)）

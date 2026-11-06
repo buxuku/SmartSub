@@ -1,3 +1,4 @@
+import type { TaskActivity } from './taskActivity';
 import type { EngineStatus, TranscriptionEngine } from './engine';
 import type { MissedSpeechSummary, MissedSpeechWarning } from './missedSpeech';
 import type {
@@ -11,6 +12,7 @@ import type {
   SubtitleOutputFiles,
   SubtitleOutputFormat,
 } from './subtitleOutput';
+import type { TranslateContent } from './translateContent';
 
 export interface ISystemInfo {
   modelsInstalled: string[];
@@ -54,6 +56,7 @@ export interface ISystemInfo {
   parakeetModelsPath?: string;
   /** 可选角色分离模型（pyannote + 3D-Speaker）是否完整安装。 */
   speakerDiarizationModelInstalled?: boolean;
+  speakerDiarizationRuntimeInstalled?: boolean;
   /** 角色分离模型根目录。 */
   speakerDiarizationModelsPath?: string;
   /** userData 默认存储基座（「默认路径含中文」警示判定用） */
@@ -85,6 +88,12 @@ export interface ManuscriptMatchSummary {
 }
 
 export interface IFiles extends SubtitleOutputFiles {
+  taskRunId?: string;
+  taskRunRevision?: number;
+  stageRuns?: import('./taskRun').FileRun['stages'];
+  /** Runtime event routing; file UUIDs can be reused by restored drafts. */
+  taskProjectId?: string;
+  taskActivity?: TaskActivity;
   uuid: string;
   filePath: string;
   fileName: string;
@@ -97,8 +106,10 @@ export interface IFiles extends SubtitleOutputFiles {
   speakerDiarization?: '' | 'loading' | 'done' | 'error';
   speakerDiarizationProgress?: number;
   speakerDiarizationError?: string;
+  refineSubtitleError?: string;
   /** 配音附加阶段状态（运行时同其余阶段字段为 ''|loading|done|error 字符串） */
   dubbing?: boolean;
+  dubbingError?: string;
   /** 合成附加阶段状态（同上字符串状态机约定） */
   composeVideo?: boolean;
   audioFile?: string;
@@ -127,13 +138,46 @@ export interface IFiles extends SubtitleOutputFiles {
   wordTimelineFile?: string;
   missedSpeechSummary?: MissedSpeechSummary;
   missedSpeechWarnings?: MissedSpeechWarning[];
+  speechReviewStage?: 'checking' | 'reviewing' | 'complete';
+  /** Original recognition and automatic changes, for inspecting/recovering an edit. */
+  speechReviewFile?: string;
+  speechReviewOriginalFile?: string;
+  speechReviewSummary?: {
+    status: 'complete' | 'unavailable';
+    checked?: number;
+    recovered?: number;
+    retimed?: number;
+    pending?: number;
+    changes?: Array<{
+      start: number;
+      end: number;
+      original: string;
+      text: string;
+    }>;
+  };
   /** ASR 后参考文稿匹配阶段；缺省不存在即功能关闭。 */
   manuscriptMatch?: '' | 'loading' | 'done';
   /** 稳定的非致命回退码，renderer 据此本地化；不会令任务失败。 */
   manuscriptMatchError?: string;
+  /**
+   * 通读摘要阶段。字段名必须与 StageKey 同名。
+   * 降级也结算为 done，原因写在 summarizeEpisodeError。
+   */
+  summarizeEpisode?: '' | 'loading' | 'done' | 'error';
+  /** 摘要降级原因的稳定码；阶段仍为 done，不令任务失败。 */
+  summarizeEpisodeError?: string;
+  /** 本文件通读摘要正文；resume 时非空则跳过再打。 */
+  episodeSummary?: string;
+  summaryUsage?: { input_tokens?: number; output_tokens?: number };
+  /** 摘要源指纹（sha1）；与本次字幕、提示词、服务商和语言一致才复用。 */
+  summarySourceHash?: string;
   /** 仅供日志/tooltip 兜底的诊断细节，不参与本地化键。 */
   manuscriptMatchErrorDetail?: string;
   manuscriptMatchSummary?: ManuscriptMatchSummary;
+  /** 单文件独立绑定的参考文稿路径（若指定，优先于 formData.manuscriptPath；设为 '__none__' 表示显式不匹配） */
+  manuscriptPath?: string;
+  /** 单文件独立绑定的参考文稿显示名 */
+  manuscriptName?: string;
   /** 本次转写实际使用的后端标签（如 "CUDA 12.4.0" / "Vulkan" / "CPU"） */
   whisperBackend?: string;
   /** 该文件走了内封软字幕直提（跳过 ASR；角色分离开启时仍会抽音频）：用于任务列表标识 */
@@ -161,6 +205,13 @@ export interface IFiles extends SubtitleOutputFiles {
   finalVideoPath?: string;
 }
 
+export const TRANSLATION_INCOMPLETE_PIPELINE_PAUSED =
+  'TRANSLATION_INCOMPLETE_PIPELINE_PAUSED';
+export const TRANSLATION_INCOMPLETE_FOR_DUBBING =
+  'TRANSLATION_INCOMPLETE_FOR_DUBBING';
+export const TRANSLATION_INCOMPLETE_FOR_COMPOSE =
+  'TRANSLATION_INCOMPLETE_FOR_COMPOSE';
+
 export type TaskProjectType =
   | 'generateAndTranslate'
   | 'generateOnly'
@@ -168,6 +219,9 @@ export type TaskProjectType =
 
 /** 一次任务工程：任务维度记录，下挂文件列表 */
 export interface TaskProject {
+  currentRunId?: string;
+  runStatus?: import('./taskRun').RunStatus;
+  runRevision?: number;
   id: string;
   /** 默认「时间 + 第一个文件名」，用户可改 */
   name: string;
@@ -243,24 +297,31 @@ export interface IFormData {
   asrProviderId?: string;
   /** 优先直提媒体内封文本字幕；显式 false 时忽略内封字幕并强制使用 ASR。缺省 true。 */
   useEmbeddedSubtitles?: boolean;
-  translateContent:
-    | 'onlyTranslate'
-    | 'sourceAndTranslate'
-    | 'translateAndSource';
+  translateContent: TranslateContent;
   targetSrtSaveOption: string;
+  sourceSrtSaveOption?: string;
   customTargetSrtFileName: string;
   sourceLanguage: string;
   targetLanguage: string;
   translateRetryTimes: string;
+  /** 翻译服务商 id。'-1' 表示不翻译。 */
+  translateProvider?: string;
   subtitleOutputFormat?: SubtitleOutputFormat;
   /** Missing on legacy tasks; the singular format remains the compatibility fallback. */
   subtitleOutputFormats?: SubtitleOutputFormat[];
+  subtitleLayout?: 'original' | 'two-line';
+  subtitleLineWidth?: number;
   /**
    * 生成字幕时单条字幕最大显示字数 / 宽度（CJK 记 2、其余记 1）。
    * 0 或空 = 智能断句（引擎默认）；-1 = 不限制长度（仅按停顿/标点断句，不按字数硬切）；
    * 正数 = 自定义上限（超出时在标点或词边界处拆分）。
    */
   maxSubtitleChars?: number;
+  /** Task-specific cue limits; missing values retain the engine defaults. */
+  subtitleMaxDuration?: number;
+  subtitleMaxGap?: number;
+  /** Keep detected pauses, without extending cue tails or merging across silence. */
+  preserveSpeechPauses?: boolean;
   /**
    * faster-whisper 解码高级参数（均为任务级、可选）。
    * 缺省时不下发，让引擎保留自身默认与 temperature 回退序列。
@@ -277,6 +338,10 @@ export interface IFormData {
   aiSegmentation?: boolean;
   /** AI 字幕校正（精修遍 B）。缺省关闭。 */
   aiCorrection?: boolean;
+  /** Missing retains the legacy correction policy; applied only to AI correction. */
+  subtitleFillerPolicy?: 'remove-hesitations' | 'preserve';
+  /** Task-local style for AI subtitle translation, never changes provider defaults. */
+  subtitleTranslationStyle?: 'neutral' | 'conversational';
   /** 精修服务商：缺省/'follow-translation' = 跟随翻译服务（AI 类型时解析为同一服务商），或显式 AI 服务商 id。 */
   refineProvider?: string;
   /** 角色分离：在转写/翻译后用本地 sherpa 模型分析角色并对齐字幕。 */
@@ -292,4 +357,13 @@ export interface IFormData {
   manuscriptPath?: string;
   /** 创建快照时的显示名；运行时仍以 manuscriptPath 为唯一数据源。 */
   manuscriptName?: string;
+  /** 本次任务参与匹配的词库 id；undefined = 回落「全部已启用」（旧行为） */
+  glossaryIds?: string[];
+  /** 通读摘要开关；缺省 false，旧快照 / 旧配方无此键即关闭。 */
+  generateSummary?: boolean;
+  /**
+   * 摘要服务商：缺省 / 'follow-translation' = 跟随翻译服务（须 AI），
+   * 或显式 AI 服务商 id。
+   */
+  summaryProvider?: string;
 }

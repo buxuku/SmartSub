@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { store } from './store';
 import { getTranscriptionBusyCount } from './taskProcessor';
 import { decideCloseIntent, type CloseAction } from './windowCloseDecision';
@@ -9,6 +9,33 @@ type DialogLanguage = 'zh' | 'en';
 let isQuitting = false;
 /** 防止连点红叉时叠加多个对话框 */
 let closePromptOpen = false;
+const dirtyWindows = new Set<number>();
+
+export function confirmUnsavedWindows(): boolean {
+  return BrowserWindow.getAllWindows().every(
+    (win) => !dirtyWindows.has(win.webContents.id) || confirmUnsaved(win),
+  );
+}
+
+function confirmUnsaved(win: BrowserWindow): boolean {
+  const zh = resolveLanguage() === 'zh';
+  return (
+    dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      title: zh ? '未保存的修改' : 'Unsaved changes',
+      message: zh
+        ? '当前工作尚未保存。确定离开吗？'
+        : 'Your work has unsaved changes. Leave anyway?',
+      detail: zh
+        ? '未保存内容已尽可能保留为恢复草稿。'
+        : 'Unsaved work is retained as a recovery draft when storage is available.',
+      buttons: zh ? ['离开', '继续编辑'] : ['Leave', 'Keep editing'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    }) === 0
+  );
+}
 
 export function getIsQuitting(): boolean {
   return isQuitting;
@@ -138,6 +165,20 @@ async function handleWindowClose(win: BrowserWindow): Promise<void> {
 
 /** 装配窗口关闭行为 + Dock 激活恢复（取代 background.ts 内联逻辑） */
 export function setupWindowCloseBehavior(mainWindow: BrowserWindow): void {
+  const recordDirty = (event: Electron.IpcMainEvent, dirty: boolean) => {
+    if (event.sender !== mainWindow.webContents) return;
+    if (dirty === true) dirtyWindows.add(event.sender.id);
+    else dirtyWindows.delete(event.sender.id);
+  };
+  ipcMain.on('setUnsavedChanges', recordDirty);
+  const contentsId = mainWindow.webContents.id;
+  mainWindow.on('closed', () => {
+    dirtyWindows.delete(contentsId);
+    ipcMain.removeListener('setUnsavedChanges', recordDirty);
+  });
+  mainWindow.webContents.on('will-prevent-unload', (event) => {
+    if (confirmUnsaved(mainWindow)) event.preventDefault();
+  });
   mainWindow.on('close', (e) => {
     if (isQuitting) return; // 真退出进行中：放行
     e.preventDefault();

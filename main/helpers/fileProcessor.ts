@@ -1,3 +1,6 @@
+import { clearInactiveTaskStages } from '../../types/taskStages';
+import { TaskActivityReporter } from './taskActivity';
+import { runWithTaskContext } from './taskContext';
 import path from 'path';
 import fs from 'fs';
 import { logMessage } from './storeManager';
@@ -21,10 +24,18 @@ import {
   removeChineseSubtitlePunctuation,
 } from './chineseConvert';
 import translate from '../translate';
-import { IFiles } from '../../types';
+import {
+  IFiles,
+  TRANSLATION_INCOMPLETE_PIPELINE_PAUSED,
+  TRANSLATION_INCOMPLETE_FOR_DUBBING,
+  TRANSLATION_INCOMPLETE_FOR_COMPOSE,
+} from '../../types';
 import { resolveSubtitleOutputFormats } from '../../types/subtitleOutput';
 import { runSubtitleExportStage } from './subtitleExportStage';
-import { writeProofreadDataFromFiles } from './proofreadData';
+import {
+  readProofreadDataFile,
+  writeProofreadDataFromFiles,
+} from './proofreadData';
 import {
   runSubtitleRefineStage,
   settleSkippedRefineStage,
@@ -33,6 +44,16 @@ import {
   runManuscriptMatchingStage,
   settleSkippedManuscriptMatchStage,
 } from './manuscriptMatchingStage';
+import {
+  currentSummaryFingerprint,
+  runEpisodeSummaryStage,
+} from './episodeSummary';
+import {
+  disabledSummaryPatch,
+  isSummaryStageActive,
+  resolveResumeSummaryState,
+  shouldUseEpisodeSummary,
+} from './episodeSummaryCore';
 import { runDubStage, rebuildDubTrackForFile } from './pipeline/dubStage';
 import { runComposeStage } from './pipeline/composeStage';
 import {
@@ -51,7 +72,7 @@ import {
 import { runSpeakerDiarizationStage } from './speakerDiarization/stage';
 import type { SpeakerDiarizationSegment } from './speakerDiarization/alignment';
 import {
-  isSpeakerDiarizationStandardTaskContext,
+  supportsSpeakerDiarizationTask,
   shouldExtractAudioForEmbeddedSubtitle,
   getSpeakerDiarizationMetadataWarning,
 } from '../../types/speakerDiarization';
@@ -75,18 +96,12 @@ function onError(event, file, key, error) {
 /**
  * 生成字幕
  */
-async function generateSubtitle(
-  event,
-  file: IFiles,
-  formData,
-  hasOpenAiWhisper,
-) {
+async function generateSubtitle(event, file: IFiles, formData) {
   try {
     return await routeTranscription({
       event,
       file,
       formData,
-      hasOpenAiWhisper,
     });
   } catch (error) {
     if (isTaskCancelledError(error) || isWhisperAbortError(error)) {
@@ -134,6 +149,10 @@ async function translateSubtitle(
   provider,
   fallbackProviders = [],
 ): Promise<boolean> {
+  const activity = getTaskContext()?.activity?.start(
+    'translateSubtitle',
+    'preparing',
+  );
   // 强制发送翻译开始状态
   event.sender.send('taskFileChange', {
     ...file,
@@ -145,7 +164,7 @@ async function translateSubtitle(
   event.sender.send('taskProgressChange', file, 'translateSubtitle', 0);
 
   const onProgress = (progress) => {
-    const normalizedProgress = Math.min(Math.max(progress, 0), 100);
+    const normalizedProgress = Math.min(Math.max(progress, 0), 99);
     event.sender.send(
       'taskProgressChange',
       file,
@@ -155,7 +174,7 @@ async function translateSubtitle(
   };
 
   try {
-    const completed = await translate(
+    await translate(
       event,
       file,
       formData,
@@ -163,18 +182,12 @@ async function translateSubtitle(
       onProgress,
       undefined,
       fallbackProviders,
+      activity?.update,
     );
+    throwIfTaskCancelled();
+    activity?.finish();
 
-    if (!completed) {
-      event.sender.send('taskFileChange', {
-        ...file,
-        translateSubtitle: 'error',
-        translateSubtitleProgress: 100,
-      });
-      return false;
-    }
-
-    // 确保最终状态的正确发送
+    // 确保最终状态的正确发送（无论是否有部分行失败，翻译阶段产物均已生成并落盘）
     event.sender.send('taskProgressChange', file, 'translateSubtitle', 100);
     event.sender.send('taskFileChange', {
       ...file,
@@ -182,12 +195,25 @@ async function translateSubtitle(
       translateSubtitleProgress: 100,
     });
 
-    logMessage(
-      `Translation completed successfully for ${file.fileName}`,
-      'info',
+    const hasFailures = Boolean(
+      file.translationFailures && file.translationFailures.length > 0,
     );
-    return !(file.translationFailures && file.translationFailures.length > 0);
+    if (hasFailures) {
+      logMessage(
+        `Translation finished with ${file.translationFailures.length} failed line(s) for ${file.fileName}`,
+        'warning',
+      );
+    } else {
+      logMessage(
+        `Translation completed successfully for ${file.fileName}`,
+        'info',
+      );
+    }
+    return !hasFailures;
   } catch (error) {
+    activity?.finish(
+      isTaskCancelledError(error) || isTaskCancelled() ? 'cancelled' : 'error',
+    );
     if (isTaskCancelledError(error) || isTaskCancelled()) {
       // 用户取消：翻译阶段回退为待处理，不计错误，并中止后续流程
       event.sender.send('taskFileChange', {
@@ -206,11 +232,10 @@ async function translateSubtitle(
 /**
  * 处理文件
  */
-export async function processFile(
+async function processFileImpl(
   event,
   file: IFiles,
   formData,
-  hasOpenAiWhisper,
   provider,
   fallbackProviders = [],
 ) {
@@ -224,6 +249,24 @@ export async function processFile(
     saveAudio,
     taskType,
   } = formData || {};
+
+  // 若校对中间态存在，基于其实际 cue 状态同步当前失败行（吸收用户在校对中重翻或手动修复的改动）
+  if (file.proofreadDataFile && fs.existsSync(file.proofreadDataFile)) {
+    try {
+      const proofreadData = await readProofreadDataFile(file.proofreadDataFile);
+      const remainingFailures = (proofreadData?.cues || []).filter(
+        (cue) =>
+          cue.translationStatus === 'failed' ||
+          Boolean(cue.target && /^\[翻译失败:/.test(cue.target.trim())),
+      );
+      file.translationFailures = remainingFailures.map((cue) => ({
+        subtitleId: cue.id,
+        error: cue.translationError,
+      }));
+    } catch {
+      // 忽略中间态读取失败，保持现有内存记录
+    }
+  }
 
   // 带附加阶段（配音/合成）的任务：重试时复用上游已完成阶段的产物直接续跑
   // （避免为重跑配音/合成而重新转写整个视频）。判定须在清理残留状态之前完成；
@@ -252,6 +295,7 @@ export async function processFile(
           /\.srt$/i.test(file.srtFile!),
         translateDone:
           (file as any).translateSubtitle === 'done' &&
+          !file.translationFailures?.length &&
           Boolean(
             (file.tempTranslatedSrtFile &&
               fs.existsSync(file.tempTranslatedSrtFile)) ||
@@ -267,6 +311,8 @@ export async function processFile(
 
   const previousProofreadDataReady = file.proofreadDataReady;
   const previousExportSubtitle = file.exportSubtitle;
+  const previousSpeakerDiarization = file.speakerDiarization;
+  const previousSpeakerDiarizationError = file.speakerDiarizationError;
   const retryExport =
     previousExportSubtitle === 'error' ||
     Boolean(file.subtitleExportCheckpoint && previousExportSubtitle !== 'done');
@@ -280,6 +326,7 @@ export async function processFile(
     'prepareSubtitle',
     'refineSubtitle',
     'manuscriptMatch',
+    'summarizeEpisode',
     'translateSubtitle',
     'speakerDiarization',
     'dubbing',
@@ -297,6 +344,7 @@ export async function processFile(
     'refineSubtitleError',
     'manuscriptMatchError',
     'manuscriptMatchErrorDetail',
+    'summarizeEpisodeError',
     'translateSubtitleError',
     'speakerDiarizationError',
     'dubbingError',
@@ -307,10 +355,29 @@ export async function processFile(
     'exportSubtitleProgress',
   ]) {
     if (retryExport && !k.startsWith('exportSubtitle')) continue;
-    delete (file as any)[k];
+    // IPC and saved task records merge patches: deleting a local error key
+    // leaves the previous value in those copies. Send an explicit reset.
+    if (k.endsWith('Error') || k.endsWith('ErrorDetail')) {
+      (file as any)[k] = undefined;
+    } else {
+      delete (file as any)[k];
+    }
   }
+  if (!retryExport) clearInactiveTaskStages(file, formData || {});
   file.exportSubtitle = '';
   file.exportSubtitleError = undefined;
+  // 摘要阶段不会运行时清掉旧正文、阶段状态和错误码。写成 undefined，
+  // 后续 {...file} 才能清掉渲染层里的旧值。这些键不能放进上面的 delete：
+  // 缺键不会覆盖 {...prev, ...res} 的旧值。
+  if (
+    !isSummaryStageActive({
+      generateSummary: formData?.generateSummary,
+      taskType,
+      translateProvider,
+    })
+  ) {
+    Object.assign(file, disabledSummaryPatch());
+  }
 
   try {
     const { filePath, fileName, fileExtension, directory } = file;
@@ -371,9 +438,8 @@ export async function processFile(
     const speakerDiarizationStageActive =
       !isSubtitleFile &&
       shouldGenerateSubtitle &&
-      !hasProvidedSubtitle &&
       formData?.speakerDiarization === true &&
-      isSpeakerDiarizationStandardTaskContext(formData);
+      supportsSpeakerDiarizationTask(formData);
 
     /** 文件停靠在人工检查点：置待校对、发聚合通知、结束本轮（不占并发槽） */
     const dockAtGate = (gate: 'subtitle' | 'dubbing') => {
@@ -393,15 +459,36 @@ export async function processFile(
     const runPipelineStages = async (
       translateOk: boolean,
     ): Promise<boolean> => {
+      const hasDownstreamStages = Boolean(
+        formData?.dub ||
+          formData?.compose ||
+          shouldDockAtSubtitleGate(formData, file as any),
+      );
+
       if (translationActive && !translateOk) {
-        const msg = '翻译未完成，无法继续后续处理（请先在校对中重试失败行）';
-        event.sender.send(
-          'taskStatusChange',
-          file,
-          'translateSubtitle',
-          'error',
+        if (!hasDownstreamStages) {
+          // 纯字幕任务：下游无配音/合成阶段，不阻断任务完成
+          return true;
+        }
+
+        // 字幕校对检查点：若配置了人工检查点，停靠待校对
+        if (shouldDockAtSubtitleGate(formData, file as any)) {
+          dockAtGate('subtitle');
+          return false;
+        }
+
+        const targetStage = formData?.dub ? 'dubbing' : 'composeVideo';
+        const msg = formData?.dub
+          ? TRANSLATION_INCOMPLETE_FOR_DUBBING
+          : formData?.compose
+            ? TRANSLATION_INCOMPLETE_FOR_COMPOSE
+            : TRANSLATION_INCOMPLETE_PIPELINE_PAUSED;
+        event.sender.send('taskStatusChange', file, targetStage, 'error');
+        event.sender.send('taskErrorChange', file, targetStage, msg);
+        logMessage(
+          `pipeline paused for ${fileName} due to translation failure: ${msg}`,
+          'warning',
         );
-        event.sender.send('taskErrorChange', file, 'translateSubtitle', msg);
         return false;
       }
       // 字幕校对检查点：字幕段成功后、配音/合成前（翻译失败时交由下方报错）
@@ -411,12 +498,6 @@ export async function processFile(
       }
       if (formData?.dub) {
         throwIfTaskCancelled();
-        if (translationActive && !translateOk) {
-          const msg = '翻译未完成，无法配音（请先重试翻译）';
-          event.sender.send('taskStatusChange', file, 'dubbing', 'error');
-          event.sender.send('taskErrorChange', file, 'dubbing', msg);
-          throw new Error(msg);
-        }
         if (resume?.dubbingDone) {
           // 续跑：跳过批量合成但总是重建配音轨（吸收检查点里的行级修改）
           await rebuildDubTrackForFile(event, file, formData);
@@ -449,6 +530,13 @@ export async function processFile(
           ((file as any).translateSubtitle === 'done' &&
             !file.translationFailures?.length),
       };
+      // 总是根据当前最新的 translationFailures 刷新 translateOk（吸收校对修改）
+      file.subtitleExportCheckpoint.translateOk =
+        !translationActive ||
+        Boolean(
+          (file as any).translateSubtitle === 'done' &&
+            !file.translationFailures?.length,
+        );
       const { translateOk } = file.subtitleExportCheckpoint;
       await runSubtitleExportStage(
         event,
@@ -468,18 +556,31 @@ export async function processFile(
         (previousExportSubtitle === undefined ||
           previousExportSubtitle === 'done') &&
         (isSubtitleFile ? true : resume.subtitleProduced) &&
-        (!translationActive || resume.translateDone),
+        (!translationActive || resume.translateDone) &&
+        (!speakerDiarizationStageActive ||
+          (previousSpeakerDiarization === 'done' &&
+            previousProofreadDataReady === 'done' &&
+            file.proofreadDataFile &&
+            fs.existsSync(file.proofreadDataFile))),
     );
     if (skipSubtitleSegment) {
       file.exportSubtitle = 'done';
+      if (speakerDiarizationStageActive) {
+        file.speakerDiarization = 'done';
+        file.speakerDiarizationProgress = 100;
+        file.speakerDiarizationError = previousSpeakerDiarizationError;
+      }
       logMessage(`resume: reuse subtitle segment for ${fileName}`, 'info');
       if (isSubtitleFile) {
         file.srtFile = filePath;
+        (file as any).prepareSubtitle = 'done';
         event.sender.send('taskFileChange', {
           ...file,
           prepareSubtitle: 'done',
         });
       } else {
+        (file as any).extractAudio = 'done';
+        (file as any).extractSubtitle = 'done';
         event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
         event.sender.send('taskFileChange', {
           ...file,
@@ -490,13 +591,53 @@ export async function processFile(
         // 首轮文稿匹配同样已写入 SRT，续跑不重新读取可能变化的外部文稿。
         settleSkippedManuscriptMatchStage(event, file, formData);
       }
+      // 译文已复用，摘要不补打。指纹一致标 done，否则 skipped-resume 并清掉旧摘要。
+      if (
+        isSummaryStageActive({
+          generateSummary: formData?.generateSummary,
+          taskType,
+          translateProvider,
+        })
+      ) {
+        const summaryActivity = getTaskContext()?.activity?.start(
+          'summarizeEpisode',
+          'organizing',
+        );
+        try {
+          const fingerprint = await currentSummaryFingerprint({
+            file,
+            formData,
+            sourceLanguage,
+            targetLanguage,
+          });
+          const patch = resolveResumeSummaryState({
+            stageActive: true,
+            existing: file.episodeSummary,
+            storedHash: file.summarySourceHash,
+            fingerprint,
+          });
+          if (patch) {
+            Object.assign(file, patch);
+            event.sender.send('taskFileChange', { ...file });
+          }
+        } finally {
+          summaryActivity?.finish();
+        }
+      }
       if (translationActive) {
+        (file as any).translateSubtitle = 'done';
         event.sender.send('taskFileChange', {
           ...file,
           translateSubtitle: 'done',
         });
       }
-      await runPipelineStages(true);
+      const translateOk =
+        !translationActive ||
+        Boolean(
+          (file as any).translateSubtitle === 'done' &&
+            !file.translationFailures?.length,
+        );
+      await runPipelineStages(translateOk);
       logMessage(`process file done ${fileName}`, 'info');
       return;
     }
@@ -514,6 +655,21 @@ export async function processFile(
         'info',
       );
       file.srtFile = file.providedSubtitlePath;
+      if (speakerDiarizationStageActive) {
+        event.sender.send('taskFileChange', {
+          ...file,
+          extractAudio: 'loading',
+        });
+        try {
+          await extractAudioFromVideo(event, file);
+        } catch (error) {
+          if (!isTaskCancelledError(error) && !isTaskCancelled()) {
+            (file as any).extractAudio = 'error';
+            onError(event, file, 'extractAudio', error);
+          }
+          throw error;
+        }
+      }
       event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
       event.sender.send('taskFileChange', {
         ...file,
@@ -668,7 +824,7 @@ export async function processFile(
           // 生成字幕
           logMessage(`generate subtitle ${file.srtFile}`, 'info');
           throwIfTaskCancelled();
-          await generateSubtitle(event, file, formData, hasOpenAiWhisper);
+          await generateSubtitle(event, file, formData);
 
           // AI 字幕精修（openspec: add-ai-subtitle-refine）：语义断句 + 文本校正，
           // 仅对本轮 ASR 转写产物执行（内封提取/配对/导入字幕不重断句），位于
@@ -769,6 +925,25 @@ export async function processFile(
       await stripSourceSubtitlePunctuation(file.srtFile, fileName);
     }
 
+    // 通读摘要：翻译前、精修/文稿匹配之后。失败降级，不阻断。
+    if (
+      isSummaryStageActive({
+        generateSummary: formData?.generateSummary,
+        taskType,
+        translateProvider,
+      })
+    ) {
+      throwIfTaskCancelled();
+      await runEpisodeSummaryStage({
+        event,
+        file,
+        formData,
+        sourceLanguage,
+        targetLanguage,
+        translationProvider: provider,
+      });
+    }
+
     // 翻译字幕（取消后不再进入）
     throwIfTaskCancelled();
     let translateOk = !translationActive;
@@ -805,7 +980,8 @@ export async function processFile(
       await stripSourceSubtitlePunctuation(file.srtFile, fileName);
     }
 
-    // 可选角色分离：仅对标准字幕任务中本轮真实 ASR 的音频执行。放在翻译之后，
+    // Media tasks, including supplied/embedded subtitles, share local role analysis.
+    // 放在翻译之后，
     // 避免角色信息污染翻译提示；独立阶段保持 loading，直到 sidecar 写入完成后
     // 才置 done，从而保证校对入口不会抢先读到旧内容。
     let speakerSegments: SpeakerDiarizationSegment[] | undefined;
@@ -817,13 +993,26 @@ export async function processFile(
       delete file.speakerDiarizationError;
       event.sender.send('taskFileChange', { ...file });
       logMessage(`speaker diarization stage started: ${fileName}`, 'info');
-      const result = await runSpeakerDiarizationStage({
-        file,
-        formData,
-        signal: getTaskContext()?.signal,
-      });
-      speakerSegments = result.segments;
-      speakerDiarizationWarning = result.reason;
+      try {
+        if (!file.tempAudioFile || !fs.existsSync(file.tempAudioFile)) {
+          await extractAudioFromVideo(event, file);
+        }
+        const result = await runSpeakerDiarizationStage({
+          file,
+          formData,
+          signal: getTaskContext()?.signal,
+        });
+        speakerSegments = result.segments;
+        speakerDiarizationWarning = result.reason;
+        if (result.reason)
+          file.speakerDiarizationError = `SPEAKER_DIARIZATION_${result.reason.replace(/-/g, '_').toUpperCase()}`;
+      } catch (error) {
+        if (!isTaskCancelledError(error) && !isTaskCancelled()) {
+          file.speakerDiarization = 'error';
+          onError(event, file, 'speakerDiarization', error);
+        }
+        throw error;
+      }
     }
 
     throwIfTaskCancelled();
@@ -845,10 +1034,16 @@ export async function processFile(
         targetLanguage,
         translateContent: formData?.translateContent,
         outputFormat: resolveSubtitleOutputFormats(formData)[0],
+        subtitleLayout: formData.subtitleLayout,
+        subtitleLineWidth: formData.subtitleLineWidth,
         speakerSegments,
         translationFailures: file.translationFailures,
         missedSpeechWarnings: file.missedSpeechWarnings,
         missedSpeechSummary: file.missedSpeechSummary,
+        glossaryIds: formData?.glossaryIds,
+        ...(shouldUseEpisodeSummary(formData, file)
+          ? { episodeSummary: file.episodeSummary }
+          : {}),
       });
       if ('filePath' in proofreadDataResult) {
         file.proofreadDataFile = proofreadDataResult.filePath;
@@ -923,7 +1118,7 @@ export async function processFile(
       });
       return;
     }
-    if (file.exportSubtitle === 'loading') {
+    if ((file as any).exportSubtitle === 'loading') {
       file.exportSubtitle = 'error';
       onError(event, file, 'exportSubtitle', error);
       return;
@@ -934,4 +1129,30 @@ export async function processFile(
       message: error,
     });
   }
+}
+
+/** Keep activity ownership alive even when the task page is closed. */
+export async function processFile(...args: Parameters<typeof processFileImpl>) {
+  const [event, file] = args;
+  const context = getTaskContext();
+  return runWithTaskContext({ ...context }, async () => {
+    const reporter = new TaskActivityReporter(
+      Math.max(Date.now(), (file.taskActivity?.run ?? 0) + 1),
+      (activity) => {
+        file.taskActivity = activity;
+        event.sender.send(
+          'taskActivityChange',
+          { uuid: file.uuid, taskProjectId: context?.projectId },
+          activity,
+        );
+      },
+      context?.signal,
+    );
+    getTaskContext()!.activity = reporter;
+    try {
+      return await processFileImpl(...args);
+    } finally {
+      reporter.close();
+    }
+  });
 }

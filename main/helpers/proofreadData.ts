@@ -12,6 +12,10 @@ import {
 import { logMessage } from './storeManager';
 import { atomicReplaceTextFile } from './atomicFile';
 import {
+  LEGACY_PROOFREAD_DIR,
+  getProofreadDataRoot,
+} from './proofreadDataStorage';
+import {
   speakerIdsForCues,
   stripSpeakerLabelPrefix,
   type SpeakerDiarizationSegment,
@@ -22,12 +26,15 @@ import {
 } from '../../types/speakerDiarization';
 import {
   PROOFREAD_DATA_VERSION,
+  assertValidProofreadData,
   hasExplicitSpeakerAssignment,
   normalizePrimarySpeakerId,
   normalizeProofreadData,
   normalizeSpeakerIds,
   normalizeSpeakerRoster,
+  repairNonPositiveCueDurations,
   shouldRealignSpeakerAssignment,
+  type CueTimingRepair,
   type ProofreadDataCue,
   type ProofreadDataFileV2,
   type SpeakerInfo,
@@ -65,6 +72,27 @@ export type ProofreadDataWriteResult =
       error?: string;
     };
 
+const MAX_LOGGED_CUE_REPAIRS = 5;
+
+function logCueTimingRepairs(
+  repairs: CueTimingRepair[],
+  filePath: string,
+): void {
+  if (!repairs.length) return;
+  const ids = repairs
+    .slice(0, MAX_LOGGED_CUE_REPAIRS)
+    .map((repair) => repair.id)
+    .join(', ');
+  const more =
+    repairs.length > MAX_LOGGED_CUE_REPAIRS
+      ? `, +${repairs.length - MAX_LOGGED_CUE_REPAIRS} more`
+      : '';
+  logMessage(
+    `proofread data: repaired ${repairs.length} cue(s) whose end was not after the start (ids: ${ids}${more}): ${filePath}`,
+    'warning',
+  );
+}
+
 function safeFileNamePart(input: string): string {
   const cleaned = input
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
@@ -79,12 +107,17 @@ function hashId(input: string): string {
 }
 
 export function getProofreadDataPath(file: IFiles): string {
+  // Managed run adapters provide an independent attempt directory.
+  if (file.taskRunId) return path.join(file.directory, 'proofread.json');
   const dir = file.directory || path.dirname(file.filePath);
   const baseName = safeFileNamePart(
     file.fileName || path.basename(file.filePath),
   );
   const id = safeFileNamePart(file.uuid || hashId(file.filePath || baseName));
-  return path.join(dir, '.smartsub-proofread', `${baseName}.${id}.json`);
+  // 宿主注入托管目录后，新 sidecar 一律写到那里；未注入（脚本、单测）时
+  // 回落到视频旁的旧目录。已存在的 sidecar 靠各自记录的绝对路径读写，不受影响。
+  const folder = getProofreadDataRoot() ?? path.join(dir, LEGACY_PROOFREAD_DIR);
+  return path.join(folder, `${baseName}.${id}.json`);
 }
 
 async function readSubtitleEntries(
@@ -171,10 +204,14 @@ export async function writeProofreadDataFromFiles({
   targetLanguage,
   translateContent,
   outputFormat,
+  subtitleLayout,
+  subtitleLineWidth,
   speakerSegments,
   translationFailures,
   missedSpeechWarnings,
   missedSpeechSummary,
+  glossaryIds,
+  episodeSummary,
 }: {
   file: IFiles;
   sourceFile?: string;
@@ -184,10 +221,14 @@ export async function writeProofreadDataFromFiles({
   targetLanguage?: string;
   translateContent?: string;
   outputFormat?: string;
+  subtitleLayout?: 'original' | 'two-line';
+  subtitleLineWidth?: number;
   speakerSegments?: SpeakerDiarizationSegment[];
   translationFailures?: Array<{ subtitleId: string; error?: string }>;
   missedSpeechWarnings?: MissedSpeechWarning[];
   missedSpeechSummary?: MissedSpeechSummary;
+  glossaryIds?: string[];
+  episodeSummary?: string;
 }): Promise<ProofreadDataWriteResult> {
   try {
     const sourceEntries = await readSubtitleEntries(sourceFile);
@@ -201,12 +242,17 @@ export async function writeProofreadDataFromFiles({
 
     const targetEntries = await readSubtitleEntries(targetFile);
     const now = new Date().toISOString();
-    const cues = buildCues(
-      sourceEntries,
-      targetEntries,
-      speakerSegments,
-      translationFailures,
-      missedSpeechWarnings,
+    // buildCues matches target text on the original times; only afterwards do
+    // zero-length or inverted cues get a visible duration, so the sidecar never
+    // holds a cue the strict reader (proofread panel) would refuse.
+    const { cues, repairs } = repairNonPositiveCueDurations(
+      buildCues(
+        sourceEntries,
+        targetEntries,
+        speakerSegments,
+        translationFailures,
+        missedSpeechWarnings,
+      ),
     );
     const proofreadData: ProofreadDataFile = normalizeProofreadData({
       version: PROOFREAD_DATA_VERSION,
@@ -217,9 +263,13 @@ export async function writeProofreadDataFromFiles({
         targetLanguage,
         translateContent,
         outputFormat,
+        subtitleLayout,
+        subtitleLineWidth,
         sourceFile,
         targetFile,
         finalTargetFile,
+        ...(glossaryIds !== undefined ? { glossaryIds } : {}),
+        ...(episodeSummary ? { episodeSummary } : {}),
       },
       speakers: normalizeSpeakerRoster([], cues),
       cues,
@@ -227,14 +277,18 @@ export async function writeProofreadDataFromFiles({
       ...(missedSpeechSummary ? { missedSpeechSummary } : {}),
     });
 
+    // Tripwire: whatever else slips through must fail here, with a reason,
+    // instead of leaving a sidecar that can never be opened.
+    assertValidProofreadData(proofreadData);
+
     const proofreadDataFile = getProofreadDataPath(file);
+    logCueTimingRepairs(repairs, proofreadDataFile);
     await fs.promises.mkdir(path.dirname(proofreadDataFile), {
       recursive: true,
     });
-    await fs.promises.writeFile(
+    await atomicReplaceTextFile(
       proofreadDataFile,
       JSON.stringify(proofreadData, null, 2),
-      'utf-8',
     );
     logMessage(`proofread data written: ${proofreadDataFile}`, 'info');
     return { ok: true, filePath: proofreadDataFile };
@@ -250,10 +304,22 @@ export async function writeProofreadDataFromFiles({
 
 export async function readProofreadDataFile(
   filePath: string,
+  options: { strict?: boolean } = {},
 ): Promise<ProofreadDataFile> {
   const content = await fs.promises.readFile(filePath, 'utf-8');
   try {
     const raw = JSON.parse(content);
+    // Sidecars written before cue timings were repaired (3.9.0) can hold
+    // zero-length cues. Repair them in memory only, never on disk, so those
+    // files open again; any other corruption is still rejected below.
+    if (Array.isArray(raw?.cues)) {
+      const { cues, repairs } = repairNonPositiveCueDurations(raw.cues);
+      if (repairs.length) {
+        raw.cues = cues;
+        logCueTimingRepairs(repairs, filePath);
+      }
+    }
+    if (options.strict) assertValidProofreadData(raw);
     const normalized = normalizeProofreadData(raw);
     // v1 was created while technical labels could still be embedded in the
     // source/target text. Keep migration idempotent and only strip labels from
@@ -270,8 +336,13 @@ export async function readProofreadDataFile(
       );
     }
     return normalized;
-  } catch {
-    throw new Error(`Invalid proofread data file: ${filePath}`);
+  } catch (error) {
+    // Say why: a syntactically valid file rejected for one bad cue used to be
+    // indistinguishable from a truncated one (issue #511).
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Invalid proofread data file: ${filePath} (${reason})`, {
+      cause: error,
+    });
   }
 }
 
@@ -344,7 +415,7 @@ export async function updateProofreadDataFromSubtitles(
   const existing = await readProofreadDataFile(filePath);
   const existingById = new Map(existing.cues.map((cue) => [cue.id, cue]));
   const now = new Date().toISOString();
-  const updated: ProofreadDataFile = normalizeProofreadData({
+  const built: ProofreadDataFile = normalizeProofreadData({
     ...existing,
     version: PROOFREAD_DATA_VERSION,
     meta: {
@@ -415,11 +486,20 @@ export async function updateProofreadDataFromSubtitles(
     }),
   });
 
-  await fs.promises.writeFile(
-    filePath,
-    JSON.stringify(updated, null, 2),
-    'utf-8',
+  // Rows can arrive without a duration (the editor's time-offset tool clamps
+  // shifted cues at 00:00:00,000). Repair them like the writer does, then
+  // refuse anything the strict reader would still reject, so a bad save never
+  // reaches the disk.
+  const { cues: repairedCues, repairs } = repairNonPositiveCueDurations(
+    built.cues,
   );
+  const updated: ProofreadDataFile = repairs.length
+    ? normalizeProofreadData({ ...built, cues: repairedCues })
+    : built;
+  assertValidProofreadData(updated);
+  logCueTimingRepairs(repairs, filePath);
+
+  await atomicReplaceTextFile(filePath, JSON.stringify(updated, null, 2));
   logMessage(`proofread data updated: ${filePath}`, 'info');
   return updated;
 }

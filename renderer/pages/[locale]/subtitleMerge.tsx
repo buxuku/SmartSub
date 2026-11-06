@@ -2,18 +2,20 @@
  * 视频合并字幕页面
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { SubtitleMergePanel } from '@/components/subtitleMerge';
 
 export default function SubtitleMergePage() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   // 合成成功/失败均由面板内预览浮层呈现，不再额外弹 toast
 
   // 等 query 就绪再挂载面板，保证衔接入口的预填参数能进入初始状态
-  if (!router.isReady) return null;
+  if (!mounted || !router.isReady) return null;
 
   const initialVideoPath =
     typeof router.query.video === 'string' ? router.query.video : undefined;
@@ -26,6 +28,7 @@ export default function SubtitleMergePage() {
   return (
     <div className="h-full overflow-hidden p-3">
       <SubtitleMergePanel
+        key={JSON.stringify([initialVideoPath, initialSubtitlePath])}
         initialVideoPath={initialVideoPath}
         initialSubtitlePath={initialSubtitlePath}
       />

@@ -207,26 +207,59 @@ export function getSubtitleCueOptions(
   config?: Record<string, unknown>,
 ): GroupTokenCuesOptions | undefined {
   const limit = widthLimitFromConfig(config);
-  if (!limit) return undefined;
+  const options: GroupTokenCuesOptions = {};
+  const duration = config?.subtitleMaxDuration;
+  const gap = config?.subtitleMaxGap;
+  if (
+    typeof duration === 'number' &&
+    Number.isFinite(duration) &&
+    duration > 0
+  ) {
+    options.maxDurationSeconds = Math.max(0.5, Math.min(30, duration));
+    options.softMaxDuration = Math.min(
+      DEFAULTS.softMaxDuration,
+      options.maxDurationSeconds,
+    );
+  }
+  if (typeof gap === 'number' && Number.isFinite(gap) && gap >= 0) {
+    options.maxGapSeconds = Math.min(5, gap);
+  } else if (config?.preserveSpeechPauses === true) {
+    options.maxGapSeconds = DEFAULTS.maxGapSeconds;
+  }
   if (limit === 'unlimited') {
     // 不限制长度：关闭宽度硬切（软切/句末标点/停顿断句不变；8s 时长上限保留，
     // 防无停顿无标点的病态语流整段糊成一条——时长触发的切分同样走标点/词边界回溯）。
-    return { maxWidth: Number.POSITIVE_INFINITY };
+    options.maxWidth = Number.POSITIVE_INFINITY;
+  } else if (limit) {
+    options.maxWidth = limit;
+    options.softMaxWidth = clampInteger(limit * 0.6, 6, limit);
   }
-  return {
-    maxWidth: limit,
-    softMaxWidth: clampInteger(limit * 0.6, 6, limit),
-  };
+  return Object.keys(options).length ? options : undefined;
 }
 
 export function getMergeShortCueOptions(
   config?: Record<string, unknown>,
 ): MergeShortCuesOptions | undefined {
-  const limit = widthLimitFromConfig(config);
-  if (!limit) return undefined;
-  return {
-    maxWidth: limit === 'unlimited' ? Number.POSITIVE_INFINITY : limit,
-  };
+  const cueOptions = getSubtitleCueOptions(config);
+  const options: MergeShortCuesOptions = {};
+  if (cueOptions?.maxWidth !== undefined)
+    options.maxWidth = cueOptions.maxWidth;
+  if (cueOptions?.maxDurationSeconds !== undefined)
+    options.maxDurationSeconds = cueOptions.maxDurationSeconds;
+  if (config?.preserveSpeechPauses === true) options.maxJoinGapSeconds = 0;
+  else if (cueOptions?.maxGapSeconds !== undefined)
+    options.maxJoinGapSeconds = cueOptions.maxGapSeconds;
+  return Object.keys(options).length ? options : undefined;
+}
+
+export function getMinDisplayDurationOptions(
+  config?: Record<string, unknown>,
+): MinDisplayDurationOptions | undefined {
+  if (config?.preserveSpeechPauses === true) return { maxDurationSeconds: 0 };
+  const duration = getSubtitleCueOptions(config)?.maxDurationSeconds;
+  return duration === undefined
+    ? undefined
+    : { maxDurationSeconds: Math.min(2.5, duration) };
 }
 
 const CONTENT_CHAR = /[\p{L}\p{N}]/u;
@@ -366,21 +399,39 @@ export function resplitSubtitleCues(
   cues: TokenTriple[],
   config?: Record<string, unknown>,
 ): TokenTriple[] {
-  const limit = widthLimitFromConfig(config);
-  // 'unlimited'（不限制长度）与未设置一样不重拆：段级引擎的原生断句本就不按宽度硬切。
-  if (!limit || limit === 'unlimited' || cues.length === 0) return cues;
-  const maxWidth = limit;
+  const options = getSubtitleCueOptions(config);
+  const width = options?.maxWidth ?? Number.POSITIVE_INFINITY;
+  const maxDuration = options?.maxDurationSeconds ?? Number.POSITIVE_INFINITY;
+  if (
+    (!Number.isFinite(width) && !Number.isFinite(maxDuration)) ||
+    cues.length === 0
+  )
+    return cues;
 
   const out: TokenTriple[] = [];
   for (const cue of cues) {
     const text = cue?.[2] ?? '';
-    if (visualWidth(text.trim()) <= maxWidth) {
+    const start = parseTime(cue?.[0]);
+    const end = parseTime(cue?.[1]);
+    const duration = start !== null && end !== null ? end - start : 0;
+    const textWidth = visualWidth(text.trim());
+    if (textWidth <= width && duration <= maxDuration) {
       out.push(cue);
       continue;
     }
 
-    const start = parseTime(cue?.[0]);
-    const end = parseTime(cue?.[1]);
+    // No word timestamps: preserve source endpoints and approximate internal cuts by text weight.
+    const maxWidth = Math.min(
+      width,
+      duration > maxDuration
+        ? Math.max(
+            1,
+            Math.floor(
+              (visualWidth(text.replace(/\s/g, '')) * maxDuration) / duration,
+            ),
+          )
+        : Number.POSITIVE_INFINITY,
+    );
     const parts = splitTextByWidth(text, maxWidth);
     if (start === null || end === null || end <= start || parts.length <= 1) {
       out.push(cue);
@@ -1041,12 +1092,14 @@ export interface MergeShortCuesOptions {
   maxJoinGapSeconds?: number;
   /** 并入后显示宽度上限，超过则保留碎片不并（避免产生超长 cue，默认 40）。 */
   maxWidth?: number;
+  maxDurationSeconds?: number;
 }
 
 const MERGE_DEFAULTS: Required<MergeShortCuesOptions> = {
   minContentChars: 1,
   maxJoinGapSeconds: 1.2,
   maxWidth: 40,
+  maxDurationSeconds: Number.POSITIVE_INFINITY,
 };
 
 /**
@@ -1082,8 +1135,10 @@ export function mergeShortCues(
       const pe = parseTime(prev[1]);
       const pw = visualWidth((prev[2] ?? '').trim());
       const gap = pe !== null ? s - pe : Infinity;
+      const ps = parseTime(prev[0]);
       if (
         gap <= opts.maxJoinGapSeconds &&
+        (ps === null || e === null || e - ps <= opts.maxDurationSeconds) &&
         pw + visualWidth(text.trim()) <= opts.maxWidth
       ) {
         prev[2] = (prev[2] ?? '') + text;
@@ -1189,5 +1244,6 @@ export function composeWordCues(
       groupTokenCues(triples, getSubtitleCueOptions(config)),
       getMergeShortCueOptions(config),
     ),
+    getMinDisplayDurationOptions(config),
   );
 }

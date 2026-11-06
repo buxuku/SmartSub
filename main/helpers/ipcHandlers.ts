@@ -1,4 +1,6 @@
-import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron';
+import { dialogWindow } from '../automation/events';
+import { ipcMain } from '../automation/handlers';
+import { app, BrowserWindow, dialog, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createMessageSender } from './messageHandler';
@@ -6,6 +8,13 @@ import { logMessage } from './storeManager';
 import { wrapFileObject, ensureTempDir, getMd5 } from './fileUtils';
 import { CONTENT_TEMPLATES } from '../translate/constants';
 import { renderTemplate, getExtraResourcesPath } from './utils';
+import {
+  assertTaskRunEditable,
+  taskRunService,
+  beginTaskResultWrite,
+} from './taskRuns/access';
+import { digestValue } from './taskRuns/service';
+import { removeChineseSubtitlePunctuation } from './chineseConvert';
 import {
   detectSubtitleFormat,
   detectSubtitleFormatFromContent,
@@ -23,12 +32,20 @@ import {
 import {
   prefixTextWithSpeakerNames,
   type SpeakerInfo,
+  type ProofreadDataMeta,
 } from '../../types/proofreadData';
 import { subtitleOutputFilesToSave } from '../../types/subtitleOutput';
 import { atomicReplaceTextFile } from './atomicFile';
 import {
+  layoutSubtitleColumns,
+  type SubtitleLayoutOptions,
+} from './subtitleLayout';
+import { getWorkItems, saveWorkItem } from './workItemStore';
+import { isPipelineWorkItem } from '../../types/workItem';
+import {
   MANUSCRIPT_EXTENSIONS,
   ManuscriptFileError,
+  isSupportedManuscriptPath,
   readManuscriptFile,
   toManuscriptSelectionPayload,
 } from './manuscriptMatching';
@@ -117,15 +134,23 @@ async function isImportableSubtitleFile(filePath: string): Promise<boolean> {
   }
 }
 
-/** 按任务类型判断文件是否可导入（translate=字幕，any=媒体或字幕，其余=媒体） */
+/** 按任务类型判断文件是否可导入（translate=字幕，manuscript=文稿，media-and-manuscript=媒体/文稿，any=媒体/字幕/文稿，其余=媒体） */
 async function isAcceptableTaskFile(
   filePath: string,
   taskType: string,
 ): Promise<boolean> {
+  if (taskType === 'manuscript') {
+    return isSupportedManuscriptPath(filePath);
+  }
   const acceptSubtitle = taskType === 'translate' || taskType === 'any';
-  const acceptMedia = taskType !== 'translate';
+  const acceptMedia = taskType !== 'translate' && taskType !== 'manuscript';
+  const acceptManuscript =
+    taskType === 'any' || taskType === 'media-and-manuscript';
   if (acceptMedia && isMediaFile(filePath)) return true;
   if (acceptSubtitle && (await isImportableSubtitleFile(filePath))) {
+    return true;
+  }
+  if (acceptManuscript && isSupportedManuscriptPath(filePath)) {
     return true;
   }
   return false;
@@ -166,6 +191,11 @@ async function getMediaFilesFromDirectory(
   return files;
 }
 
+type DeliveryLayout = SubtitleLayoutOptions &
+  Pick<
+    ProofreadDataMeta,
+    'removeSourceChinesePunctuation' | 'removeTargetChinesePunctuation'
+  >;
 function buildSubtitleFileContent(
   filePath: string,
   subtitles: any[],
@@ -173,6 +203,7 @@ function buildSubtitleFileContent(
   speakerOptions?: {
     speakers?: SpeakerInfo[];
     embedSpeakerNames?: boolean;
+    layout?: DeliveryLayout;
   },
 ): string {
   const format = detectSubtitleFormat(filePath);
@@ -185,15 +216,30 @@ function buildSubtitleFileContent(
     );
   };
   const buildText = (subtitle): string => {
+    const sourceContent = speakerOptions?.layout?.removeSourceChinesePunctuation
+      ? removeChineseSubtitlePunctuation(subtitle.sourceContent ?? '')
+      : (subtitle.sourceContent ?? '');
+    const targetContent = speakerOptions?.layout?.removeTargetChinesePunctuation
+      ? removeChineseSubtitlePunctuation(subtitle.targetContent ?? '')
+      : (subtitle.targetContent ?? '');
     let text: string;
-    if (contentType === 'source') {
-      text = subtitle.sourceContent ?? '';
+    if (speakerOptions?.layout?.subtitleLayout === 'two-line') {
+      const prefix = withSpeakerPrefix(subtitle, '');
+      return layoutSubtitleColumns(
+        sourceContent,
+        targetContent,
+        contentType,
+        speakerOptions.layout,
+        prefix ? `${prefix} ` : '',
+      );
+    } else if (contentType === 'source') {
+      text = sourceContent;
     } else {
       const template =
         CONTENT_TEMPLATES[contentType] || CONTENT_TEMPLATES.onlyTranslate;
       text = renderTemplate(template, {
-        sourceContent: subtitle.sourceContent ?? '',
-        targetContent: subtitle.targetContent ?? '',
+        sourceContent,
+        targetContent,
       }).replace(/\n+$/, '');
     }
     return withSpeakerPrefix(subtitle, text);
@@ -242,6 +288,7 @@ async function writeSubtitleFile(
   speakerOptions?: {
     speakers?: SpeakerInfo[];
     embedSpeakerNames?: boolean;
+    layout?: DeliveryLayout;
   },
 ): Promise<void> {
   const content = buildSubtitleFileContent(
@@ -261,28 +308,66 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
   });
 
   ipcMain.on('openDialog', async (event, data) => {
-    // fileType: 'srt'=仅字幕 | 'media'=仅媒体 | 'any'=媒体+字幕混合导入（向导单按钮）
+    // fileType: 'srt'=仅字幕 | 'media'=仅媒体 | 'manuscript'=仅文稿 | 'media-and-manuscript'=媒体+文稿 | 'any'=媒体+字幕+文稿混合导入（向导单按钮）
     const { fileType } = data;
     const taskType =
-      fileType === 'srt' ? 'translate' : fileType === 'any' ? 'any' : 'media';
+      fileType === 'srt'
+        ? 'translate'
+        : fileType === 'manuscript'
+          ? 'manuscript'
+          : fileType === 'any'
+            ? 'any'
+            : fileType === 'media-and-manuscript'
+              ? 'media-and-manuscript'
+              : 'media';
 
     const subtitleExtensions = IMPORTABLE_SUBTITLE_EXTENSIONS.map((ext) =>
       ext.substring(1),
     );
     const mediaExtensions = MEDIA_EXTENSIONS.map((ext) => ext.substring(1));
+    const manuscriptExtensions = MANUSCRIPT_EXTENSIONS.map((ext) =>
+      ext.substring(1),
+    );
     const filters: Electron.FileFilter[] =
       fileType === 'srt'
         ? [{ name: 'Subtitle Files', extensions: subtitleExtensions }]
-        : fileType === 'any'
+        : fileType === 'manuscript'
           ? [
               {
-                name: 'Media & Subtitle Files',
-                extensions: [...mediaExtensions, ...subtitleExtensions],
+                name: 'Reference Manuscript',
+                extensions: manuscriptExtensions,
               },
-              { name: 'Media Files', extensions: mediaExtensions },
-              { name: 'Subtitle Files', extensions: subtitleExtensions },
             ]
-          : [{ name: 'Media Files', extensions: mediaExtensions }];
+          : fileType === 'any'
+            ? [
+                {
+                  name: 'All Supported Files',
+                  extensions: [
+                    ...mediaExtensions,
+                    ...subtitleExtensions,
+                    ...manuscriptExtensions,
+                  ],
+                },
+                { name: 'Media Files', extensions: mediaExtensions },
+                { name: 'Subtitle Files', extensions: subtitleExtensions },
+                {
+                  name: 'Reference Manuscript',
+                  extensions: manuscriptExtensions,
+                },
+              ]
+            : fileType === 'media-and-manuscript'
+              ? [
+                  {
+                    name: 'All Supported Files',
+                    extensions: [...mediaExtensions, ...manuscriptExtensions],
+                  },
+                  { name: 'Media Files', extensions: mediaExtensions },
+                  {
+                    name: 'Reference Manuscript',
+                    extensions: manuscriptExtensions,
+                  },
+                ]
+              : [{ name: 'Media Files', extensions: mediaExtensions }];
 
     // macOS 支持同时选择文件和文件夹；Windows/Linux 两者互斥，仅支持选择文件
     const properties: Electron.OpenDialogOptions['properties'] =
@@ -321,7 +406,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
    * 编码和非空校验；运行阶段会再次读取校验，以覆盖文件被移动/修改的情况。
    */
   ipcMain.handle('manuscript:select', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
+    const result = await dialog.showOpenDialog(dialogWindow(mainWindow), {
       properties: ['openFile'],
       filters: [
         {
@@ -375,8 +460,19 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
           allValidPaths.push(...filteredFiles);
         } else if (stats.isFile()) {
           // 如果是文件，根据任务类型过滤
-          // 根据任务类型决定添加哪种文件
-          if (
+          if (taskType === 'manuscript') {
+            if (isSupportedManuscriptPath(filePath)) {
+              allValidPaths.push(filePath);
+            }
+          } else if (taskType === 'any') {
+            if (
+              isMediaFile(filePath) ||
+              (await isImportableSubtitleFile(filePath)) ||
+              isSupportedManuscriptPath(filePath)
+            ) {
+              allValidPaths.push(filePath);
+            }
+          } else if (
             (taskType === 'translate' &&
               (await isImportableSubtitleFile(filePath))) ||
             (taskType !== 'translate' && isMediaFile(filePath))
@@ -394,39 +490,49 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
   });
 
   // 读取字幕文件（按扩展名自动识别 srt/vtt/ass/lrc 格式）
-  ipcMain.handle('readSubtitleFile', async (event, { filePath }) => {
-    try {
-      if (!fs.existsSync(filePath)) {
-        logMessage(`读取字幕文件失败: 文件不存在 ${filePath}`, 'error');
+  ipcMain.handle(
+    'readSubtitleFile',
+    async (event, { filePath, strict = false }) => {
+      try {
+        if (!fs.existsSync(filePath)) {
+          if (strict) throw new Error(`File not found: ${filePath}`);
+          logMessage(`读取字幕文件失败: 文件不存在 ${filePath}`, 'error');
+          return [];
+        }
+        const content = await fs.promises.readFile(filePath, 'utf-8');
+        const format = detectSubtitleFormatFromContent(filePath, content);
+        return parseSubtitleEntries(content, format, { strict });
+      } catch (error) {
+        logMessage(`读取字幕文件错误: ${error.message}`, 'error');
+        if (strict) throw error;
         return [];
       }
-      const content = await fs.promises.readFile(filePath, 'utf-8');
-      const format = detectSubtitleFormatFromContent(filePath, content);
-      return parseSubtitleEntries(content, format);
-    } catch (error) {
-      logMessage(`读取字幕文件错误: ${error.message}`, 'error');
-      return [];
-    }
-  });
+    },
+  );
 
-  ipcMain.handle('readProofreadDataFile', async (event, { filePath }) => {
-    try {
-      if (!filePath || !fs.existsSync(filePath)) {
-        logMessage(`读取校对中间态失败: 文件不存在 ${filePath}`, 'error');
+  ipcMain.handle(
+    'readProofreadDataFile',
+    async (event, { filePath, strict = false }) => {
+      try {
+        if (!filePath || !fs.existsSync(filePath)) {
+          if (strict) throw new Error(`File not found: ${filePath}`);
+          logMessage(`读取校对中间态失败: 文件不存在 ${filePath}`, 'error');
+          return [];
+        }
+        const proofreadData = await readProofreadDataFile(filePath, { strict });
+        return {
+          subtitles: proofreadDataToSubtitleRows(proofreadData),
+          speakers: proofreadData.speakers,
+          missedSpeechWarnings: proofreadData.missedSpeechWarnings || [],
+          missedSpeechSummary: proofreadData.missedSpeechSummary,
+        };
+      } catch (error) {
+        logMessage(`读取校对中间态错误: ${error.message}`, 'error');
+        if (strict) throw error;
         return [];
       }
-      const proofreadData = await readProofreadDataFile(filePath);
-      return {
-        subtitles: proofreadDataToSubtitleRows(proofreadData),
-        speakers: proofreadData.speakers,
-        missedSpeechWarnings: proofreadData.missedSpeechWarnings || [],
-        missedSpeechSummary: proofreadData.missedSpeechSummary,
-      };
-    } catch (error) {
-      logMessage(`读取校对中间态错误: ${error.message}`, 'error');
-      return [];
-    }
-  });
+    },
+  );
 
   // 读取任意字幕文件并转换为 WebVTT 文本（供播放器内嵌字幕轨道使用）
   ipcMain.handle('getSubtitleAsVtt', async (event, { filePath }) => {
@@ -464,6 +570,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     'saveSubtitleFile',
     async (event, { filePath, subtitles, contentType = 'source' }) => {
       try {
+        assertTaskRunEditable({ path: filePath });
         await writeSubtitleFile(filePath, subtitles, contentType);
         return { success: true };
       } catch (error) {
@@ -493,12 +600,15 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         outputs: { filePath?: string; contentType?: string }[];
       },
     ) => {
+      let finishWrite: (() => void) | undefined;
       try {
         if (!proofreadDataFile || !fs.existsSync(proofreadDataFile)) {
           throw new Error(
             `Proofread data file not found: ${proofreadDataFile}`,
           );
         }
+        assertTaskRunEditable({ path: proofreadDataFile });
+        finishWrite = beginTaskResultWrite(proofreadDataFile);
 
         const updated = await updateProofreadDataFromSubtitles(
           proofreadDataFile,
@@ -507,6 +617,16 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         );
 
         const rendered = new Set<string>();
+        const layoutPaths = new Set(
+          [
+            ...(updated.meta.sourceSubtitleFiles || []),
+            ...(updated.meta.translatedSubtitleFiles || []),
+            updated.meta.tempSrtFile,
+            updated.meta.tempFinalSubtitleFile,
+          ]
+            .filter(Boolean)
+            .map((filePath) => path.resolve(filePath!).toLowerCase()),
+        );
         for (const output of [
           ...subtitleOutputFilesToSave(
             updated.meta,
@@ -516,6 +636,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         ]) {
           const filePath = output?.filePath;
           if (!filePath) continue;
+          assertTaskRunEditable({ path: filePath });
           const key = path.resolve(filePath).toLowerCase();
           if (rendered.has(key)) continue;
           rendered.add(key);
@@ -526,8 +647,68 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
             {
               speakers: updated.speakers,
               embedSpeakerNames,
+              layout: layoutPaths.has(key) ? updated.meta : undefined,
             },
           );
+        }
+
+        const remainingFailures = (updated?.cues || []).filter(
+          (cue) =>
+            cue.translationStatus === 'failed' ||
+            Boolean(cue.target && /^\[翻译失败:/.test(cue.target.trim())),
+        );
+        const translationFailures = remainingFailures.map((cue) => ({
+          subtitleId: cue.id,
+          error: cue.translationError,
+        }));
+
+        for (const item of getWorkItems()) {
+          if (!isPipelineWorkItem(item)) continue;
+          let matched = false;
+          const pipelineFiles = (item.pipelineFiles || []).map((file) => {
+            if (
+              file.proofreadDataFile === proofreadDataFile ||
+              (file.proofreadDataFile &&
+                path.resolve(file.proofreadDataFile).toLowerCase() ===
+                  path.resolve(proofreadDataFile).toLowerCase())
+            ) {
+              matched = true;
+              event.sender.send('taskFileChange', {
+                ...file,
+                translationFailures,
+              });
+              return {
+                ...file,
+                translationFailures,
+              };
+            }
+            return file;
+          });
+          if (matched) {
+            const run = taskRunService()?.get(item.id);
+            if (run) {
+              const file = run.files.find(
+                (file) =>
+                  file.projection.proofreadDataFile &&
+                  path.resolve(file.projection.proofreadDataFile) ===
+                    path.resolve(proofreadDataFile),
+              );
+              if (!file) throw new Error('TASK_FILE_NOT_FOUND');
+              taskRunService()!.recordProofreadEdit({
+                projectId: item.id,
+                runId: run.runId,
+                fileId: file.fileId,
+                digest: digestValue(updated),
+                translationFailures,
+              });
+              break;
+            }
+            saveWorkItem(
+              { ...item, pipelineFiles, updatedAt: Date.now() },
+              { durable: true },
+            );
+            break;
+          }
         }
 
         return { success: true };
@@ -536,6 +717,8 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         return {
           error: `保存校对中间态错误: ${error.message}`,
         };
+      } finally {
+        finishWrite?.();
       }
     },
   );
@@ -636,7 +819,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     async (
       event,
       options: {
-        type: 'video' | 'subtitle' | 'any';
+        type: 'video' | 'subtitle' | 'manuscript' | 'any';
         title?: string;
         multiple?: boolean;
       },
@@ -657,6 +840,13 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
           {
             name: 'Subtitle Files',
             extensions: SUBTITLE_EXTENSIONS.map((ext) => ext.substring(1)),
+          },
+        ];
+      } else if (type === 'manuscript') {
+        filters = [
+          {
+            name: 'Reference Manuscript',
+            extensions: MANUSCRIPT_EXTENSIONS.map((ext) => ext.slice(1)),
           },
         ];
       }
@@ -680,7 +870,11 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
                 ),
               )
             ).filter((filePath): filePath is string => Boolean(filePath))
-          : result.filePaths;
+          : type === 'manuscript'
+            ? result.filePaths.filter((filePath) =>
+                isSupportedManuscriptPath(filePath),
+              )
+            : result.filePaths;
 
       return {
         filePaths,

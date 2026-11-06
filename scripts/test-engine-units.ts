@@ -3,7 +3,7 @@
  * 引擎纯逻辑单元测试（无 Electron / 无模型依赖）。
  *
  * 覆盖 Phase 4 重构中抽取/搬迁的共享逻辑（回归风险最高的部分）：
- *  - transcribeShared: 时间格式化 / 语言归一 / 数值兜底 / VAD 设置
+ *  - transcribeShared: 时间格式化 / 语言归一 / 数值兜底 / VAD 设置 / flash attention 后端判定
  *  - modelMap: ggml→CT2 显式映射（含 large-v3-turbo、量化后缀）
  *  - protocolSupport: 协议区间校验（安装/启动门禁）
  *
@@ -16,7 +16,9 @@ import {
   getWhisperLanguage,
   secondsToSrtTime,
   getVadSettings,
+  shouldUseFlashAttn,
 } from '../main/helpers/engines/transcribeShared';
+import type { WhisperBackend } from '../types/addon';
 import {
   buildFasterWhisperAdvancedParams,
   FASTER_WHISPER_ADVANCED_PARAM_SPECS,
@@ -34,6 +36,15 @@ import {
   planPreviousRuntimeDisposal,
   canFastSwitchVariant,
 } from '../main/helpers/pythonRuntime/parking';
+import {
+  normalizeStagingLayout,
+  verifyRuntimeCompatibility,
+  buildImportedManifest,
+  detectBinaryArch,
+  extractEmbeddedPythonVersion,
+  readEngineManifestFromDir,
+} from '../main/helpers/pythonRuntime/runtimeImporter';
+import * as tar from 'tar';
 import {
   getSourceFallbackOrder,
   DEFAULT_SOURCE_ORDER,
@@ -119,7 +130,15 @@ import {
   segmentTiming,
   progressPercent,
 } from '../main/helpers/sherpaOnnx/sherpaConfig';
-import { buildQwenParams } from '../main/helpers/engines/qwenParams';
+import {
+  buildQwenParams,
+  clampQwenMaxSpeech,
+  estimateQwenTokens,
+  findQwenOverBudgetSegments,
+  QWEN_DEFAULT_MAX_SPEECH_S,
+  QWEN_HARD_MAX_SPEECH_S,
+} from '../main/helpers/engines/qwenParams';
+import { sanitizeQwenAsrText } from '../main/helpers/engines/qwenText';
 import {
   buildFireRedParams,
   clampFireRedMaxSpeech,
@@ -511,6 +530,24 @@ eq(
   0.8,
   'vad: custom threshold passthrough',
 );
+
+// --- shouldUseFlashAttn ---
+// Record<WhisperBackend, boolean>：新增后端时这里会编译失败，逼着作者为它明确做出 FA 开/关的决定。
+const expectedFlashAttn: Record<WhisperBackend, boolean> = {
+  metal: true,
+  coreml: true,
+  cuda: true,
+  cpu: false,
+  vulkan: false,
+  custom: false,
+};
+for (const [backend, expected] of Object.entries(expectedFlashAttn)) {
+  eq(
+    shouldUseFlashAttn(backend as WhisperBackend),
+    expected,
+    `flash attn: ${backend} -> ${expected}`,
+  );
+}
 
 // --- faster-whisper advanced transcription params ---
 eq(
@@ -1381,9 +1418,10 @@ eq(
     vad_threshold: 0.5,
     vad_min_silence_duration_ms: 100,
     vad_min_speech_duration_ms: 250,
-    vad_max_speech_duration_s: 0,
+    // 不再沿用「0 = 不限制」：Qwen 的 token 预算装不下长段（design D2/D3）。
+    vad_max_speech_duration_s: QWEN_DEFAULT_MAX_SPEECH_S,
   },
-  'qwen: default params match sherpa upstream defaults',
+  'qwen: default params match sherpa upstream defaults (max speech capped)',
 );
 eq(
   buildQwenParams({ qwenProvider: 'cuda', qwenNumThreads: 4 }).provider,
@@ -1401,6 +1439,249 @@ eq(
   256,
   'qwen: custom max_new_tokens passthrough',
 );
+
+// --- qwenParams: 段长安全闸（design D2/D3）---
+// 默认 15 秒、上限 20 秒；0 / 未设 / 非法 → 默认，绝不把「不限制」传给 VAD。
+eq(QWEN_DEFAULT_MAX_SPEECH_S, 15, 'qwen: default max speech is 15s');
+eq(QWEN_HARD_MAX_SPEECH_S, 20, 'qwen: hard max speech is 20s');
+for (const [raw, label] of [
+  [0, '0 (unlimited convention)'],
+  [undefined, 'undefined'],
+  [null, 'null'],
+  [Number.NaN, 'NaN'],
+  [Number.POSITIVE_INFINITY, 'Infinity'],
+  [-5, 'negative'],
+  ['abc', 'non-numeric string'],
+] as Array<[unknown, string]>) {
+  eq(
+    clampQwenMaxSpeech(raw),
+    QWEN_DEFAULT_MAX_SPEECH_S,
+    `qwen: max speech ${label} -> 15s default (never unlimited)`,
+  );
+}
+eq(clampQwenMaxSpeech(12), 12, 'qwen: in-range max speech passes through');
+eq(
+  clampQwenMaxSpeech(20),
+  20,
+  'qwen: max speech exactly at the 20s hard cap passes through',
+);
+eq(clampQwenMaxSpeech(0.5), 0.5, 'qwen: fractional max speech passes through');
+eq(
+  clampQwenMaxSpeech(25),
+  QWEN_HARD_MAX_SPEECH_S,
+  'qwen: max speech above the cap clamps to 20s',
+);
+eq(
+  clampQwenMaxSpeech(60),
+  QWEN_HARD_MAX_SPEECH_S,
+  'qwen: slider maximum (60s) clamps to 20s',
+);
+eq(
+  buildQwenParams({ vadMaxSpeechDuration: 0 }).vad_max_speech_duration_s,
+  QWEN_DEFAULT_MAX_SPEECH_S,
+  'qwen: buildQwenParams overrides 0=unlimited convention (auto 15s)',
+);
+eq(
+  buildQwenParams({ vadMaxSpeechDuration: 12 }).vad_max_speech_duration_s,
+  12,
+  'qwen: buildQwenParams keeps a valid manual max speech',
+);
+eq(
+  buildQwenParams({ vadMaxSpeechDuration: 60 }).vad_max_speech_duration_s,
+  QWEN_HARD_MAX_SPEECH_S,
+  'qwen: buildQwenParams clamps an oversized max speech to 20s',
+);
+
+// --- qwenParams: 解码预算估算（sherpa-onnx v1.13.2：提示词约 15 + 音频 13/秒 + 生成预留）---
+eq(
+  estimateQwenTokens(28, 128),
+  507,
+  'qwen: a 28s segment needs 507 tokens (fits the default 512)',
+);
+eq(
+  estimateQwenTokens(30, 128),
+  533,
+  'qwen: a 30s segment needs 533 tokens (over the default 512)',
+);
+eq(
+  estimateQwenTokens(28.3, 128),
+  511,
+  'qwen: 28.3s still fits the default 512 budget',
+);
+eq(
+  estimateQwenTokens(28.4, 128),
+  513,
+  'qwen: 28.4s no longer fits the default 512 budget',
+);
+eq(
+  estimateQwenTokens(45, 256),
+  856,
+  'qwen: token estimate follows the configured max_new_tokens',
+);
+
+// --- qwenParams: 超预算 VAD 段查找 ---
+const QWEN_DEFAULT_BUDGET = { max_total_len: 512, max_new_tokens: 128 };
+eq(
+  findQwenOverBudgetSegments(QWEN_DEFAULT_BUDGET, undefined),
+  null,
+  'qwen budget: no VAD info -> nothing to report',
+);
+eq(
+  findQwenOverBudgetSegments(QWEN_DEFAULT_BUDGET, []),
+  null,
+  'qwen budget: empty VAD list -> nothing to report',
+);
+eq(
+  findQwenOverBudgetSegments(QWEN_DEFAULT_BUDGET, [
+    { start: 0, end: 12.5 },
+    { start: 13, end: 41 },
+  ]),
+  null,
+  'qwen budget: segments up to 28s fit (boundary included)',
+);
+eq(
+  findQwenOverBudgetSegments(QWEN_DEFAULT_BUDGET, [{ start: 0, end: 30 }]),
+  {
+    count: 1,
+    total: 1,
+    longest: { start: 0, end: 30, tokens: 533 },
+    fitSeconds: 28.3,
+  },
+  'qwen budget: a single 30s segment is reported with its token need',
+);
+eq(
+  findQwenOverBudgetSegments(QWEN_DEFAULT_BUDGET, [
+    { start: 0, end: 10 },
+    { start: 10, end: 55 },
+    { start: 60, end: 92 },
+    { start: 100, end: 110 },
+  ]),
+  {
+    count: 2,
+    total: 4,
+    longest: { start: 10, end: 55, tokens: 728 },
+    fitSeconds: 28.3,
+  },
+  'qwen budget: mixed segments report count, total and the longest one',
+);
+eq(
+  findQwenOverBudgetSegments({ max_total_len: 1024, max_new_tokens: 256 }, [
+    { start: 0, end: 45 },
+  ]),
+  null,
+  'qwen budget: a raised budget (1024/256) fits a 45s segment',
+);
+eq(
+  findQwenOverBudgetSegments({ max_total_len: 1024, max_new_tokens: 256 }, [
+    { start: 0, end: 60 },
+  ])?.fitSeconds,
+  57.9,
+  'qwen budget: fitSeconds follows the configured budget',
+);
+eq(
+  findQwenOverBudgetSegments(QWEN_DEFAULT_BUDGET, [
+    { start: 5, end: 5 },
+    { start: Number.NaN, end: 3 },
+    { start: 9, end: 2 },
+  ]),
+  null,
+  'qwen budget: empty, NaN and reversed segments are ignored',
+);
+
+// --- qwenText: protocol cleanup without guessing which words are speech ---
+const qwenTextCases: Array<[string | null | undefined, string]> = [
+  [null, ''],
+  [undefined, ''],
+  ['', ''],
+  [' \n\u200B\uFEFF ', ''],
+  ['language English<asr_text>Now', 'Now'],
+  ['language Chinese<asr_text>所以', '所以'],
+  ['language None<asr_text>', ''],
+  ['language None<asr_text>Now', 'Now'],
+  ['language Cantonese<asr_text>唔係你。', '唔係你。'],
+  ['language Arabic<asr_text>مرحبا', 'مرحبا'],
+  ['language Macedonian<asr_text>Здраво', 'Здраво'],
+  ['LANGUAGE: english < ASR_TEXT > Now', 'Now'],
+  ['language\nChinese\n<asr_text>你好', '你好'],
+  ['语言中文<asr_text>正态分布', '正态分布'],
+  ['语言： 英文<asr_text>Hello', 'Hello'],
+  ['语言粤语<asr_text>你好', '你好'],
+  ['<asr_text>纯标签前缀', '纯标签前缀'],
+  ['<asr_text></asr_text>', ''],
+  ['language Chinese<asr_text>你好<asr_text>世界', '你好世界'],
+  ['<asr_text>唔係你。<asr_text>我', '唔係你。我'],
+  ['language Chinese<asr_text>你好</asr_text>', '你好'],
+  ['hello < ASR_TEXT > world< / ASR_TEXT >', 'hello  world'],
+  ['language Chinese<asr_text>language English<asr_text>Hello', 'Hello'],
+  ['<asr_text>language English<asr_text>Hello', 'Hello'],
+  ['language English<asr_text>language Chinese', 'language Chinese'],
+  ['language English<asr_text>language Chinese</asr_text>', 'language Chinese'],
+  ['language Chinese<asr_text>语言中文</asr_text>', '语言中文'],
+  [
+    'language English<asr_text>language Chinese< / ASR_TEXT >',
+    'language Chinese',
+  ],
+  ['language Chinese</asr_text>', 'language Chinese'],
+  ['language Chinese<asr_text>语言中文', '语言中文'],
+  ['language English<asr_text>language learning', 'language learning'],
+  ['\u200Blanguage English<asr_text>Now\uFEFF', 'Now'],
+  [' \uFEFF\u200B Now\u200B \n', 'Now'],
+  ['hello\u200Bworld', 'hello\u200Bworld'],
+  ['**language Chinese<asr_text>开玩笑 **', '开玩笑'],
+  ['*language English<asr_text>Hello*', 'Hello'],
+  ['**language English<asr_text>Hello', 'Hello'],
+  ['language English<asr_text>Hello**', 'Hello**'],
+  ['**language English<asr_text>Hello*', 'Hello*'],
+  ['**language English<asr_text>Hello***', 'Hello***'],
+  ['language English<asr_text>**important**', '**important**'],
+  ['**important**', '**important**'],
+  ['language Chinese', ''],
+  ['language chinese.', ''],
+  ['language Chinese。', ''],
+  ['language Chinese:', ''],
+  ['language:English', ''],
+  ['language French', ''],
+  ['language None', ''],
+  ['语言中文', ''],
+  ['语言：粤语。', ''],
+  ['**language Chinese**', ''],
+  ['*language English.*', ''],
+  ['"language Chinese"', ''],
+  ["'language Chinese'", ''],
+  ['“语言中文”', ''],
+  ['‘language English’', ''],
+  ['"language Chinese', '"language Chinese'],
+  ['**language Chinese*', '**language Chinese*'],
+  ['language Klingon', 'language Klingon'],
+  ['language auto', 'language auto'],
+  ['language Chinese-English', 'language Chinese-English'],
+  ['language Chinese speakers', 'language Chinese speakers'],
+  ['languages', 'languages'],
+  ['languageChinese', 'languageChinese'],
+  ['language model', 'language model'],
+  ['language learning', 'language learning'],
+  ['language is very important', 'language is very important'],
+  ['语言学', '语言学'],
+  ['语言表达能力', '语言表达能力'],
+  ['语言中文叫汉语', '语言中文叫汉语'],
+  ['language Klingon<asr_text>Qapla', 'language KlingonQapla'],
+  ['正文 language Chinese<asr_text>你好', '正文 language Chinese你好'],
+  ['<b>正文</b>', '<b>正文</b>'],
+  ['Now', 'Now'],
+  ['Stop', 'Stop'],
+  ['Welcome', 'Welcome'],
+  ['computer', 'computer'],
+  ['English', 'English'],
+  ['None', 'None'],
+  ['你好 world', '你好 world'],
+];
+for (const [input, expected] of qwenTextCases) {
+  eq(
+    sanitizeQwenAsrText(input),
+    expected,
+    `qwen text: ${JSON.stringify(input)}`,
+  );
+}
 
 // --- engineModels: fireRedAsr awareness ---
 const fireRedReady = {
@@ -1916,6 +2197,11 @@ eq(
   'path: whitespace -> fallback',
 );
 
+// CTranslate2 的 load_vocabulary 依次尝试 vocabulary.json、vocabulary.txt，两者都打不开
+// 才抛 "Cannot load the vocabulary from the model directory"。
+const CT2_VOCABULARY_MISSING =
+  'vocabulary.json or vocabulary.txt is missing or empty';
+
 // --- CT2 模型完整性：残缺快照不算已安装，完整快照优先 ---
 {
   const tmp = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'ct2-integrity-'));
@@ -1926,6 +2212,7 @@ eq(
   fs.mkdirSync(complete, { recursive: true });
   fs.writeFileSync(nodePath.join(incomplete, 'model.bin'), 'model');
   fs.writeFileSync(nodePath.join(complete, 'model.bin'), 'model');
+  fs.writeFileSync(nodePath.join(complete, 'vocabulary.txt'), 'token\n');
   fs.writeFileSync(
     nodePath.join(complete, 'config.json'),
     JSON.stringify({
@@ -1947,8 +2234,8 @@ eq(
   );
   eq(
     validateCt2ModelSnapshot(incomplete).issues,
-    ['config.json is missing'],
-    'ct2 integrity: missing config is diagnosed',
+    ['config.json is missing', CT2_VOCABULARY_MISSING],
+    'ct2 integrity: missing config and vocabulary are diagnosed together',
   );
   eq(
     inspectCt2SnapshotRoot(snapshots).snapshotDir,
@@ -1971,6 +2258,113 @@ eq(
       'config.json.suppress_ids_begin is missing or invalid',
     ],
     'ct2 integrity: missing native config arrays are diagnosed',
+  );
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// --- CT2 词表：只有 model.bin + config.json 的快照不算已安装 ---
+// 下载器按文件名字母序取文件（config.json → model.bin → … → tokenizer.json →
+// vocabulary.*），model.bin 之后失败、取消或退出应用会留下这种半成品；手动导入或
+// 拷贝不全的文件夹同样如此。校验若放行，界面显示已安装、转写才报 CTranslate2 的
+// 词表错误，下载器也会因「已安装」直接返回而无法补文件。
+{
+  const tmp = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'ct2-vocabulary-'));
+  const config = JSON.stringify({
+    lang_ids: [],
+    suppress_ids: [],
+    suppress_ids_begin: [],
+  });
+  const makeSnapshot = (
+    parent: string,
+    name: string,
+    extra: Record<string, string> = {},
+  ): string => {
+    const dir = nodePath.join(parent, name);
+    fs.mkdirSync(dir, { recursive: true });
+    const files = { 'model.bin': 'model', 'config.json': config, ...extra };
+    for (const [file, content] of Object.entries(files)) {
+      fs.writeFileSync(nodePath.join(dir, file), content);
+    }
+    return dir;
+  };
+  const issuesOf = (dir: string) => validateCt2ModelSnapshot(dir).issues;
+
+  eq(
+    issuesOf(makeSnapshot(tmp, 'partial', { 'tokenizer.json': '{}' })),
+    [CT2_VOCABULARY_MISSING],
+    'ct2 vocabulary: model.bin + config.json + tokenizer.json is still incomplete',
+  );
+  eq(
+    issuesOf(makeSnapshot(tmp, 'json', { 'vocabulary.json': '["a"]' })),
+    [],
+    'ct2 vocabulary: vocabulary.json is enough (large-v3, turbo, distil)',
+  );
+  eq(
+    issuesOf(makeSnapshot(tmp, 'txt', { 'vocabulary.txt': 'a\n' })),
+    [],
+    'ct2 vocabulary: vocabulary.txt is enough (tiny, base, small, medium)',
+  );
+  eq(
+    issuesOf(makeSnapshot(tmp, 'empty', { 'vocabulary.json': '' })),
+    [CT2_VOCABULARY_MISSING],
+    'ct2 vocabulary: an empty vocabulary file does not count',
+  );
+  eq(
+    issuesOf(makeSnapshot(tmp, 'misnamed', { 'vocab.txt': 'a\n' })),
+    [CT2_VOCABULARY_MISSING],
+    'ct2 vocabulary: the name must be exactly vocabulary.json or vocabulary.txt',
+  );
+
+  // HuggingFace 缓存里的文件是指向 blobs/ 的软链接：指向真实 blob 的要认；
+  // 缓存被拷走、blobs 丢了留下的悬空链接不能认。无权创建软链接的平台跳过。
+  try {
+    const blobs = nodePath.join(tmp, 'blobs');
+    fs.mkdirSync(blobs, { recursive: true });
+    fs.writeFileSync(nodePath.join(blobs, 'vocabulary-blob'), '["a"]');
+    const linked = makeSnapshot(tmp, 'linked');
+    fs.symlinkSync(
+      nodePath.join(blobs, 'vocabulary-blob'),
+      nodePath.join(linked, 'vocabulary.json'),
+    );
+    const dangling = makeSnapshot(tmp, 'dangling');
+    fs.symlinkSync(
+      nodePath.join(blobs, 'missing-blob'),
+      nodePath.join(dangling, 'vocabulary.json'),
+    );
+    eq(
+      issuesOf(linked),
+      [],
+      'ct2 vocabulary: a symlink to a real blob counts (HuggingFace cache layout)',
+    );
+    eq(
+      issuesOf(dangling),
+      [CT2_VOCABULARY_MISSING],
+      'ct2 vocabulary: a dangling symlink does not count',
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
+  }
+
+  // 半成品快照不算已安装；补上缺的文件即修复。
+  const snapshotRoot = nodePath.join(tmp, 'snapshots');
+  const stopped = makeSnapshot(snapshotRoot, 'rev-1', {
+    'tokenizer.json': '{}',
+  });
+  const stoppedInspection = inspectCt2SnapshotRoot(snapshotRoot);
+  eq(
+    [
+      stoppedInspection.snapshotDir,
+      stoppedInspection.incompleteSnapshotDir,
+      stoppedInspection.issues,
+    ],
+    [null, stopped, [CT2_VOCABULARY_MISSING]],
+    'ct2 vocabulary: a download that stopped after model.bin is incomplete, not installed',
+  );
+  fs.writeFileSync(nodePath.join(stopped, 'vocabulary.json'), '["a"]');
+  eq(
+    inspectCt2SnapshotRoot(snapshotRoot).snapshotDir,
+    stopped,
+    'ct2 vocabulary: fetching the missing file repairs the snapshot in place',
   );
   fs.rmSync(tmp, { recursive: true, force: true });
 }
@@ -7090,6 +7484,1495 @@ async function runAsyncConcurrencyTests(): Promise<void> {
     r2();
   }
 }
+
+function runRuntimeImportTests() {
+  const tmpRoot = fs.mkdtempSync(
+    nodePath.join(os.tmpdir(), 'smartsub-test-import-'),
+  );
+
+  try {
+    // 1. normalizeStagingLayout: 展平单层嵌套目录
+    {
+      const dir = nodePath.join(tmpRoot, 'nested-layout');
+      const inner = nodePath.join(dir, 'bundle');
+      fs.mkdirSync(nodePath.join(inner, 'site-packages'), { recursive: true });
+      fs.writeFileSync(nodePath.join(inner, 'main.py'), '# main');
+      fs.writeFileSync(nodePath.join(inner, 'manifest.json'), '{}');
+
+      normalizeStagingLayout(dir);
+      eq(
+        fs.existsSync(nodePath.join(dir, 'main.py')),
+        true,
+        'import layout: unwraps single nested dir into staging root',
+      );
+      eq(
+        fs.existsSync(nodePath.join(dir, 'site-packages')),
+        true,
+        'import layout: unwrapped site-packages exists at staging root',
+      );
+      eq(
+        fs.existsSync(inner),
+        false,
+        'import layout: inner wrapper dir removed after unwrap',
+      );
+    }
+
+    // 2. verifyRuntimeCompatibility: 正常匹配 Windows CPU
+    {
+      const dir = nodePath.join(tmpRoot, 'win-cpu');
+      fs.mkdirSync(nodePath.join(dir, 'site-packages'), { recursive: true });
+      fs.writeFileSync(nodePath.join(dir, 'python.exe'), '');
+      fs.writeFileSync(nodePath.join(dir, 'main.py'), '');
+      fs.writeFileSync(
+        nodePath.join(dir, 'manifest.json'),
+        JSON.stringify({
+          platform: 'windows-x64',
+          variant: 'cpu',
+          engineVersion: '0.4.0',
+          protocolVersion: 1,
+        }),
+      );
+
+      const res = verifyRuntimeCompatibility({
+        stagingDir: dir,
+        currentPlatform: 'windows-x64',
+        currentOs: 'win32',
+      });
+      eq(res.ok, true, 'verify import: windows cpu on windows passes');
+      eq(res.variant, 'cpu', 'verify import: correctly identifies cpu variant');
+      eq(
+        res.pkgManifest?.engineVersion,
+        '0.4.0',
+        'verify import: reads manifest',
+      );
+    }
+
+    // 3. verifyRuntimeCompatibility: 正常匹配 Windows CUDA
+    {
+      const dir = nodePath.join(tmpRoot, 'win-cuda');
+      fs.mkdirSync(nodePath.join(dir, 'site-packages', 'nvidia'), {
+        recursive: true,
+      });
+      fs.writeFileSync(nodePath.join(dir, 'python.exe'), '');
+      fs.writeFileSync(nodePath.join(dir, 'main.py'), '');
+      fs.writeFileSync(
+        nodePath.join(dir, 'manifest.json'),
+        JSON.stringify({
+          platform: 'windows-x64',
+          variant: 'cuda',
+          engineVersion: '0.4.0',
+          protocolVersion: 1,
+        }),
+      );
+
+      const res = verifyRuntimeCompatibility({
+        stagingDir: dir,
+        currentPlatform: 'windows-x64',
+        currentOs: 'win32',
+      });
+      eq(res.ok, true, 'verify import: windows cuda on windows passes');
+      eq(
+        res.variant,
+        'cuda',
+        'verify import: correctly identifies cuda variant',
+      );
+    }
+
+    // 4. verifyRuntimeCompatibility: 无 manifest 时由 site-packages/nvidia 推断 cuda
+    {
+      const dir = nodePath.join(tmpRoot, 'infer-cuda');
+      fs.mkdirSync(nodePath.join(dir, 'site-packages', 'nvidia'), {
+        recursive: true,
+      });
+      fs.writeFileSync(nodePath.join(dir, 'python.exe'), '');
+      fs.writeFileSync(nodePath.join(dir, 'main.py'), '');
+
+      const res = verifyRuntimeCompatibility({
+        stagingDir: dir,
+        currentPlatform: 'windows-x64',
+        currentOs: 'win32',
+      });
+      eq(res.ok, true, 'verify import: infer cuda when nvidia dir present');
+      eq(res.variant, 'cuda', 'verify import: variant inferred as cuda');
+    }
+
+    // 5. verifyRuntimeCompatibility: 平台不匹配拦截（macOS 误选 Windows 包）
+    {
+      const dir = nodePath.join(tmpRoot, 'platform-mismatch');
+      fs.mkdirSync(nodePath.join(dir, 'site-packages'), { recursive: true });
+      fs.writeFileSync(nodePath.join(dir, 'python.exe'), '');
+      fs.writeFileSync(nodePath.join(dir, 'main.py'), '');
+      fs.writeFileSync(
+        nodePath.join(dir, 'manifest.json'),
+        JSON.stringify({
+          platform: 'windows-x64',
+          variant: 'cpu',
+        }),
+      );
+
+      const res = verifyRuntimeCompatibility({
+        stagingDir: dir,
+        currentPlatform: 'macos-arm64',
+        currentOs: 'darwin',
+      });
+      eq(res.ok, false, 'verify import: rejects platform mismatch');
+      eq(
+        res.error?.includes('不匹配'),
+        true,
+        'verify import: friendly error message on platform mismatch',
+      );
+    }
+
+    // 6. verifyRuntimeCompatibility: 解释器二进制类型防呆（Windows 下仅有 bin/python3）
+    {
+      const dir = nodePath.join(tmpRoot, 'exe-mismatch');
+      fs.mkdirSync(nodePath.join(dir, 'bin'), { recursive: true });
+      fs.mkdirSync(nodePath.join(dir, 'site-packages'), { recursive: true });
+      fs.writeFileSync(nodePath.join(dir, 'bin', 'python3'), '');
+      fs.writeFileSync(nodePath.join(dir, 'main.py'), '');
+
+      const res = verifyRuntimeCompatibility({
+        stagingDir: dir,
+        currentPlatform: 'windows-x64',
+        currentOs: 'win32',
+      });
+      eq(res.ok, false, 'verify import: rejects unix binary on windows');
+      eq(
+        res.error?.includes('macOS/Linux'),
+        true,
+        'verify import: friendly error on wrong os binary',
+      );
+    }
+
+    // 7. verifyRuntimeCompatibility: macOS 不支持 CUDA
+    {
+      const dir = nodePath.join(tmpRoot, 'macos-cuda');
+      fs.mkdirSync(nodePath.join(dir, 'bin'), { recursive: true });
+      fs.mkdirSync(nodePath.join(dir, 'site-packages', 'nvidia'), {
+        recursive: true,
+      });
+      fs.writeFileSync(nodePath.join(dir, 'bin', 'python3'), '');
+      fs.writeFileSync(nodePath.join(dir, 'main.py'), '');
+
+      const res = verifyRuntimeCompatibility({
+        stagingDir: dir,
+        currentPlatform: 'macos-arm64',
+        currentOs: 'darwin',
+      });
+      eq(res.ok, false, 'verify import: rejects cuda on macos');
+      eq(
+        res.error?.includes('不支持 CUDA'),
+        true,
+        'verify import: friendly error for cuda on macos',
+      );
+    }
+
+    // 8. verifyRuntimeCompatibility: 协议超前不兼容拦截
+    {
+      const dir = nodePath.join(tmpRoot, 'protocol-mismatch');
+      fs.mkdirSync(nodePath.join(dir, 'site-packages'), { recursive: true });
+      fs.writeFileSync(nodePath.join(dir, 'python.exe'), '');
+      fs.writeFileSync(nodePath.join(dir, 'main.py'), '');
+      fs.writeFileSync(
+        nodePath.join(dir, 'manifest.json'),
+        JSON.stringify({
+          platform: 'windows-x64',
+          variant: 'cpu',
+          protocolVersion: 999,
+        }),
+      );
+
+      const res = verifyRuntimeCompatibility({
+        stagingDir: dir,
+        currentPlatform: 'windows-x64',
+        currentOs: 'win32',
+      });
+      eq(res.ok, false, 'verify import: rejects future unsupported protocol');
+      eq(
+        res.error?.includes('协议版本'),
+        true,
+        'verify import: mentions protocol version in error',
+      );
+    }
+
+    // 9. buildImportedManifest 属性保留与填充
+    {
+      const manifest = buildImportedManifest({
+        pkgManifest: {
+          version: 'latest',
+          platform: 'windows-x64',
+          sha256: '',
+          installedAt: '',
+          engineVersion: '0.4.0',
+          protocolVersion: 1,
+          gitSha: 'abcdef1',
+          builtAt: '2026-09-15T00:00:00Z',
+          variant: 'cuda',
+        },
+        currentPlatform: 'windows-x64',
+        variant: 'cuda',
+        sha256: 'computed-sha256-hash',
+      });
+      eq(manifest.platform, 'windows-x64', 'manifest: platform set');
+      eq(manifest.variant, 'cuda', 'manifest: variant set to cuda');
+      eq(manifest.engineVersion, '0.4.0', 'manifest: engineVersion retained');
+      eq(manifest.sha256, 'computed-sha256-hash', 'manifest: sha256 assigned');
+      eq(manifest.protocolVersion, 1, 'manifest: protocolVersion retained');
+      eq(manifest.gitSha, 'abcdef1', 'manifest: gitSha retained');
+      eq(manifest.engineId, 'faster-whisper', 'manifest: engineId default');
+    }
+
+    // 10. 真实 .tar.gz 归档的打包、解压与校验（验证包内 manifest.json 读取）
+    {
+      const packDir = nodePath.join(tmpRoot, 'source-to-pack');
+      fs.mkdirSync(nodePath.join(packDir, 'site-packages', 'nvidia'), {
+        recursive: true,
+      });
+      fs.writeFileSync(nodePath.join(packDir, 'python.exe'), '');
+      fs.writeFileSync(nodePath.join(packDir, 'main.py'), '# python main');
+      fs.writeFileSync(
+        nodePath.join(packDir, 'manifest.json'),
+        JSON.stringify({
+          version: 'latest',
+          engineVersion: '0.4.0',
+          protocolVersion: 1,
+          pythonAbi: 'cp312',
+          platform: 'windows-x64',
+          variant: 'cuda',
+        }),
+      );
+
+      const tarPath = nodePath.join(tmpRoot, 'archive.tar.gz');
+      tar.create(
+        {
+          gzip: true,
+          file: tarPath,
+          sync: true,
+          cwd: packDir,
+        },
+        ['.'],
+      );
+
+      const unpackDir = nodePath.join(tmpRoot, 'unpacked-staging');
+      fs.mkdirSync(unpackDir, { recursive: true });
+      tar.extract({
+        file: tarPath,
+        cwd: unpackDir,
+        sync: true,
+      });
+
+      normalizeStagingLayout(unpackDir);
+      const res = verifyRuntimeCompatibility({
+        stagingDir: unpackDir,
+        currentPlatform: 'windows-x64',
+        currentOs: 'win32',
+      });
+
+      eq(res.ok, true, 'tar.gz import: archive extracted and verified');
+      eq(res.variant, 'cuda', 'tar.gz import: bundles cuda variant correctly');
+      eq(
+        res.pkgManifest?.engineVersion,
+        '0.4.0',
+        'tar.gz import: manifest unpacked',
+      );
+    }
+
+    // 11. detectBinaryArch: 识别 Mach-O, ELF, PE 头部架构
+    {
+      const binDir = nodePath.join(tmpRoot, 'binary-arch-tests');
+      fs.mkdirSync(binDir, { recursive: true });
+
+      // Mach-O x64
+      const machOX64 = nodePath.join(binDir, 'macho-x64');
+      const b1 = Buffer.alloc(32);
+      b1[0] = 0xcf;
+      b1[1] = 0xfa;
+      b1[2] = 0xed;
+      b1[3] = 0xfe;
+      b1.writeUInt32LE(0x01000007, 4);
+      fs.writeFileSync(machOX64, b1);
+      eq(detectBinaryArch(machOX64), 'x64', 'detectBinaryArch: mach-o x64');
+
+      // Mach-O arm64
+      const machOArm64 = nodePath.join(binDir, 'macho-arm64');
+      const b2 = Buffer.alloc(32);
+      b2[0] = 0xcf;
+      b2[1] = 0xfa;
+      b2[2] = 0xed;
+      b2[3] = 0xfe;
+      b2.writeUInt32LE(0x0100000c, 4);
+      fs.writeFileSync(machOArm64, b2);
+      eq(
+        detectBinaryArch(machOArm64),
+        'arm64',
+        'detectBinaryArch: mach-o arm64',
+      );
+
+      // Mach-O Universal
+      const machOFat = nodePath.join(binDir, 'macho-fat');
+      const b3 = Buffer.alloc(32);
+      b3[0] = 0xca;
+      b3[1] = 0xfe;
+      b3[2] = 0xba;
+      b3[3] = 0xbe;
+      fs.writeFileSync(machOFat, b3);
+      eq(
+        detectBinaryArch(machOFat),
+        'universal',
+        'detectBinaryArch: mach-o universal',
+      );
+
+      // ELF x64
+      const elfX64 = nodePath.join(binDir, 'elf-x64');
+      const b4 = Buffer.alloc(32);
+      b4[0] = 0x7f;
+      b4[1] = 0x45;
+      b4[2] = 0x4c;
+      b4[3] = 0x46;
+      b4.writeUInt16LE(0x3e, 18);
+      fs.writeFileSync(elfX64, b4);
+      eq(detectBinaryArch(elfX64), 'x64', 'detectBinaryArch: elf x64');
+
+      // ELF arm64
+      const elfArm64 = nodePath.join(binDir, 'elf-arm64');
+      const b5 = Buffer.alloc(32);
+      b5[0] = 0x7f;
+      b5[1] = 0x45;
+      b5[2] = 0x4c;
+      b5[3] = 0x46;
+      b5.writeUInt16LE(0xb7, 18);
+      fs.writeFileSync(elfArm64, b5);
+      eq(detectBinaryArch(elfArm64), 'arm64', 'detectBinaryArch: elf arm64');
+
+      // PE x64
+      const peX64 = nodePath.join(binDir, 'pe-x64.exe');
+      const b6 = Buffer.alloc(128);
+      b6[0] = 0x4d;
+      b6[1] = 0x5a;
+      b6.writeUInt32LE(0x40, 0x3c);
+      b6[0x40] = 0x50;
+      b6[0x41] = 0x45;
+      b6[0x42] = 0;
+      b6[0x43] = 0;
+      b6.writeUInt16LE(0x8664, 0x44);
+      fs.writeFileSync(peX64, b6);
+      eq(detectBinaryArch(peX64), 'x64', 'detectBinaryArch: pe x64');
+    }
+
+    // 12. verifyRuntimeCompatibility: 跨架构拦截（macOS arm64 拦截 x64 解释器）
+    {
+      const dir = nodePath.join(tmpRoot, 'arch-mismatch');
+      fs.mkdirSync(nodePath.join(dir, 'bin'), { recursive: true });
+      fs.mkdirSync(nodePath.join(dir, 'site-packages'), { recursive: true });
+      fs.writeFileSync(nodePath.join(dir, 'main.py'), '');
+
+      const x64Bin = nodePath.join(dir, 'bin', 'python3');
+      const buf = Buffer.alloc(32);
+      buf[0] = 0xcf;
+      buf[1] = 0xfa;
+      buf[2] = 0xed;
+      buf[3] = 0xfe;
+      buf.writeUInt32LE(0x01000007, 4); // x86_64
+      fs.writeFileSync(x64Bin, buf);
+
+      const res = verifyRuntimeCompatibility({
+        stagingDir: dir,
+        currentPlatform: 'macos-arm64',
+        currentOs: 'darwin',
+        currentArch: 'arm64',
+      });
+      eq(res.ok, false, 'verify import: rejects arch mismatch on unix');
+      eq(
+        res.error?.includes('架构'),
+        true,
+        'verify import: error message mentions architecture',
+      );
+    }
+
+    // 13. extractEmbeddedPythonVersion & 动态兜底
+    {
+      const dir = nodePath.join(tmpRoot, 'version-extract');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        nodePath.join(dir, '_version.py'),
+        'ENGINE_VERSION = "0.9.8"\nPROTOCOL_VERSION = 1\n',
+      );
+
+      const parsed = extractEmbeddedPythonVersion(dir);
+      eq(parsed.engineVersion, '0.9.8', 'version extract: engineVersion');
+      eq(parsed.protocolVersion, 1, 'version extract: protocolVersion');
+
+      const manifest = buildImportedManifest({
+        pkgManifest: null,
+        currentPlatform: 'windows-x64',
+        variant: 'cpu',
+        stagingDir: dir,
+      });
+      eq(
+        manifest.engineVersion,
+        '0.9.8',
+        'buildImportedManifest: uses embedded version dynamically',
+      );
+    }
+
+    // 14. 即使无 manifest.json，_version.py 协议超前也会被拦截
+    {
+      const dir = nodePath.join(tmpRoot, 'embedded-proto-reject');
+      fs.mkdirSync(nodePath.join(dir, 'site-packages'), { recursive: true });
+      fs.writeFileSync(nodePath.join(dir, 'python.exe'), '');
+      fs.writeFileSync(nodePath.join(dir, 'main.py'), '');
+      fs.writeFileSync(
+        nodePath.join(dir, '_version.py'),
+        'ENGINE_VERSION = "2.0.0"\nPROTOCOL_VERSION = 99\n',
+      );
+
+      const res = verifyRuntimeCompatibility({
+        stagingDir: dir,
+        currentPlatform: 'windows-x64',
+        currentOs: 'win32',
+      });
+      eq(
+        res.ok,
+        false,
+        'verify import: rejects future protocol in _version.py',
+      );
+      eq(
+        res.error?.includes('协议版本'),
+        true,
+        'verify import: mentions protocol error from _version.py',
+      );
+    }
+
+    // 15. readEngineManifestFromDir
+    {
+      const dir = nodePath.join(tmpRoot, 'read-manifest-test');
+      fs.mkdirSync(dir, { recursive: true });
+      eq(
+        readEngineManifestFromDir(dir),
+        null,
+        'readEngineManifestFromDir: null when missing',
+      );
+
+      fs.writeFileSync(
+        nodePath.join(dir, 'manifest.json'),
+        JSON.stringify({ engineVersion: '1.2.3', variant: 'cuda' }),
+      );
+      const m = readEngineManifestFromDir(dir);
+      eq(m?.engineVersion, '1.2.3', 'readEngineManifestFromDir: reads version');
+      eq(m?.variant, 'cuda', 'readEngineManifestFromDir: reads variant');
+    }
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Windows 非 ASCII 路径：sherpa-onnx 的 C++ 层用窄字符 API 打开文件，
+// 系统代码页不是 UTF-8 时中文路径会"不存在"（`vad is nullptr` 的根因）。
+// 随包的小模型（silero VAD / gtcrn）改为复制到纯 ASCII 目录后再交给原生库。
+// ---------------------------------------------------------------------------
+import {
+  ensureNativeSafeModelPath,
+  hasNonAscii,
+  needsNativeSafe,
+  resetNativeSafePathCacheForTest,
+  stageBundledModel,
+  stagingBaseDirs,
+} from '../main/helpers/sherpaOnnx/nativeSafePath';
+
+function runNativeSafePathTests(): void {
+  // 1. hasNonAscii：只认真正的非 ASCII，空格 / 标点 / DEL 都不算
+  eq(hasNonAscii(''), false, 'hasNonAscii: empty string');
+  eq(
+    hasNonAscii('C:\\Users\\bob smith\\AppData\\Roaming\\SmartSub'),
+    false,
+    'hasNonAscii: ASCII path with space',
+  );
+  eq(hasNonAscii('C:\\Users\\张三\\x.wav'), true, 'hasNonAscii: CJK');
+  eq(hasNonAscii('C:\\Users\\José\\x.wav'), true, 'hasNonAscii: Latin-1');
+  eq(hasNonAscii('/tmp/😀/x.wav'), true, 'hasNonAscii: astral emoji');
+  eq(hasNonAscii('\u007f'), false, 'hasNonAscii: DEL is still ASCII');
+  eq(hasNonAscii('\u0080'), true, 'hasNonAscii: first non-ASCII code point');
+
+  // 2. needsNativeSafe：只在 Windows 且路径含非 ASCII 时介入
+  eq(
+    needsNativeSafe('C:\\Users\\张三\\m.onnx', 'win32'),
+    true,
+    'needsNativeSafe: win32 + CJK',
+  );
+  eq(
+    needsNativeSafe('C:\\Users\\bob\\m.onnx', 'win32'),
+    false,
+    'needsNativeSafe: win32 + ASCII',
+  );
+  eq(
+    needsNativeSafe('/Users/张三/m.onnx', 'darwin'),
+    false,
+    'needsNativeSafe: darwin + CJK is untouched',
+  );
+  eq(
+    needsNativeSafe('/home/张三/m.onnx', 'linux'),
+    false,
+    'needsNativeSafe: linux + CJK is untouched',
+  );
+
+  // 3. stagingBaseDirs：候选顺序固定，自身含非 ASCII 的候选被剔除
+  const winEnv = {
+    ProgramData: 'C:\\ProgramData',
+    PUBLIC: 'C:\\Users\\Public',
+    SystemDrive: 'C:',
+  };
+  const asciiUserData = 'C:\\Users\\bob\\AppData\\Roaming\\SmartSub';
+  const expectedAll = [
+    nodePath.join(asciiUserData, 'native-models'),
+    nodePath.join('C:\\ProgramData', 'SmartSub', 'native-models'),
+    nodePath.join('C:\\Users\\Public', 'SmartSub', 'native-models'),
+    nodePath.join('C:', 'SmartSub', 'native-models'),
+  ];
+  eq(
+    stagingBaseDirs({
+      platform: 'win32',
+      userDataDir: asciiUserData,
+      env: winEnv,
+    }),
+    expectedAll,
+    'stagingBaseDirs: userData first, then ProgramData / Public / SystemDrive',
+  );
+  eq(
+    stagingBaseDirs({
+      platform: 'win32',
+      userDataDir: 'C:\\Users\\张三\\AppData\\Roaming\\SmartSub',
+      env: winEnv,
+    }),
+    expectedAll.slice(1),
+    'stagingBaseDirs: a CJK userData directory is dropped',
+  );
+  eq(
+    stagingBaseDirs({
+      platform: 'win32',
+      userDataDir: asciiUserData,
+      env: { ...winEnv, ProgramData: 'D:\\数据' },
+    }),
+    [expectedAll[0], expectedAll[2], expectedAll[3]],
+    'stagingBaseDirs: a CJK ProgramData is dropped',
+  );
+  eq(
+    stagingBaseDirs({ platform: 'win32', env: { SystemDrive: 'C:' } }),
+    [expectedAll[3]],
+    'stagingBaseDirs: missing env vars / userData are skipped',
+  );
+  eq(
+    stagingBaseDirs({
+      platform: 'win32',
+      userDataDir: nodePath.join('C:\\ProgramData', 'SmartSub'),
+      env: { ProgramData: 'C:\\ProgramData' },
+    }),
+    [nodePath.join('C:\\ProgramData', 'SmartSub', 'native-models')],
+    'stagingBaseDirs: duplicate candidates are collapsed',
+  );
+  eq(
+    stagingBaseDirs({
+      platform: 'darwin',
+      userDataDir: asciiUserData,
+      env: winEnv,
+    }),
+    [],
+    'stagingBaseDirs: nothing to stage to on non-Windows',
+  );
+
+  // 4. stageBundledModel：真实文件系统（用 JS fs 建中文目录，所有平台都能建）
+  const tmpRoot = fs.mkdtempSync(
+    nodePath.join(os.tmpdir(), 'smartsub-native-safe-'),
+  );
+  try {
+    const cjkDir = nodePath.join(tmpRoot, '中文用户-测试');
+    fs.mkdirSync(cjkDir, { recursive: true });
+    const model = nodePath.join(cjkDir, 'silero_vad.onnx');
+    const modelBytes = Buffer.from(
+      Array.from({ length: 4096 }, (_, i) => (i * 31 + 7) & 0xff),
+    );
+    fs.writeFileSync(model, modelBytes);
+
+    const baseA = nodePath.join(tmpRoot, 'stage-a');
+    const baseB = nodePath.join(tmpRoot, 'stage-b');
+    const logs: Array<{ message: string; level: string }> = [];
+    const log = (message: string, level: string) =>
+      logs.push({ message, level });
+    const opts = { platform: 'win32' as const, baseDirs: [baseA, baseB], log };
+
+    // 4a. ASCII 源路径与非 Windows 平台：原样返回，不创建任何目录
+    const asciiModel = nodePath.join(tmpRoot, 'plain.onnx');
+    fs.writeFileSync(asciiModel, modelBytes);
+    eq(
+      ensureNativeSafeModelPath(asciiModel, opts),
+      asciiModel,
+      'ensureNativeSafeModelPath: ASCII path is returned untouched',
+    );
+    eq(
+      ensureNativeSafeModelPath(model, { ...opts, platform: 'darwin' }),
+      model,
+      'ensureNativeSafeModelPath: non-Windows is returned untouched',
+    );
+    eq(
+      ensureNativeSafeModelPath('', opts),
+      '',
+      'ensureNativeSafeModelPath: empty path is returned untouched',
+    );
+    eq(
+      fs.existsSync(baseA),
+      false,
+      'ensureNativeSafeModelPath: nothing is staged when not needed',
+    );
+
+    // 4b. 首次暂存：复制到 <base>/<hash16>/<name>，内容一致，没有残留 tmp
+    resetNativeSafePathCacheForTest();
+    const staged = ensureNativeSafeModelPath(model, opts);
+    eq(
+      nodePath.dirname(nodePath.dirname(staged)),
+      baseA,
+      'stageBundledModel: lands under the first base directory',
+    );
+    eq(
+      /^[0-9a-f]{16}$/.test(nodePath.basename(nodePath.dirname(staged))),
+      true,
+      'stageBundledModel: content-addressed directory name',
+    );
+    eq(
+      nodePath.basename(staged),
+      'silero_vad.onnx',
+      'stageBundledModel: keeps the ASCII file name',
+    );
+    eq(
+      fs.readFileSync(staged).equals(modelBytes),
+      true,
+      'stageBundledModel: staged copy has identical content',
+    );
+    eq(
+      fs.readdirSync(nodePath.dirname(staged)),
+      ['silero_vad.onnx'],
+      'stageBundledModel: no temporary files are left behind',
+    );
+    eq(
+      logs.filter((l) => l.level === 'info').length,
+      1,
+      'stageBundledModel: logs the staging once',
+    );
+
+    // 4c. 同一进程内再次调用：走缓存，不再记日志
+    eq(
+      ensureNativeSafeModelPath(model, opts),
+      staged,
+      'stageBundledModel: cached within the process',
+    );
+    eq(
+      logs.filter((l) => l.level === 'info').length,
+      1,
+      'stageBundledModel: cached call does not log again',
+    );
+
+    // 4d. 新进程（清缓存）：副本完好则不重写
+    fs.utimesSync(staged, 1000, 1000);
+    const mtimeBefore = fs.statSync(staged).mtimeMs;
+    resetNativeSafePathCacheForTest();
+    eq(
+      ensureNativeSafeModelPath(model, opts),
+      staged,
+      'stageBundledModel: idempotent across processes (same path)',
+    );
+    eq(
+      fs.statSync(staged).mtimeMs,
+      mtimeBefore,
+      'stageBundledModel: an intact copy is not rewritten',
+    );
+
+    // 4e. 副本被篡改（同尺寸）/ 被截断 / 被删除：重建为正确内容
+    fs.writeFileSync(staged, Buffer.alloc(modelBytes.length, 0x41));
+    resetNativeSafePathCacheForTest();
+    eq(
+      ensureNativeSafeModelPath(model, opts),
+      staged,
+      'stageBundledModel: tampered copy -> same path',
+    );
+    eq(
+      fs.readFileSync(staged).equals(modelBytes),
+      true,
+      'stageBundledModel: tampered copy is rebuilt',
+    );
+    fs.writeFileSync(staged, modelBytes.subarray(0, 100));
+    resetNativeSafePathCacheForTest();
+    ensureNativeSafeModelPath(model, opts);
+    eq(
+      fs.readFileSync(staged).equals(modelBytes),
+      true,
+      'stageBundledModel: truncated copy is rebuilt',
+    );
+    fs.rmSync(staged);
+    eq(
+      ensureNativeSafeModelPath(model, opts),
+      staged,
+      'stageBundledModel: deleted copy is re-staged even when cached',
+    );
+    eq(
+      fs.readFileSync(staged).equals(modelBytes),
+      true,
+      'stageBundledModel: deleted copy is restored',
+    );
+
+    // 4f. 不同内容、同文件名：落在不同目录（内容寻址，更新随包模型时不会拿到旧副本）
+    const model2Dir = nodePath.join(tmpRoot, '另一个目录');
+    fs.mkdirSync(model2Dir, { recursive: true });
+    const model2 = nodePath.join(model2Dir, 'silero_vad.onnx');
+    fs.writeFileSync(model2, Buffer.concat([modelBytes, Buffer.from('v2')]));
+    const staged2 = ensureNativeSafeModelPath(model2, opts);
+    eq(
+      staged2 === staged,
+      false,
+      'stageBundledModel: different content maps to a different directory',
+    );
+
+    // 4g. 首选目录不可用（路径上有个普通文件挡着）：回退到下一个候选
+    resetNativeSafePathCacheForTest();
+    const blocker = nodePath.join(tmpRoot, 'blocked-base');
+    fs.writeFileSync(blocker, 'not a directory');
+    const fallback = ensureNativeSafeModelPath(model, {
+      ...opts,
+      baseDirs: [blocker, baseB],
+    });
+    eq(
+      nodePath.dirname(nodePath.dirname(fallback)),
+      baseB,
+      'stageBundledModel: falls back to the next base directory',
+    );
+    eq(
+      fs.readFileSync(fallback).equals(modelBytes),
+      true,
+      'stageBundledModel: fallback copy has identical content',
+    );
+
+    // 4h. 所有候选都失败：返回原路径并给出 warning（行为不比修复前更差）
+    resetNativeSafePathCacheForTest();
+    logs.length = 0;
+    eq(
+      ensureNativeSafeModelPath(model, { ...opts, baseDirs: [blocker] }),
+      model,
+      'stageBundledModel: every base failed -> original path',
+    );
+    eq(
+      logs.some((l) => l.level === 'warning' && l.message.includes(model)),
+      true,
+      'stageBundledModel: every base failed -> warning mentions the model',
+    );
+    resetNativeSafePathCacheForTest();
+    eq(
+      ensureNativeSafeModelPath(model, { ...opts, baseDirs: [] }),
+      model,
+      'stageBundledModel: no candidate directory -> original path',
+    );
+
+    // 4i. 源文件不存在 / 过大：不抛错，原路径交给原生库自己报错
+    resetNativeSafePathCacheForTest();
+    const missing = nodePath.join(cjkDir, 'missing.onnx');
+    eq(
+      ensureNativeSafeModelPath(missing, opts),
+      missing,
+      'stageBundledModel: missing source -> original path',
+    );
+    eq(
+      ensureNativeSafeModelPath(model, { ...opts, maxBytes: 16 }),
+      model,
+      'stageBundledModel: oversized source is never staged',
+    );
+
+    // 4j. 非 ASCII 文件名被换成 ASCII，扩展名保留
+    const cjkNamed = nodePath.join(cjkDir, '模型.onnx');
+    fs.writeFileSync(cjkNamed, modelBytes);
+    resetNativeSafePathCacheForTest();
+    const stagedNamed = stageBundledModel(cjkNamed, opts);
+    eq(
+      hasNonAscii(nodePath.basename(stagedNamed)),
+      false,
+      'stageBundledModel: file name is made ASCII',
+    );
+    eq(
+      nodePath.extname(stagedNamed),
+      '.onnx',
+      'stageBundledModel: extension is preserved',
+    );
+    eq(
+      fs.readFileSync(stagedNamed).equals(modelBytes),
+      true,
+      'stageBundledModel: renamed copy has identical content',
+    );
+  } finally {
+    resetNativeSafePathCacheForTest();
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+runNativeSafePathTests();
+
+// ---------------------------------------------------------------------------
+// 内置 whisper.cpp 在 Windows 上的非 ASCII 音频路径：
+// addon 用 miniaudio 的窄字符 API 解码文件，路径打不开时只打印
+// `failed to read audio file` 然后以 0 段结果「成功」返回（静默失败）。
+// 这种路径改由 JS 解码，以 pcmf32（Float32Array）喂给 addon。
+// ---------------------------------------------------------------------------
+import {
+  PCM_INPUT_CHUNK_PLAN,
+  adaptWhisperAudioInput,
+  needsPcmInput,
+  readPcm16Wav,
+} from '../main/helpers/engines/whisperAudioInput';
+
+function runWhisperAudioInputTests(): void {
+  const wavBytes = (
+    samples: number[],
+    opts: {
+      sampleRate?: number;
+      channels?: number;
+      format?: number;
+      bits?: number;
+      listChunk?: boolean;
+      declaredDataBytes?: number;
+    } = {},
+  ): Buffer => {
+    const {
+      sampleRate = 16000,
+      channels = 1,
+      format = 1,
+      bits = 16,
+      listChunk = false,
+      declaredDataBytes,
+    } = opts;
+    const data = Buffer.alloc(samples.length * (bits / 8));
+    samples.forEach((value, i) => {
+      if (bits === 16) data.writeInt16LE(value, i * 2);
+      else if (bits === 8) data.writeUInt8(value, i);
+      else data.writeFloatLE(value, i * 4);
+    });
+    const blockAlign = (channels * bits) / 8;
+    const fmt = Buffer.alloc(24);
+    fmt.write('fmt ', 0, 'ascii');
+    fmt.writeUInt32LE(16, 4);
+    fmt.writeUInt16LE(format, 8);
+    fmt.writeUInt16LE(channels, 10);
+    fmt.writeUInt32LE(sampleRate, 12);
+    fmt.writeUInt32LE(sampleRate * blockAlign, 16);
+    fmt.writeUInt16LE(blockAlign, 20);
+    fmt.writeUInt16LE(bits, 22);
+    // 奇数长度的 LIST 块（7 字节 + 1 字节补位），用来验证块对齐
+    const list = listChunk
+      ? Buffer.concat([
+          Buffer.from('LIST', 'ascii'),
+          Buffer.from([7, 0, 0, 0]),
+          Buffer.from('INFOabc', 'ascii'),
+          Buffer.alloc(1),
+        ])
+      : Buffer.alloc(0);
+    const dataHead = Buffer.alloc(8);
+    dataHead.write('data', 0, 'ascii');
+    dataHead.writeUInt32LE(declaredDataBytes ?? data.length, 4);
+    const body = Buffer.concat([
+      Buffer.from('WAVE', 'ascii'),
+      fmt,
+      list,
+      dataHead,
+      data,
+    ]);
+    const riffHead = Buffer.alloc(8);
+    riffHead.write('RIFF', 0, 'ascii');
+    riffHead.writeUInt32LE(body.length, 4);
+    return Buffer.concat([riffHead, body]);
+  };
+
+  // 1. needsPcmInput：与原生库打不开的路径同一判据
+  eq(
+    needsPcmInput('C:\\Users\\张三\\t.wav', 'win32'),
+    true,
+    'needsPcmInput: win32 + CJK',
+  );
+  eq(
+    needsPcmInput('C:\\Users\\bob\\t.wav', 'win32'),
+    false,
+    'needsPcmInput: win32 + ASCII',
+  );
+  eq(
+    needsPcmInput('/Users/张三/t.wav', 'darwin'),
+    false,
+    'needsPcmInput: darwin + CJK',
+  );
+  eq(needsPcmInput('', 'win32'), false, 'needsPcmInput: empty path');
+  for (const [length, expected] of [
+    [259, false],
+    [260, true],
+    [262, true],
+    [320, true],
+  ] as const) {
+    const file = 'C:\\' + 'a'.repeat(length - 7) + '.wav';
+    eq(
+      needsPcmInput(file, 'win32'),
+      expected,
+      `needsPcmInput: Windows ASCII path of ${length} characters`,
+    );
+    eq(
+      needsPcmInput(file, 'darwin'),
+      false,
+      `needsPcmInput: macOS path of ${length} characters`,
+    );
+    eq(
+      needsPcmInput(file, 'linux'),
+      false,
+      `needsPcmInput: Linux path of ${length} characters`,
+    );
+  }
+  eq(
+    needsPcmInput(undefined as unknown as string, 'win32'),
+    false,
+    'needsPcmInput: missing path',
+  );
+
+  // 2. 分片计划：兜底路径把单次转写的上限从 4 小时降到 1 小时
+  eq(
+    planEvenChunkTargets(3600, PCM_INPUT_CHUNK_PLAN).length,
+    0,
+    'PCM chunk plan: 1h stays single pass',
+  );
+  eq(
+    planEvenChunkTargets(3601, PCM_INPUT_CHUNK_PLAN).length,
+    2,
+    'PCM chunk plan: just over 1h -> 3 chunks of <= 30 min',
+  );
+  eq(
+    planEvenChunkTargets(7200, PCM_INPUT_CHUNK_PLAN).length,
+    3,
+    'PCM chunk plan: 2h -> 4 chunks',
+  );
+  eq(
+    planEvenChunkTargets(7200).length,
+    0,
+    'default chunk plan is untouched (2h is still a single pass)',
+  );
+
+  const tmpRoot = fs.mkdtempSync(
+    nodePath.join(os.tmpdir(), 'smartsub-whisper-pcm-'),
+  );
+  try {
+    const cjkDir = nodePath.join(tmpRoot, '中文用户-测试');
+    fs.mkdirSync(cjkDir, { recursive: true });
+
+    // 3. readPcm16Wav：与 sherpa wav-io 同口径（/32768、取第一声道）
+    const mono = nodePath.join(cjkDir, 'mono.wav');
+    fs.writeFileSync(mono, wavBytes([0, 16384, -16384, 32767, -32768]));
+    const monoPcm = readPcm16Wav(mono);
+    eq(monoPcm?.sampleRate, 16000, 'readPcm16Wav: sample rate');
+    eq(
+      monoPcm?.samples instanceof Float32Array,
+      true,
+      'readPcm16Wav: returns a Float32Array',
+    );
+    eq(
+      Array.from(monoPcm?.samples ?? []),
+      [0, 0.5, -0.5, 32767 / 32768, -1],
+      'readPcm16Wav: 16-bit PCM is normalised by 32768',
+    );
+
+    const stereo = nodePath.join(cjkDir, 'stereo.wav');
+    fs.writeFileSync(
+      stereo,
+      wavBytes([16384, -16384, 8192, -8192], { channels: 2 }),
+    );
+    eq(
+      Array.from(readPcm16Wav(stereo)?.samples ?? []),
+      [0.5, 0.25],
+      'readPcm16Wav: keeps the first channel only',
+    );
+
+    const withList = nodePath.join(cjkDir, 'list.wav');
+    fs.writeFileSync(withList, wavBytes([16384, -16384], { listChunk: true }));
+    eq(
+      Array.from(readPcm16Wav(withList)?.samples ?? []),
+      [0.5, -0.5],
+      'readPcm16Wav: skips an odd-sized LIST chunk',
+    );
+
+    const streamed = nodePath.join(cjkDir, 'streamed.wav');
+    fs.writeFileSync(
+      streamed,
+      wavBytes([100, 200, 300], { declaredDataBytes: 0xffffffff }),
+    );
+    eq(
+      readPcm16Wav(streamed)?.samples.length,
+      3,
+      'readPcm16Wav: an over-declared data size falls back to the file size',
+    );
+
+    const rate44k = nodePath.join(cjkDir, '44k.wav');
+    fs.writeFileSync(rate44k, wavBytes([1, 2, 3], { sampleRate: 44100 }));
+    eq(
+      readPcm16Wav(rate44k)?.sampleRate,
+      44100,
+      'readPcm16Wav: reports the real sample rate',
+    );
+
+    const float = nodePath.join(cjkDir, 'float.wav');
+    fs.writeFileSync(float, wavBytes([0.25], { format: 3, bits: 32 }));
+    eq(readPcm16Wav(float), null, 'readPcm16Wav: float wav -> null');
+    const eightBit = nodePath.join(cjkDir, '8bit.wav');
+    fs.writeFileSync(eightBit, wavBytes([128], { bits: 8 }));
+    eq(readPcm16Wav(eightBit), null, 'readPcm16Wav: 8-bit wav -> null');
+    const garbage = nodePath.join(cjkDir, 'garbage.wav');
+    fs.writeFileSync(garbage, 'definitely not a wav file');
+    eq(readPcm16Wav(garbage), null, 'readPcm16Wav: not a RIFF file -> null');
+    eq(
+      readPcm16Wav(nodePath.join(cjkDir, 'missing.wav')),
+      null,
+      'readPcm16Wav: unreadable file -> null',
+    );
+
+    // 4. adaptWhisperAudioInput：只改 fname_inp / pcmf32，其余参数原样保留
+    const abort = new AbortController();
+    const baseParams = {
+      language: 'en',
+      model: 'ggml-tiny.bin',
+      fname_inp: mono,
+      use_gpu: false,
+      signal: abort.signal,
+      progress_callback: () => undefined,
+    };
+    const logs: Array<{ message: string; level: string }> = [];
+    const log = (message: string, level: string) =>
+      logs.push({ message, level });
+
+    const adapted = adaptWhisperAudioInput(baseParams, {
+      platform: 'win32',
+      log,
+    }) as typeof baseParams & { pcmf32?: Float32Array };
+    eq(adapted.fname_inp, '', 'adapt: fname_inp becomes an empty string');
+    eq(
+      Array.from(adapted.pcmf32 ?? []),
+      [0, 0.5, -0.5, 32767 / 32768, -1],
+      'adapt: pcmf32 carries the decoded audio',
+    );
+    eq(
+      adapted.signal === abort.signal &&
+        adapted.progress_callback === baseParams.progress_callback &&
+        adapted.language === 'en' &&
+        adapted.model === 'ggml-tiny.bin' &&
+        adapted.use_gpu === false,
+      true,
+      'adapt: every other parameter is preserved',
+    );
+    eq(baseParams.fname_inp, mono, 'adapt: the input object is not mutated');
+    const longDirectory = nodePath.join(
+      tmpRoot,
+      'a'.repeat(80),
+      'b'.repeat(80),
+      'c'.repeat(80),
+    );
+    fs.mkdirSync(longDirectory, { recursive: true });
+    const longFile = nodePath.join(longDirectory, 'tempAudioFile.wav');
+    fs.writeFileSync(longFile, wavBytes([0, 16384, -16384]));
+    const longParams = { ...baseParams, fname_inp: longFile };
+    const longAdapted = adaptWhisperAudioInput(longParams, {
+      platform: 'win32',
+    });
+    eq(longAdapted.fname_inp, '', 'adapt: long ASCII path uses PCM input');
+    eq(
+      Array.from((longAdapted.pcmf32 as Float32Array) ?? []),
+      [0, 0.5, -0.5],
+      'adapt: long path preserves audio samples',
+    );
+    eq(
+      longParams.fname_inp,
+      longFile,
+      'adapt: long path input object is not mutated',
+    );
+    eq(
+      logs.filter((l) => l.level === 'info').length,
+      1,
+      'adapt: logs once that the PCM buffer is used',
+    );
+
+    // 不需要 / 不适用：原样返回同一个对象
+    const asciiParams = {
+      ...baseParams,
+      fname_inp: nodePath.join(tmpRoot, 'a.wav'),
+    };
+    fs.writeFileSync(asciiParams.fname_inp, wavBytes([1, 2, 3]));
+    eq(
+      adaptWhisperAudioInput(asciiParams, { platform: 'win32', log }) ===
+        asciiParams,
+      true,
+      'adapt: ASCII path -> untouched',
+    );
+    eq(
+      adaptWhisperAudioInput(baseParams, { platform: 'darwin', log }) ===
+        baseParams,
+      true,
+      'adapt: non-Windows -> untouched',
+    );
+    const alreadyBuffer = { ...baseParams, pcmf32: new Float32Array(4) };
+    eq(
+      adaptWhisperAudioInput(alreadyBuffer, { platform: 'win32', log }) ===
+        alreadyBuffer,
+      true,
+      'adapt: caller-supplied pcmf32 -> untouched',
+    );
+    const noInput = { language: 'en' };
+    eq(
+      adaptWhisperAudioInput(noInput, { platform: 'win32', log }) === noInput,
+      true,
+      'adapt: no fname_inp -> untouched',
+    );
+
+    // 解不了（缺文件 / 不是 16 kHz / 空音频 / 非 PCM16）：保持原参数，给 warning，不比修复前更差
+    logs.length = 0;
+    for (const [name, file] of [
+      ['missing file', nodePath.join(cjkDir, 'missing.wav')],
+      ['44.1 kHz audio', rate44k],
+      ['float wav', float],
+      ['not a wav', garbage],
+    ] as const) {
+      const params = { ...baseParams, fname_inp: file };
+      eq(
+        adaptWhisperAudioInput(params, { platform: 'win32', log }) === params,
+        true,
+        `adapt: ${name} -> untouched`,
+      );
+    }
+    eq(
+      logs.filter((l) => l.level === 'warning').length,
+      4,
+      'adapt: every undecodable input is reported as a warning',
+    );
+    const emptyWav = nodePath.join(cjkDir, 'empty.wav');
+    fs.writeFileSync(emptyWav, wavBytes([]));
+    const emptyParams = { ...baseParams, fname_inp: emptyWav };
+    eq(
+      adaptWhisperAudioInput(emptyParams, { platform: 'win32', log }) ===
+        emptyParams,
+      true,
+      'adapt: zero-length audio -> untouched',
+    );
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+runWhisperAudioInputTests();
+
+// ---------------------------------------------------------------------------
+// sherpa 原生库的"静默失败"：VAD 构造函数配置校验失败时不抛错，只往 stderr 写原因，
+// 之后每次使用都打印 `vad is nullptr` 并得到零个语音段。把它转成带原因的明确错误，
+// 路径含非 ASCII 时再给出处理建议。
+// ---------------------------------------------------------------------------
+import {
+  NativeStderrWatch,
+  collectNativePaths,
+  describeNullVad,
+  withNonAsciiPathHint,
+} from '../main/helpers/sherpaOnnx/nativeFailure';
+
+function runNativeFailureTests(): void {
+  // 真实 Windows 现场（GitHub Actions windows-latest，ACP 1252，路径含中文）逐字摘录
+  const WIN_REASON =
+    "D:\\a\\sherpa-onnx\\sherpa-onnx\\sherpa-onnx\\csrc\\silero-vad-model-config.cc:Validate:60 Silero vad model file 'D:\\a\\_temp\\smartsub\\中文用户-测试\\silero_vad.onnx' does not exist";
+  const WIN_GENERIC =
+    'D:\\a\\sherpa-onnx\\sherpa-onnx\\sherpa-onnx\\c-api\\c-api.cc:SherpaOnnxCreateVoiceActivityDetector:1330 Errors in config';
+  const REASON_TEXT =
+    "Silero vad model file 'D:\\a\\_temp\\smartsub\\中文用户-测试\\silero_vad.onnx' does not exist";
+
+  // 1. NativeStderrWatch：计数 + 原因快照
+  {
+    const watch = new NativeStderrWatch();
+    watch.push(WIN_REASON);
+    watch.push(WIN_GENERIC);
+    for (let i = 0; i < 643; i++) watch.push('vad is nullptr');
+    eq(
+      watch.nullVadCount,
+      643,
+      'native failure: counts every `vad is nullptr` line',
+    );
+    eq(
+      Array.from(watch.nullVadReasons),
+      [REASON_TEXT],
+      'native failure: reason = the specific line without the source location, generic "Errors in config" dropped',
+    );
+  }
+  {
+    const watch = new NativeStderrWatch();
+    watch.push(WIN_GENERIC);
+    watch.push('vad is nullptr');
+    eq(
+      Array.from(watch.nullVadReasons),
+      ['Errors in config'],
+      'native failure: the generic line is kept when it is the only explanation',
+    );
+  }
+  {
+    const watch = new NativeStderrWatch();
+    watch.push(
+      "/home/runner/work/sherpa-onnx/sherpa-onnx/sherpa-onnx/csrc/silero-vad-model-config.cc:Validate:60 Silero vad model file '/m/silero_vad.onnx' does not exist",
+    );
+    watch.push('vad is nullptr');
+    eq(
+      Array.from(watch.nullVadReasons),
+      ["Silero vad model file '/m/silero_vad.onnx' does not exist"],
+      'native failure: POSIX style source location is stripped too',
+    );
+  }
+  {
+    const watch = new NativeStderrWatch();
+    watch.push('plain failure text without a source location: failed to open');
+    watch.push('vad is nullptr');
+    eq(
+      Array.from(watch.nullVadReasons),
+      ['plain failure text without a source location: failed to open'],
+      'native failure: a line without source location is kept verbatim',
+    );
+  }
+  {
+    const watch = new NativeStderrWatch();
+    watch.push('onnxruntime: initialising provider cpu');
+    watch.push('   ');
+    watch.push('');
+    watch.push('VAD IS NULLPTR');
+    eq(
+      watch.nullVadCount,
+      1,
+      'native failure: match is case-insensitive and blank lines are ignored',
+    );
+    eq(
+      Array.from(watch.nullVadReasons),
+      [],
+      'native failure: unrelated lines are not reported as the reason',
+    );
+  }
+  {
+    const watch = new NativeStderrWatch();
+    watch.push('first.cc:Validate:1 first thing does not exist');
+    watch.push('second.cc:Validate:2 second thing does not exist');
+    watch.push('third.cc:Validate:3 third thing does not exist');
+    watch.push('vad is nullptr');
+    eq(
+      Array.from(watch.nullVadReasons),
+      ['second thing does not exist', 'third thing does not exist'],
+      'native failure: at most two reasons, the most recent ones, in order',
+    );
+    watch.push('later.cc:Validate:9 later thing does not exist');
+    watch.push('vad is nullptr');
+    eq(
+      Array.from(watch.nullVadReasons),
+      ['second thing does not exist', 'third thing does not exist'],
+      'native failure: the reason snapshot belongs to the first failure and is not overwritten',
+    );
+    eq(
+      watch.nullVadCount,
+      2,
+      'native failure: counting continues after the snapshot',
+    );
+  }
+  {
+    const watch = new NativeStderrWatch();
+    for (let i = 0; i < 500; i++) watch.push(`noise line ${i}`);
+    watch.push("x.cc:Validate:1 model 'a' does not exist");
+    watch.push('vad is nullptr');
+    eq(
+      Array.from(watch.nullVadReasons),
+      ["model 'a' does not exist"],
+      'native failure: a long stretch of unrelated stderr does not hide the reason',
+    );
+    watch.reset();
+    eq(
+      [watch.nullVadCount, Array.from(watch.nullVadReasons)],
+      [0, []],
+      'native failure: reset clears the count and the reasons',
+    );
+    watch.push('vad is nullptr');
+    eq(
+      [watch.nullVadCount, Array.from(watch.nullVadReasons)],
+      [1, []],
+      'native failure: nothing from before the reset leaks into the next failure',
+    );
+  }
+
+  // 2. describeNullVad：错误文案
+  const cjkVad = 'C:\\Users\\张三\\AppData\\Local\\SmartSub\\silero_vad.onnx';
+  const zhWin = describeNullVad({
+    reasons: [REASON_TEXT],
+    paths: [cjkVad],
+    language: 'zh',
+    platform: 'win32',
+  });
+  eq(
+    zhWin.startsWith('本地语音活动检测（VAD）模型加载失败'),
+    true,
+    'native failure: zh message names the VAD model',
+  );
+  eq(
+    zhWin.includes(REASON_TEXT),
+    true,
+    'native failure: zh message carries the native reason',
+  );
+  eq(
+    zhWin.includes('统一存储目录'),
+    true,
+    'native failure: zh message points at the unified storage directory when the path is non-ASCII on Windows',
+  );
+  const enWin = describeNullVad({
+    reasons: [REASON_TEXT],
+    paths: [cjkVad],
+    language: 'en',
+    platform: 'win32',
+  });
+  eq(
+    enWin.startsWith(
+      'The local voice activity detection (VAD) model failed to load',
+    ),
+    true,
+    'native failure: en message names the VAD model',
+  );
+  eq(
+    enWin.includes('Unified Storage Directory'),
+    true,
+    'native failure: en message carries the hint',
+  );
+  const asciiOnly = describeNullVad({
+    reasons: [REASON_TEXT],
+    paths: ['C:\\SmartSub\\silero_vad.onnx'],
+    language: 'en',
+    platform: 'win32',
+  });
+  eq(
+    asciiOnly.includes('Unified Storage Directory'),
+    false,
+    'native failure: no path hint when every path is ASCII',
+  );
+  const macCjk = describeNullVad({
+    reasons: [],
+    paths: ['/Users/张三/silero_vad.onnx'],
+    language: 'en',
+    platform: 'darwin',
+  });
+  eq(
+    macCjk,
+    'The local voice activity detection (VAD) model failed to load, so no speech could be detected.',
+    'native failure: no reason and no hint -> a clean sentence, and no hint off Windows',
+  );
+  eq(
+    describeNullVad({
+      reasons: [],
+      paths: [],
+      language: 'zh',
+      platform: 'linux',
+    }),
+    '本地语音活动检测（VAD）模型加载失败，无法检测语音。',
+    'native failure: zh sentence without reason',
+  );
+
+  // 3. withNonAsciiPathHint：只在"原生库打不开文件"类失败 + Windows + 非 ASCII 路径时追加
+  const cjkModel = 'D:\\模型\\sense-voice\\model.onnx';
+  const hinted = withNonAsciiPathHint('Please check your config!', [cjkModel], {
+    language: 'en',
+    platform: 'win32',
+  });
+  eq(
+    hinted.startsWith('Please check your config! ') &&
+      hinted.includes('Unified Storage Directory'),
+    true,
+    'native failure: "Please check your config!" gets the hint appended',
+  );
+  eq(
+    withNonAsciiPathHint('Please check your config!', [cjkModel], {
+      language: 'zh',
+      platform: 'win32',
+    }).includes('统一存储目录'),
+    true,
+    'native failure: zh hint',
+  );
+  eq(
+    withNonAsciiPathHint(
+      "TypeError: Failed to read 'D:\\音频\\a.wav'",
+      ['D:\\音频\\a.wav'],
+      {
+        language: 'en',
+        platform: 'win32',
+      },
+    ).includes('Unified Storage Directory'),
+    true,
+    'native failure: a "Failed to read" error gets the hint',
+  );
+  eq(
+    withNonAsciiPathHint('Please check your config!', ['D:\\models\\m.onnx'], {
+      language: 'en',
+      platform: 'win32',
+    }),
+    'Please check your config!',
+    'native failure: ASCII paths -> message unchanged',
+  );
+  eq(
+    withNonAsciiPathHint('Please check your config!', [cjkModel], {
+      language: 'en',
+      platform: 'darwin',
+    }),
+    'Please check your config!',
+    'native failure: non-Windows -> message unchanged',
+  );
+  eq(
+    withNonAsciiPathHint('Please check your config!', [], {
+      language: 'en',
+      platform: 'win32',
+    }),
+    'Please check your config!',
+    'native failure: no paths -> message unchanged',
+  );
+  for (const message of [
+    'cancelled',
+    'ASR worker is busy',
+    'denoise produced empty audio',
+  ]) {
+    eq(
+      withNonAsciiPathHint(message, [cjkModel], {
+        language: 'en',
+        platform: 'win32',
+      }),
+      message,
+      `native failure: unrelated error "${message}" is left alone`,
+    );
+  }
+  eq(
+    withNonAsciiPathHint(hinted, [cjkModel], {
+      language: 'en',
+      platform: 'win32',
+    }),
+    hinted,
+    'native failure: the hint is never appended twice',
+  );
+
+  // 4. collectNativePaths：递归收集请求里的字符串
+  eq(
+    collectNativePaths('a', undefined, null, { x: 'b', y: { z: 'c' }, n: 3 }, [
+      'd',
+      1,
+      ['e'],
+    ]),
+    ['a', 'b', 'c', 'd', 'e'],
+    'native failure: collects nested string values only',
+  );
+  {
+    const cyclic: Record<string, unknown> = { path: 'p' };
+    cyclic.self = cyclic;
+    eq(
+      collectNativePaths(cyclic).includes('p'),
+      true,
+      'native failure: a cyclic structure does not hang the collector',
+    );
+  }
+}
+
+runNativeFailureTests();
+
+runRuntimeImportTests();
 
 runAsyncConcurrencyTests()
   .catch((error) => {

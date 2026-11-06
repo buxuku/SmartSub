@@ -22,6 +22,7 @@
   "distilLabel": "Distil",
   "fasterWhisperModelTip": "faster-whisper 使用 HuggingFace CT2 模型，与 ggml 模型分开存放",
   "fasterWhisperModelsPath": "faster-whisper 模型路径",
+  "fasterWhisperModelsPathHint": "模型保存在该路径下的 hub 子目录；若要与其他软件共用 HuggingFace 缓存，请选择包含 hub 的上一级目录（即对方的 HF_HOME），不要直接选 hub 本身。",
   "modelManagement": "模型管理",
   "format": {
     "ggml": "whisper.cpp (ggml)",

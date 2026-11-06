@@ -9,6 +9,7 @@ import {
   ProofreadTask,
   ProofreadItem,
   ProofreadHistory,
+  deriveProofreadTaskStatus,
 } from '../../types/proofread';
 import { deleteWorkItem, getWorkItems, saveWorkItem } from './workItemStore';
 import {
@@ -19,7 +20,8 @@ import {
 const HISTORY_KEY = 'proofreadHistories';
 
 function persistProofreadTask(task: ProofreadTask): void {
-  saveWorkItem(proofreadTaskToWorkItem(task));
+  task.status = deriveProofreadTaskStatus(task.items);
+  saveWorkItem(proofreadTaskToWorkItem(task), { durable: true });
 }
 
 // ============ 任务级别操作 ============
@@ -39,20 +41,25 @@ export function createProofreadTask(
   items: (Omit<
     ProofreadItem,
     'id' | 'lastPosition' | 'totalCount' | 'modifiedCount'
-  > & { status?: ProofreadItem['status'] })[],
+  > & { id?: string; status?: ProofreadItem['status'] })[],
   name?: string,
 ): ProofreadTask {
   const now = Date.now();
-  const taskName = name || generateTaskName(items[0]);
+  const taskName = name || (items[0] ? generateTaskName(items[0]) : 'Untitled');
 
-  const proofreadItems: ProofreadItem[] = items.map((item, index) => ({
-    ...item,
-    id: uuidv4(),
-    status: item.status || (index === 0 ? 'in_progress' : 'pending'),
-    lastPosition: 0,
-    totalCount: 0,
-    modifiedCount: 0,
-  }));
+  const itemIds = new Set<string>();
+  const proofreadItems: ProofreadItem[] = items.map((item, index) => {
+    const id = item.id && !itemIds.has(item.id) ? item.id : uuidv4();
+    itemIds.add(id);
+    return {
+      ...item,
+      id,
+      status: item.status || (index === 0 ? 'in_progress' : 'pending'),
+      lastPosition: 0,
+      totalCount: 0,
+      modifiedCount: 0,
+    };
+  });
 
   const newTask: ProofreadTask = {
     id: uuidv4(),

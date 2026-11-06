@@ -11,6 +11,7 @@ import {
   type TaskTypeDef,
 } from 'lib/taskTypes';
 import type { WorkItem, WorkItemType } from '../../types/workItem';
+import { deriveProofreadTaskStatus } from '../../types/proofread';
 
 export type RecentStatus = 'waiting' | 'running' | 'done' | 'error' | 'review';
 
@@ -30,6 +31,8 @@ export const WORK_ITEM_TYPE_FILTERS: Array<'all' | WorkItemType> = [
   'proofread',
   'dubbing',
   'download',
+  'compose',
+  'toolbox',
 ];
 
 function getProjectTypeDef(project: { taskType?: string }): TaskTypeDef {
@@ -71,6 +74,9 @@ function getProjectStatus(project: {
 }
 
 export function getWorkItemTarget(item: WorkItem, locale: string): string {
+  if (item.type === 'compose' || item.type === 'toolbox') {
+    return `/${locale}/processing-result?workItem=${encodeURIComponent(item.id)}`;
+  }
   if (item.type === 'proofread') {
     return `/${locale}/proofread?workItem=${item.id}`;
   }
@@ -99,6 +105,8 @@ export function getWorkItemTarget(item: WorkItem, locale: string): string {
 }
 
 export function getWorkItemFileCount(item: WorkItem): number {
+  if (item.type === 'compose' || item.type === 'toolbox')
+    return item.processing?.inputPaths.length || 0;
   if (item.type === 'proofread') {
     return item.proofreadEntries?.length || 0;
   }
@@ -112,6 +120,8 @@ export function getWorkItemTypeLabel(
   tLaunchpad: (key: string) => string,
   tTasks: (key: string) => string,
 ): string {
+  if (item.type === 'compose' || item.type === 'toolbox')
+    return tLaunchpad(`card.${item.type}`);
   if (item.type === 'proofread') {
     return tLaunchpad('card.proofread');
   }
@@ -132,10 +142,17 @@ export function getWorkItemTypeLabel(
 }
 
 export function getWorkItemStatus(item: WorkItem): RecentStatus {
+  if (item.type === 'proofread') {
+    return deriveProofreadTaskStatus(item.proofreadEntries || []) ===
+      'completed'
+      ? 'done'
+      : 'running';
+  }
   if (
-    item.type === 'proofread' ||
     item.type === 'dubbing' ||
-    item.type === 'download'
+    item.type === 'download' ||
+    item.type === 'compose' ||
+    item.type === 'toolbox'
   ) {
     if (item.status === 'done') return 'done';
     if (item.status === 'running') return 'running';

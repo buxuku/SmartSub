@@ -65,6 +65,9 @@ export function buildSanitizedEnv(
     PYTHONIOENCODING: 'utf-8',
     PYTHONDONTWRITEBYTECODE: '1',
     PYTHONUNBUFFERED: '1',
+    // 原生扩展（ctranslate2 / onnxruntime 等）崩溃时让 Python 把各线程的回溯写到 stderr，
+    // sidecar 的 stderr 会进应用日志，崩溃排查才有现场可看。
+    PYTHONFAULTHANDLER: '1',
     // 散装 site-packages 下 numpy/ctranslate2/onnxruntime 可能各带一份 Intel
     // OpenMP(libiomp5md)。容忍重复加载，规避 Windows 上 "OMP: Error #15 ...
     // already initialized" 直接 abort/卡死。
@@ -175,6 +178,16 @@ export class PythonRuntimeManager {
       });
       this.proc = proc;
 
+      // 写 stdin 失败（引擎已退出时的 EPIPE）是异步的 'error' 事件，write() 外面的 try/catch
+      // 接不住；没有监听器它就是主进程里的未捕获异常（弹 “write EPIPE” 对话框）。
+      // 这里只记日志：引擎真的没了，'exit' 会负责拒绝在途请求并清理状态。
+      proc.stdin.on('error', (error) => {
+        if (this.proc !== proc) return;
+        this.logger(
+          `Python engine stdin error: ${error.message}`,
+          this.stopping ? 'info' : 'warning',
+        );
+      });
       proc.on('error', (error) => {
         this.handleExit(`spawn error: ${error.message}`);
       });
@@ -324,6 +337,12 @@ export class PythonRuntimeManager {
             handlers.onProgress(Number(eventParams.percent) || 0);
           } else if (method === 'segment' && handlers?.onSegment) {
             handlers.onSegment(eventParams as unknown as TranscribeSegment);
+          } else if (method === 'review' && handlers?.onReview) {
+            handlers.onReview(
+              eventParams as unknown as Parameters<
+                NonNullable<TranscribeHandlers['onReview']>
+              >[0],
+            );
           }
         },
       },

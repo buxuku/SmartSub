@@ -22,6 +22,8 @@ const channel = (() => {
 })();
 
 const sherpa = require(path.join(__dirname, '..', 'vendor', 'sherpa-onnx.js'));
+// wav 读写：Windows 非 ASCII 路径上原生 readWave/writeWave 打不开，改由 JS 读写（见 wav-io.js）。
+const wavIo = require(path.join(__dirname, 'wav-io.js'));
 
 const SAMPLE_RATE = 16000;
 const VAD_WINDOW_SIZE = 512;
@@ -260,6 +262,12 @@ function ensureLoaded(req) {
         req.params,
       );
     }
+    if (req.id)
+      channel.post({
+        type: 'activity',
+        id: req.id,
+        detail: { phase: 'loadingModel' },
+      });
     recognizer = new sherpa.OfflineRecognizer(config);
     cacheKey = key;
   }
@@ -267,6 +275,12 @@ function ensureLoaded(req) {
   // 避免「同模型不同 VAD」复用 worker 时静默沿用旧 VAD 参数。
   const vKey = buildVadKey(req);
   if (!vad || vKey !== vadKey) {
+    if (req.id)
+      channel.post({
+        type: 'activity',
+        id: req.id,
+        detail: { phase: 'loadingModel' },
+      });
     vad = new sherpa.Vad(buildVadConfig(req.vadModel, req.params), 60);
     vadKey = vKey;
   }
@@ -283,12 +297,23 @@ function postCancelled(id) {
 }
 
 async function transcribe(req) {
+  const activity = (detail) =>
+    channel.post({ type: 'activity', id: req.id, detail });
   ensureLoaded(req);
+  activity({ phase: 'readingAudio' });
   vad.reset();
   // Electron worker 下必须 enableExternalBuffer=false（否则 readWave/vad.front 抛错）。
-  const wave = sherpa.readWave(req.audioFile, false);
+  const wave = wavIo.readWave(sherpa, req.audioFile, false);
   const samples = wave.samples;
   const total = samples.length;
+  let decoded = 0;
+  let processedSeconds = 0;
+  activity({
+    phase: 'recognizing',
+    processedSeconds,
+    durationSeconds: total / SAMPLE_RATE,
+    units: [],
+  });
   const segments = [];
   let lastPercent = -1;
   const vadSegments = [];
@@ -300,9 +325,25 @@ async function transcribe(req) {
       vad.pop();
       const stream = recognizer.createStream();
       stream.acceptWaveform({ samples: seg.samples, sampleRate: SAMPLE_RATE });
+      activity({
+        phase: 'recognizing',
+        processedSeconds,
+        durationSeconds: total / SAMPLE_RATE,
+        units: [
+          { id: decoded + 1, phase: 'recognizing', startedAt: Date.now() },
+        ],
+      });
       const r = await recognizer.decodeAsync(stream);
+      decoded += 1;
       const start = seg.start / SAMPLE_RATE;
       const end = (seg.start + seg.samples.length) / SAMPLE_RATE;
+      processedSeconds = end;
+      activity({
+        phase: 'recognizing',
+        processedSeconds,
+        durationSeconds: total / SAMPLE_RATE,
+        units: [],
+      });
       vadSegments.push({ start, end });
       const text = r && r.text ? r.text.trim() : '';
       if (text) segments.push({ start, end, text });
@@ -348,7 +389,7 @@ function denoise(req) {
     });
     denoiserKey = req.denoiseModel;
   }
-  const wave = sherpa.readWave(req.audioFile, false);
+  const wave = wavIo.readWave(sherpa, req.audioFile, false);
   const out = denoiser.run({
     samples: wave.samples,
     sampleRate: wave.sampleRate,
@@ -362,7 +403,7 @@ function denoise(req) {
     });
     return;
   }
-  sherpa.writeWave(req.outFile, {
+  wavIo.writeWave(sherpa, req.outFile, {
     samples: out.samples,
     sampleRate: out.sampleRate,
   });
@@ -379,7 +420,7 @@ async function detectSpeech(req) {
   const v = ensureVadOnly(req);
   v.reset();
   // Electron worker 下 enableExternalBuffer=false（同 transcribe，否则 readWave/vad.front 抛错）。
-  const wave = sherpa.readWave(req.audioFile, false);
+  const wave = wavIo.readWave(sherpa, req.audioFile, false);
   const samples = wave.samples;
   const total = samples.length;
   const segments = [];

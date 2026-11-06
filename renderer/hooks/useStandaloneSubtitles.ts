@@ -3,13 +3,39 @@
  * 不依赖 IFiles，直接接收文件路径
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useLayoutEffect,
+  useMemo,
+} from 'react';
 import path from 'path';
+import {
+  emptyQualityReview,
+  parseQualityReview,
+  type QualityReviewState,
+  type QualityIssue,
+} from '../../types/qualityReview';
+import { validCueRange } from '../lib/waveformEditing';
+import { qualityCheckSteps } from '../lib/qualityChecks';
+import {
+  buildPreviewTrackSpecs,
+  type PreviewTrackSpec,
+} from '../lib/subtitlePreview';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import { Subtitle, SubtitleStats, PlayerSubtitleTrack } from './useSubtitles';
 import { useSubtitleHistory, computeRangeDiff } from './useSubtitleHistory';
 import { mergeSpeakerIds } from '../../types/speakerDiarization';
+import {
+  proofreadDraftKey,
+  readProofreadDraft,
+  writeProofreadDraft,
+  clearProofreadDraft,
+  type ProofreadDraft,
+} from '../lib/proofreadDraft';
 import {
   normalizeMissedSpeechWarnings,
   type MissedSpeechWarning,
@@ -77,11 +103,40 @@ const secondsToTime = (seconds: number): string => {
 // 时间相等容差（SRT 精度为毫秒）
 const TIME_EPSILON = 0.0005;
 
+// 编辑停顿多久后重建播放器字幕预览
+const PREVIEW_DEBOUNCE_MS = 250;
+
 export const useStandaloneSubtitles = (
-  config: StandaloneSubtitlesConfig,
+  input: StandaloneSubtitlesConfig,
   isOpen: boolean,
+  qualityEnabled = false,
 ) => {
   const { t } = useTranslation('home');
+  const translateRef = useRef(t);
+  translateRef.current = t;
+  const config = useMemo(
+    () => ({ ...input }),
+    [
+      input.videoPath,
+      input.sourceSubtitlePath,
+      input.targetSubtitlePath,
+      input.sourceLanguage,
+      input.targetLanguage,
+      input.finalTargetSubtitlePath,
+      input.translateContent,
+      input.proofreadDataFile,
+    ],
+  );
+  const documentKey = JSON.stringify([config, isOpen, qualityEnabled]);
+  const activeKey = useRef(documentKey);
+  activeKey.current = documentKey;
+  const loadVersion = useRef(0);
+  const loadedKey = useRef<string | null>(null);
+  const [loadedDocument, setLoadedDocument] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const tracksRef = useRef<PlayerSubtitleTrack[]>([]);
+  // 已发布预览的内容签名；null 表示尚未发布（刚加载文档或已释放）
+  const previewSignature = useRef<string | null>(null);
   const [mergedSubtitles, setMergedSubtitles] = useState<Subtitle[]>([]);
   const [videoPath, setVideoPath] = useState<string>('');
   const [currentSubtitleIndex, setCurrentSubtitleIndex] = useState(-1);
@@ -91,7 +146,8 @@ export const useStandaloneSubtitles = (
   const [subtitleTracksForPlayer, setSubtitleTracksForPlayer] = useState<
     PlayerSubtitleTrack[]
   >([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [loading, setIsLoading] = useState(false);
+  const isLoading = isOpen && (loading || loadedDocument !== documentKey);
   const [speakers, setSpeakers] = useState<SpeakerInfo[]>([]);
   const [missedSpeechWarnings, setMissedSpeechWarnings] = useState<
     MissedSpeechWarning[]
@@ -101,6 +157,20 @@ export const useStandaloneSubtitles = (
 
   // 撤销/重做历史（命令模式：区间 diff 命令栈）
   const history = useSubtitleHistory();
+  const [qualityReview, setQualityState] = useState(emptyQualityReview);
+  const qualityRef = useRef(qualityReview);
+  const [qualityLoadError, setQualityLoadError] = useState('');
+  const qualityErrorRef = useRef('');
+  const qualityLocallyChanged = useRef(false);
+  const savedDocument = useRef<{
+    subtitles: Subtitle[];
+    speakers: SpeakerInfo[];
+    embed: boolean;
+  } | null>(null);
+  const applyQuality = useCallback((value: QualityReviewState) => {
+    qualityRef.current = value;
+    setQualityState(value);
+  }, []);
 
   // 字幕数组的同步镜像：所有变更经 applySubtitles 落盘，
   // 命令构造/合并窗口等同步逻辑读它，避免依赖异步 setState
@@ -114,7 +184,65 @@ export const useStandaloneSubtitles = (
   } | null>(null);
 
   // 自上次保存以来是否有未保存修改
-  const [isDirty, setIsDirty] = useState(false);
+  const [isDirty, setDirtyState] = useState(false);
+  const dirtyRef = useRef(false);
+  const setIsDirty = useCallback((dirty: boolean) => {
+    dirtyRef.current = dirty;
+    setDirtyState(dirty);
+  }, []);
+  const getIsDirty = useCallback(() => dirtyRef.current, []);
+  const [saveStatus, setSaveStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'save_error'
+  >('idle');
+  const [saveError, setSaveError] = useState('');
+  const [recoveryDraft, setRecoveryDraft] = useState<ProofreadDraft | null>(
+    null,
+  );
+  const [draftStorageFailed, setDraftStorageFailed] = useState(false);
+  const savingRef = useRef<Promise<boolean> | null>(null);
+  const embedSpeakerNamesRef = useRef(embedSpeakerNames);
+  embedSpeakerNamesRef.current = embedSpeakerNames;
+  const draftKey = proofreadDraftKey(config);
+
+  useEffect(() => {
+    if (saveStatus !== 'saved') return;
+    const timer = setTimeout(() => setSaveStatus('idle'), 3000);
+    return () => clearTimeout(timer);
+  }, [saveStatus]);
+
+  const useDraftEffect =
+    typeof window === 'undefined' ? useEffect : useLayoutEffect;
+  useDraftEffect(() => {
+    if (
+      !isDirty ||
+      isLoading ||
+      recoveryDraft ||
+      loadedKey.current !== documentKey
+    )
+      return;
+    setDraftStorageFailed(
+      !writeProofreadDraft(draftKey, {
+        subtitles: mergedSubtitles,
+        speakers,
+        embedSpeakerNames,
+        ...(qualityEnabled ? { qualityReview } : {}),
+        savedAt: Date.now(),
+      }),
+    );
+    if (saveStatus === 'saved') setSaveStatus('idle');
+  }, [
+    draftKey,
+    isDirty,
+    isLoading,
+    recoveryDraft,
+    mergedSubtitles,
+    speakers,
+    embedSpeakerNames,
+    qualityReview,
+    qualityEnabled,
+    saveStatus,
+    documentKey,
+  ]);
 
   // 光标位置（用于拆分功能）
   const cursorPositionRef = useRef(0);
@@ -137,16 +265,35 @@ export const useStandaloneSubtitles = (
   const getSubtitles = useCallback(() => subtitlesRef.current, []);
 
   // 读取字幕文件
+  const validateRows = (rows: unknown): Subtitle[] => {
+    if (
+      !Array.isArray(rows) ||
+      !rows.every((row) => {
+        if (
+          !row ||
+          typeof row.startEndTime !== 'string' ||
+          !Array.isArray(row.content) ||
+          !row.content.every((line: unknown) => typeof line === 'string')
+        )
+          return false;
+        const { start, end } = parseTimeRange(row.startEndTime);
+        return (
+          Number.isFinite(start) &&
+          Number.isFinite(end) &&
+          start >= 0 &&
+          end > start
+        );
+      })
+    )
+      throw new Error('INVALID_SUBTITLE_RESPONSE');
+    return rows;
+  };
   const readSubtitleFile = async (filePath: string): Promise<Subtitle[]> => {
-    try {
-      const result: Subtitle[] = await window.ipc.invoke('readSubtitleFile', {
-        filePath,
-      });
-      return result;
-    } catch (error) {
-      console.error('Error reading subtitle file:', error);
-      return [];
-    }
+    const result = await window.ipc.invoke('readSubtitleFile', {
+      filePath,
+      strict: true,
+    });
+    return validateRows(result);
   };
 
   const readProofreadDataFile = async (
@@ -156,150 +303,171 @@ export const useStandaloneSubtitles = (
     speakers: SpeakerInfo[];
     missedSpeechWarnings?: MissedSpeechWarning[];
   }> => {
-    try {
-      const result = await window.ipc.invoke('readProofreadDataFile', {
-        filePath,
-      });
-      if (Array.isArray(result)) {
-        return { subtitles: result, speakers: [] };
-      }
-      const localizedSpeakers = (result?.speakers || []).map(
-        (speaker: SpeakerInfo) =>
-          speaker.autoName
-            ? {
-                ...speaker,
-                displayName: t('speakers.defaultName', {
-                  number: speaker.id,
-                }),
-              }
-            : speaker,
-      );
-      return {
-        subtitles: Array.isArray(result?.subtitles) ? result.subtitles : [],
-        speakers: localizedSpeakers,
-        missedSpeechWarnings: normalizeMissedSpeechWarnings(
-          result?.missedSpeechWarnings,
-        ),
-      };
-    } catch (error) {
-      console.error('Error reading proofread data file:', error);
-      return { subtitles: [], speakers: [] };
+    const result = await window.ipc.invoke('readProofreadDataFile', {
+      filePath,
+      strict: true,
+    });
+    if (Array.isArray(result)) {
+      return { subtitles: validateRows(result), speakers: [] };
     }
+    if (!result || !Array.isArray(result.speakers))
+      throw new Error('INVALID_PROOFREAD_RESPONSE');
+    const localizedSpeakers = result.speakers.map((speaker: SpeakerInfo) =>
+      speaker.autoName
+        ? {
+            ...speaker,
+            displayName: translateRef.current('speakers.defaultName', {
+              number: speaker.id,
+            }),
+          }
+        : speaker,
+    );
+    return {
+      subtitles: validateRows(result.subtitles),
+      speakers: localizedSpeakers,
+      missedSpeechWarnings: normalizeMissedSpeechWarnings(
+        result?.missedSpeechWarnings,
+      ),
+    };
   };
 
-  // 创建播放器字幕轨道
-  const createPlayerTrack = async (
-    srtPath: string | undefined,
-    language: string,
-    isDefault?: boolean,
-  ): Promise<PlayerSubtitleTrack | null> => {
-    if (!srtPath) return null;
+  const releaseTracks = useCallback(() => {
+    tracksRef.current.forEach((track) => URL.revokeObjectURL(track.src));
+    tracksRef.current = [];
+    previewSignature.current = null;
+    setSubtitleTracksForPlayer([]);
+  }, []);
+
+  // 发布新的预览轨道：全部创建成功后才替换并释放旧 URL，失败时保留现有预览
+  const publishPreview = useCallback((specs: PreviewTrackSpec[]) => {
+    const created: PlayerSubtitleTrack[] = [];
     try {
-      const result = await window.ipc.invoke('getSubtitleAsVtt', {
-        filePath: srtPath,
-      });
-      if (result.error || !result.content) {
-        console.error(`无法读取字幕文件 ${srtPath}:`, result.error);
-        return null;
+      for (const spec of specs) {
+        created.push({
+          kind: 'subtitles',
+          src: URL.createObjectURL(new Blob([spec.vtt], { type: 'text/vtt' })),
+          srcLang: spec.srcLang,
+          label: spec.label,
+          default: spec.default,
+        });
       }
-      const vttBlob = new Blob([result.content], { type: 'text/vtt' });
-      const vttUrl = URL.createObjectURL(vttBlob);
-      return {
-        kind: 'subtitles',
-        src: vttUrl,
-        srcLang: language,
-        label: `(${language})`,
-        default: isDefault,
-      };
     } catch (error) {
-      console.error(`转换字幕到 VTT 失败:`, error);
-      return null;
+      created.forEach((track) => URL.revokeObjectURL(track.src));
+      throw error;
     }
-  };
+    tracksRef.current.forEach((track) => URL.revokeObjectURL(track.src));
+    tracksRef.current = created;
+    setSubtitleTracksForPlayer(created);
+  }, []);
 
   // 加载文件
   const loadFiles = useCallback(async () => {
+    if (!isOpen || (dirtyRef.current && loadedKey.current === documentKey))
+      return;
+    const version = ++loadVersion.current;
+    const current = () =>
+      version === loadVersion.current && activeKey.current === documentKey;
+    loadedKey.current = null;
+    releaseTracks();
     setMissedSpeechWarnings([]);
-    if (!config.sourceSubtitlePath) return;
-
+    setLoadError('');
+    applyQuality(emptyQualityReview());
+    qualityLocallyChanged.current = false;
+    setQualityLoadError('');
+    qualityErrorRef.current = '';
+    savedDocument.current = null;
+    applySubtitles([]);
+    applySpeakers([]);
+    setCurrentSubtitleIndex(-1);
+    setPreviousSubtitleIndex(-1);
+    setHasTranslationFile(false);
+    setEmbedSpeakerNames(false);
+    setVideoPath(config.videoPath || '');
+    history.reset();
+    pendingEditRef.current = null;
+    setIsDirty(false);
+    setSaveStatus('idle');
+    setSaveError('');
+    setRecoveryDraft(null);
+    setDraftStorageFailed(false);
     setIsLoading(true);
     try {
-      // 设置视频路径
-      if (config.videoPath) {
-        setVideoPath(config.videoPath);
-      }
-
-      const playerTracks: PlayerSubtitleTrack[] = [];
+      if (!config.sourceSubtitlePath)
+        throw new Error('SOURCE_SUBTITLE_REQUIRED');
+      if (
+        config.sourceSubtitlePath === config.targetSubtitlePath ||
+        config.sourceSubtitlePath === config.finalTargetSubtitlePath
+      )
+        throw new Error(translateRef.current('proofreadImportState.sameFile'));
 
       // 读取源字幕
       const proofreadData = config.proofreadDataFile
         ? await readProofreadDataFile(config.proofreadDataFile)
         : { subtitles: [], speakers: [] };
+      if (!current()) return;
       const proofreadDataSubtitles = proofreadData.subtitles;
-      applySpeakers(proofreadData.speakers);
-      setMissedSpeechWarnings(proofreadData.missedSpeechWarnings || []);
-      const sourceSubtitles =
-        proofreadDataSubtitles.length > 0
-          ? proofreadDataSubtitles
-          : await readSubtitleFile(config.sourceSubtitlePath);
-      if (config.sourceLanguage) {
-        const track = await createPlayerTrack(
-          config.sourceSubtitlePath,
-          config.sourceLanguage,
-          !shouldShowTranslation,
-        );
-        if (track) playerTracks.push(track);
-      }
+      const sourceSubtitles = config.proofreadDataFile
+        ? proofreadDataSubtitles
+        : await readSubtitleFile(config.sourceSubtitlePath);
+      if (!current()) return;
 
       // 读取翻译字幕
       let translatedSubtitles: Subtitle[] = [];
-      if (proofreadDataSubtitles.length > 0) {
-        setHasTranslationFile(
-          proofreadDataSubtitles.some(
-            (sub) => sub.targetContent && sub.targetContent.trim() !== '',
-          ),
-        );
-        if (config.targetSubtitlePath && config.targetLanguage) {
-          const track = await createPlayerTrack(
-            config.targetSubtitlePath,
-            config.targetLanguage,
-            true,
-          );
-          if (track) playerTracks.push(track);
-        }
-      } else if (config.targetSubtitlePath) {
+      if (!config.proofreadDataFile && config.targetSubtitlePath) {
         translatedSubtitles = await readSubtitleFile(config.targetSubtitlePath);
-        setHasTranslationFile(translatedSubtitles.length > 0);
-
-        if (config.targetLanguage) {
-          const track = await createPlayerTrack(
-            config.targetSubtitlePath,
-            config.targetLanguage,
-            true,
-          );
-          if (track) playerTracks.push(track);
-        }
       }
-
-      setSubtitleTracksForPlayer(playerTracks);
+      if (!current()) return;
 
       // 合并字幕
+      if (translatedSubtitles.length > sourceSubtitles.length)
+        throw new Error(
+          translateRef.current('proofreadLoad.extraTranslations'),
+        );
       if (sourceSubtitles.length > 0) {
-        const translatedMap = new Map();
-        translatedSubtitles.forEach((sub) => {
-          translatedMap.set(sub.startEndTime, sub);
+        const translatedMap = new Map<
+          string,
+          { indices: number[]; next: number }
+        >();
+        translatedSubtitles.forEach((sub, index) => {
+          const matches = translatedMap.get(sub.startEndTime);
+          if (matches) matches.indices.push(index);
+          else
+            translatedMap.set(sub.startEndTime, { indices: [index], next: 0 });
+        });
+        const usedTranslations = new Set<number>();
+        // Reserve exact time matches first; duplicate timestamps consume distinct rows.
+        const translationIndices = sourceSubtitles.map((sub) => {
+          const matches = translatedMap.get(sub.startEndTime);
+          if (!matches || matches.next === matches.indices.length) return -1;
+          const index = matches.indices[matches.next++];
+          usedTranslations.add(index);
+          return index;
+        });
+        // Keep the legacy positional fallback without reusing another row's translation.
+        let nextUnused = 0;
+        translationIndices.forEach((match, index) => {
+          if (match !== -1) return;
+          if (
+            index < translatedSubtitles.length &&
+            !usedTranslations.has(index)
+          ) {
+            translationIndices[index] = index;
+            usedTranslations.add(index);
+            return;
+          }
+          while (usedTranslations.has(nextUnused)) nextUnused++;
+          if (nextUnused < translatedSubtitles.length) {
+            translationIndices[index] = nextUnused;
+            usedTranslations.add(nextUnused++);
+          }
         });
 
         const merged = sourceSubtitles.map((sub, index) => {
-          if (proofreadDataSubtitles.length > 0) {
+          if (config.proofreadDataFile) {
             return { ...sub, isEditing: false };
           }
 
-          const translated =
-            translatedMap.get(sub.startEndTime) ||
-            (index < translatedSubtitles.length
-              ? translatedSubtitles[index]
-              : null);
+          const translated = translatedSubtitles[translationIndices[index]];
 
           const { start, end } = parseTimeRange(sub.startEndTime);
 
@@ -315,40 +483,146 @@ export const useStandaloneSubtitles = (
 
         applySubtitles(merged);
       }
-      // 重新加载即新的编辑起点：清空历史与合并窗口
-      history.reset();
-      pendingEditRef.current = null;
-      setIsDirty(false);
+      applySpeakers(proofreadData.speakers);
+      setMissedSpeechWarnings(proofreadData.missedSpeechWarnings || []);
+      setHasTranslationFile(
+        config.proofreadDataFile
+          ? proofreadDataSubtitles.some((sub) => !!sub.targetContent?.trim())
+          : translatedSubtitles.length > 0,
+      );
+      savedDocument.current = {
+        subtitles: subtitlesRef.current,
+        speakers: speakersRef.current,
+        embed: false,
+      };
+      if (qualityEnabled) {
+        try {
+          const review = await window.ipc.invoke(
+            'qualityReview:read',
+            draftKey,
+          );
+          if (!current()) return;
+          if (!review?.success)
+            throw new Error(review?.error || 'QUALITY_READ_FAILED');
+          applyQuality(parseQualityReview(review.data));
+        } catch (error) {
+          if (!current()) return;
+          qualityErrorRef.current = String(error);
+          setQualityLoadError(String(error));
+        }
+      }
+      const recoveredDraft = readProofreadDraft(draftKey);
+      loadedKey.current = documentKey;
+      setRecoveryDraft(recoveredDraft);
     } catch (error) {
-      console.error('Error loading files:', error);
-      toast.error(t('loadFileFailed'));
+      if (current())
+        setLoadError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      if (current()) {
+        setLoadedDocument(documentKey);
+        setIsLoading(false);
+      }
     }
   }, [
     config,
-    shouldShowTranslation,
-    t,
+    documentKey,
+    isOpen,
+    releaseTracks,
     applySubtitles,
     applySpeakers,
     history.reset,
+    draftKey,
+    qualityEnabled,
+    applyQuality,
   ]);
+
+  const restoreDraft = useCallback(() => {
+    if (!recoveryDraft || loadedKey.current !== documentKey) return;
+    applySubtitles(recoveryDraft.subtitles);
+    applySpeakers(recoveryDraft.speakers);
+    setEmbedSpeakerNames(recoveryDraft.embedSpeakerNames);
+    if (qualityEnabled) {
+      applyQuality(recoveryDraft.qualityReview || qualityRef.current);
+      qualityLocallyChanged.current = true;
+    }
+    history.reset();
+    pendingEditRef.current = null;
+    setIsDirty(true);
+    setRecoveryDraft(null);
+  }, [
+    recoveryDraft,
+    applySubtitles,
+    applySpeakers,
+    history.reset,
+    documentKey,
+    qualityEnabled,
+    applyQuality,
+  ]);
+
+  const discardDraft = useCallback(() => {
+    try {
+      clearProofreadDraft(draftKey);
+      setRecoveryDraft(null);
+      setDraftStorageFailed(false);
+    } catch {
+      setDraftStorageFailed(true);
+    }
+  }, [draftKey]);
 
   // 加载文件
   useEffect(() => {
-    if (isOpen && config.sourceSubtitlePath) {
-      loadFiles();
-    }
-
-    // 清理 Object URL
+    void loadFiles();
     return () => {
-      subtitleTracksForPlayer.forEach((track) => {
-        if (track.src && track.src.startsWith('blob:')) {
-          URL.revokeObjectURL(track.src);
-        }
-      });
+      loadVersion.current++;
+      loadedKey.current = null;
+      savingRef.current = null;
+      tracksRef.current.forEach((track) => URL.revokeObjectURL(track.src));
+      tracksRef.current = [];
+      previewSignature.current = null;
     };
-  }, [isOpen, config.sourceSubtitlePath, config.targetSubtitlePath]);
+  }, [loadFiles]);
+
+  // 播放器预览是编辑器内存文档的投影：文档（文本/时间/语言标签）变化后防抖重建，
+  // 不读磁盘、不依赖语言元数据；内容未变（如仅改说话人）不重建。预览失败只记日志，不影响编辑
+  useEffect(() => {
+    if (!isOpen || isLoading || loadedKey.current !== documentKey) return;
+    const timer = setTimeout(
+      () => {
+        try {
+          const specs = buildPreviewTrackSpecs(mergedSubtitles, {
+            source: config.sourceLanguage,
+            target: config.targetLanguage,
+          });
+          const signature = specs
+            .map((spec) =>
+              [
+                spec.role,
+                spec.default,
+                spec.srcLang,
+                spec.label,
+                spec.vtt,
+              ].join('|'),
+            )
+            .join('\0');
+          if (signature === previewSignature.current) return;
+          publishPreview(specs);
+          previewSignature.current = signature;
+        } catch (error) {
+          console.error('[proofread] player preview unavailable', error);
+        }
+      },
+      previewSignature.current === null ? 0 : PREVIEW_DEBOUNCE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [
+    mergedSubtitles,
+    isOpen,
+    isLoading,
+    documentKey,
+    config.sourceLanguage,
+    config.targetLanguage,
+    publishPreview,
+  ]);
 
   // 更新视频信息
   useEffect(() => {
@@ -405,6 +679,14 @@ export const useStandaloneSubtitles = (
       next[index] = {
         ...row,
         [field]: value,
+        ...(field === 'targetContent' &&
+        value.trim() &&
+        !/^\[翻译失败:/.test(value.trim())
+          ? {
+              translationStatus: 'success' as const,
+              translationError: undefined,
+            }
+          : {}),
         content: field === 'sourceContent' ? value.split('\n') : row.content,
       };
       applySubtitles(next);
@@ -414,10 +696,75 @@ export const useStandaloneSubtitles = (
   );
 
   // 保存字幕文件；返回是否全部写入成功
-  const handleSave = async (): Promise<boolean> => {
+  const saveSnapshot = useCallback(async (): Promise<boolean> => {
+    if (
+      loadedKey.current !== documentKey ||
+      activeKey.current !== documentKey ||
+      recoveryDraft
+    )
+      return false;
+    const version = loadVersion.current;
+    const current = () =>
+      version === loadVersion.current &&
+      activeKey.current === documentKey &&
+      loadedKey.current === documentKey;
     // 先把未提交的逐字编辑补入撤销历史，保证保存后仍可撤销
     flushPendingEdit();
+    const subtitles = subtitlesRef.current;
+    const savedSpeakers = speakersRef.current;
+    const savedEmbedNames = embedSpeakerNamesRef.current;
+    const savedQuality = qualityRef.current;
+    setSaveStatus('saving');
+    setSaveError('');
+    const assertSaved = (
+      result: { success?: boolean; error?: string } | undefined,
+    ) => {
+      if (result?.success !== true)
+        throw new Error(result?.error || t('saveFailed'));
+    };
+    const finishSave = async () => {
+      if (!current()) return false;
+      if (qualityEnabled) {
+        assertSaved(
+          await window.ipc.invoke('qualityReview:save', {
+            key: draftKey,
+            state: savedQuality,
+          }),
+        );
+      }
+
+      if (!current()) return false;
+      const unchanged =
+        subtitlesRef.current === subtitles &&
+        speakersRef.current === savedSpeakers &&
+        embedSpeakerNamesRef.current === savedEmbedNames &&
+        (!qualityEnabled || qualityRef.current === savedQuality);
+      savedDocument.current = {
+        subtitles,
+        speakers: savedSpeakers,
+        embed: savedEmbedNames,
+      };
+      if (unchanged) clearProofreadDraft(draftKey);
+      if (unchanged) setDraftStorageFailed(false);
+      setIsDirty(!unchanged);
+      setSaveStatus(unchanged ? 'saved' : 'idle');
+      toast.success(t('subtitleSavedSuccess'));
+      // Navigation must wait until the current revision, including edits during IPC, is saved.
+      return unchanged;
+    };
     try {
+      if (qualityEnabled && qualityErrorRef.current)
+        throw new Error(qualityErrorRef.current);
+      if (isLoading || recoveryDraft || !config.sourceSubtitlePath)
+        throw new Error(t('saveFailed'));
+      const baseline = savedDocument.current;
+      if (
+        qualityEnabled &&
+        baseline?.subtitles === subtitles &&
+        baseline.speakers === savedSpeakers &&
+        baseline.embed === savedEmbedNames
+      )
+        return await finishSave();
       if (config.proofreadDataFile) {
         const outputs: { filePath?: string; contentType?: string }[] = [];
         const finalTargetPath = config.finalTargetSubtitlePath;
@@ -449,31 +796,24 @@ export const useStandaloneSubtitles = (
 
         const result = await window.ipc.invoke('saveProofreadDataAndRender', {
           proofreadDataFile: config.proofreadDataFile,
-          subtitles: mergedSubtitles,
-          speakers: speakersRef.current,
-          embedSpeakerNames,
+          subtitles,
+          speakers: savedSpeakers,
+          embedSpeakerNames: savedEmbedNames,
           outputs: outputs.filter((output) => output.filePath),
         });
 
-        if (result?.error) {
-          console.error('Error saving proofread data:', result.error);
-          toast.error(t('saveFailed'));
-          return false;
-        }
-
-        setIsDirty(false);
-        toast.success(t('subtitleSavedSuccess'));
-        return true;
+        assertSaved(result);
+        return await finishSave();
       }
 
-      const results: { error?: string }[] = [];
+      const results: { success?: boolean; error?: string }[] = [];
 
       // 保存源字幕
       if (config.sourceSubtitlePath) {
         results.push(
           await window.ipc.invoke('saveSubtitleFile', {
             filePath: config.sourceSubtitlePath,
-            subtitles: mergedSubtitles,
+            subtitles,
             contentType: 'source',
           }),
         );
@@ -481,10 +821,11 @@ export const useStandaloneSubtitles = (
 
       // 保存翻译字幕（纯翻译内容到临时文件）
       if (config.targetSubtitlePath && shouldShowTranslation) {
+        if (!current()) return false;
         results.push(
           await window.ipc.invoke('saveSubtitleFile', {
             filePath: config.targetSubtitlePath,
-            subtitles: mergedSubtitles,
+            subtitles,
             contentType: 'onlyTranslate',
           }),
         );
@@ -492,35 +833,50 @@ export const useStandaloneSubtitles = (
 
       // 保存到目标翻译文件（按用户配置格式，可能是双语）
       if (config.finalTargetSubtitlePath && shouldShowTranslation) {
+        if (!current()) return false;
         const contentType = config.translateContent || 'onlyTranslate';
         results.push(
           await window.ipc.invoke('saveSubtitleFile', {
             filePath: config.finalTargetSubtitlePath,
-            subtitles: mergedSubtitles,
+            subtitles,
             contentType,
           }),
         );
       }
 
-      const failed = results.find((result) => result && result.error);
-      if (failed) {
-        console.error('Error saving subtitles:', failed.error);
-        toast.error(t('saveFailed'));
-        return false;
-      }
-
-      setIsDirty(false);
-      toast.success(t('subtitleSavedSuccess'));
-      return true;
+      results.forEach(assertSaved);
+      return await finishSave();
     } catch (error) {
+      if (!current()) return false;
       console.error('Error saving subtitles:', error);
+      setSaveStatus('save_error');
+      setSaveError(error instanceof Error ? error.message : String(error));
       toast.error(t('saveFailed'));
       return false;
     }
-  };
+  }, [
+    flushPendingEdit,
+    config,
+    shouldShowTranslation,
+    qualityEnabled,
+    draftKey,
+    isLoading,
+    recoveryDraft,
+    t,
+    documentKey,
+  ]);
+
+  const handleSave = useCallback((): Promise<boolean> => {
+    if (savingRef.current) return savingRef.current;
+    const saving = saveSnapshot().finally(() => {
+      if (savingRef.current === saving) savingRef.current = null;
+    });
+    savingRef.current = saving;
+    return saving;
+  }, [saveSnapshot]);
 
   // 字幕统计
-  const getSubtitleStats = (): SubtitleStats => {
+  const subtitleStats = useMemo<SubtitleStats>(() => {
     const total = mergedSubtitles.length;
     const withTranslation = shouldShowTranslation
       ? mergedSubtitles.filter(
@@ -532,28 +888,36 @@ export const useStandaloneSubtitles = (
         ? Math.round((withTranslation / total) * 100)
         : 0;
     return { total, withTranslation, percent };
-  };
+  }, [mergedSubtitles, shouldShowTranslation]);
+  const getSubtitleStats = useCallback(() => subtitleStats, [subtitleStats]);
 
   // 检查翻译是否失败
-  const isTranslationFailed = (subtitle: Subtitle): boolean => {
-    if (!shouldShowTranslation) return false;
-    return (
-      !!subtitle.sourceContent &&
-      subtitle.sourceContent.trim() !== '' &&
-      (subtitle.translationStatus === 'failed' ||
-        !subtitle.targetContent ||
-        subtitle.targetContent.trim() === '' ||
-        /^\[翻译失败:/.test(subtitle.targetContent.trim()))
-    );
-  };
+  const isTranslationFailed = useCallback(
+    (subtitle: Subtitle): boolean => {
+      if (!shouldShowTranslation) return false;
+      return (
+        !!subtitle.sourceContent &&
+        subtitle.sourceContent.trim() !== '' &&
+        (subtitle.translationStatus === 'failed' ||
+          !subtitle.targetContent ||
+          subtitle.targetContent.trim() === '' ||
+          /^\[翻译失败:/.test(subtitle.targetContent.trim()))
+      );
+    },
+    [shouldShowTranslation],
+  );
 
   // 获取翻译失败的索引
-  const getFailedTranslationIndices = (): number[] => {
+  const failedTranslationIndices = useMemo(() => {
     if (!shouldShowTranslation) return [];
     return mergedSubtitles
       .map((subtitle, index) => (isTranslationFailed(subtitle) ? index : -1))
       .filter((index) => index !== -1);
-  };
+  }, [mergedSubtitles, shouldShowTranslation, isTranslationFailed]);
+  const getFailedTranslationIndices = useCallback(
+    () => failedTranslationIndices,
+    [failedTranslationIndices],
+  );
 
   // 导航到下一条失败的翻译
   const goToNextFailedTranslation = (): void => {
@@ -601,22 +965,179 @@ export const useStandaloneSubtitles = (
     flushPendingEdit();
     const next = history.undo(subtitlesRef.current, speakersRef.current);
     if (next) {
-      applySubtitles(renormalizeIds(next.subtitles));
+      if (next.subtitles !== subtitlesRef.current)
+        applySubtitles(renormalizeIds(next.subtitles));
       applySpeakers(next.speakers);
+      if (next.qualityReview) {
+        applyQuality({
+          ...next.qualityReview,
+          insertionDrafts: qualityRef.current.insertionDrafts,
+        });
+        qualityLocallyChanged.current = true;
+      }
       setIsDirty(true);
     }
-  }, [applySpeakers, applySubtitles, flushPendingEdit, history.undo]);
+  }, [
+    applySpeakers,
+    applySubtitles,
+    applyQuality,
+    flushPendingEdit,
+    history.undo,
+  ]);
 
   // 重做：合并窗口若有内容会作为新命令清空 redo 分支（与主流编辑器一致）
   const handleRedo = useCallback(() => {
     flushPendingEdit();
     const next = history.redo(subtitlesRef.current, speakersRef.current);
     if (next) {
-      applySubtitles(renormalizeIds(next.subtitles));
+      if (next.subtitles !== subtitlesRef.current)
+        applySubtitles(renormalizeIds(next.subtitles));
       applySpeakers(next.speakers);
+      if (next.qualityReview) {
+        applyQuality({
+          ...next.qualityReview,
+          insertionDrafts: qualityRef.current.insertionDrafts,
+        });
+        qualityLocallyChanged.current = true;
+      }
       setIsDirty(true);
     }
-  }, [applySpeakers, applySubtitles, flushPendingEdit, history.redo]);
+  }, [
+    applySpeakers,
+    applySubtitles,
+    applyQuality,
+    flushPendingEdit,
+    history.redo,
+  ]);
+
+  const updateQualityReview = useCallback(
+    (next: QualityReviewState, record = false, dirty = true) => {
+      if (qualityRef.current === next) return;
+      if (record) {
+        flushPendingEdit();
+        history.pushQuality(qualityRef.current, next);
+      }
+      applyQuality(next);
+      if (dirty) {
+        qualityLocallyChanged.current = true;
+        setIsDirty(true);
+      }
+    },
+    [applyQuality, flushPendingEdit, history.pushQuality],
+  );
+
+  const retryQualityLoad = useCallback(async () => {
+    const version = loadVersion.current;
+    try {
+      const result = await window.ipc.invoke('qualityReview:read', draftKey);
+      if (version !== loadVersion.current) return;
+      if (!result?.success)
+        throw new Error(result?.error || 'QUALITY_READ_FAILED');
+      const saved = parseQualityReview(result.data);
+      // A successful read clears the error, but recovery/edits remain authoritative.
+      if (!qualityLocallyChanged.current) applyQuality(saved);
+      qualityErrorRef.current = '';
+      setQualityLoadError('');
+    } catch (error) {
+      if (version === loadVersion.current) {
+        qualityErrorRef.current = String(error);
+        setQualityLoadError(String(error));
+      }
+    }
+  }, [draftKey, applyQuality]);
+
+  const insertSubtitle = useCallback(
+    (
+      start: number,
+      end: number,
+      source: string,
+      target = '',
+      issue?: QualityIssue,
+    ) => {
+      const current = subtitlesRef.current;
+      if (
+        !Number.isFinite(start) ||
+        !Number.isFinite(end) ||
+        start < 0 ||
+        !validCueRange(start, end) ||
+        !source.trim() ||
+        current.some(
+          (row) =>
+            (row.startTimeInSeconds ?? 0) < end &&
+            (row.endTimeInSeconds ?? 0) > start,
+        )
+      )
+        return false;
+      let index = current.findIndex(
+        (row) => (row.startTimeInSeconds ?? 0) >= end,
+      );
+      if (index < 0) index = current.length;
+      const row: Subtitle = {
+        id: String(index + 1),
+        startTimeInSeconds: start,
+        endTimeInSeconds: end,
+        startEndTime: `${secondsToTime(start)} --> ${secondsToTime(end)}`,
+        content: source.split('\n'),
+        sourceContent: source,
+        targetContent: target,
+      };
+      flushPendingEdit();
+      const next = current.slice();
+      next.splice(index, 0, row);
+      const normalized = renormalizeIds(next);
+      const before = qualityRef.current;
+      let after: QualityReviewState | undefined;
+      if (issue) {
+        // Inserting changes the finding's evidence. Record the new evidence so
+        // the next automatic check keeps this resolution, including after redo.
+        let resolvedIssue = issue;
+        const steps = qualityCheckSteps({
+          subtitles: normalized,
+          warnings: missedSpeechWarnings,
+          terms: [],
+          translation: false,
+        });
+        for (let step = steps.next(); !step.done; step = steps.next()) {
+          const updated = step.value.find(
+            (finding) => finding.key === issue.key,
+          );
+          if (updated) {
+            resolvedIssue = updated;
+            break;
+          }
+        }
+        const insertionDrafts = { ...before.insertionDrafts };
+        delete insertionDrafts[issue.key];
+        after = {
+          ...before,
+          insertionDrafts,
+          decisions: {
+            ...before.decisions,
+            [issue.key]: { evidence: resolvedIssue.evidence, status: 'fixed' },
+          },
+        };
+      }
+      history.push(
+        { start: index, removed: [], inserted: [row] },
+        after ? { before, after } : undefined,
+      );
+      if (after) {
+        applyQuality(after);
+        qualityLocallyChanged.current = true;
+      }
+      applySubtitles(normalized);
+      setIsDirty(true);
+      setCurrentSubtitleIndex(index);
+      return true;
+    },
+    [
+      applySubtitles,
+      applyQuality,
+      flushPendingEdit,
+      history.push,
+      missedSpeechWarnings,
+    ],
+  );
 
   // 是否可以撤销/重做（合并窗口中有未提交输入也算可撤销）
   const canUndo = history.canUndo || pendingEditRef.current !== null;
@@ -640,9 +1161,11 @@ export const useStandaloneSubtitles = (
       const row = current[index];
       if (!row) return null;
 
-      if (!(startSec < endSec)) {
+      if (!validCueRange(startSec, endSec)) {
         return t('timeEditInvalidRange');
       }
+      startSec = Math.round(startSec * 1000) / 1000;
+      endSec = Math.round(endSec * 1000) / 1000;
       const prevRow = current[index - 1];
       if (
         prevRow &&
@@ -923,7 +1446,19 @@ export const useStandaloneSubtitles = (
       const content = subtitle.sourceContent || '';
       const targetContent = subtitle.targetContent || '';
 
-      if (content.length < 2) return;
+      const startTime = subtitle.startTimeInSeconds || 0;
+      const endTime = subtitle.endTimeInSeconds || 0;
+      const midTime =
+        Math.round((splitTime ?? (startTime + endTime) / 2) * 1000) / 1000;
+      if (
+        content.length < 2 ||
+        !Number.isInteger(splitPoint) ||
+        splitPoint <= 0 ||
+        splitPoint >= content.length ||
+        !validCueRange(startTime, midTime) ||
+        !validCueRange(midTime, endTime)
+      )
+        return;
 
       flushPendingEdit();
 
@@ -937,13 +1472,6 @@ export const useStandaloneSubtitles = (
       const target2 = targetContent.slice(targetSplitPoint);
 
       // 计算拆分后的时间（支持自定义时间拆分点）
-      const startTime = subtitle.startTimeInSeconds || 0;
-      const endTime = subtitle.endTimeInSeconds || 0;
-      const midTime =
-        splitTime !== undefined
-          ? splitTime
-          : startTime + (endTime - startTime) / 2;
-
       const sub1: Subtitle = {
         ...subtitle,
         sourceContent: content1,
@@ -990,6 +1518,11 @@ export const useStandaloneSubtitles = (
 
   return {
     mergedSubtitles,
+    qualityReview,
+    updateQualityReview,
+    qualityLoadError,
+    retryQualityLoad,
+    insertSubtitle,
     missedSpeechWarnings,
     setMergedSubtitles,
     updateSubtitles,
@@ -1007,9 +1540,18 @@ export const useStandaloneSubtitles = (
     shouldShowTranslation,
     subtitleTracksForPlayer,
     isLoading,
+    loadError,
+    retryLoad: loadFiles,
     handleSubtitleChange,
     handleSave,
     isDirty,
+    saveStatus,
+    getIsDirty,
+    saveError,
+    recoveryDraft,
+    draftStorageFailed,
+    restoreDraft,
+    discardDraft,
     flushPendingEdit,
     getSubtitleStats,
     isTranslationFailed,

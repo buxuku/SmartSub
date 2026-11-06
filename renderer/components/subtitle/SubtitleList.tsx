@@ -4,9 +4,15 @@ import React, {
   useCallback,
   useMemo,
   useState,
+  useLayoutEffect,
   memo,
 } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import {
+  measureElement,
+  useVirtualizer,
+  type Range,
+} from '@tanstack/react-virtual';
+import { subtitleVirtualRange } from '../../lib/subtitleVirtualRange';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -31,10 +37,19 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Subtitle } from '../../hooks/useSubtitles';
+import { isMacPlatform } from '../../hooks/useHotkeys';
 import { useTranslation } from 'next-i18next';
 import TimeRangeEditor from './TimeRangeEditor';
 import type { RetranslateControl } from '../../hooks/useRetranslateFailed';
 import SpeakerCueControl from '../proofread/SpeakerCueControl';
+import InlineAiReview from '../proofread/InlineAiReview';
+import SubtitleHealth from '../proofread/SubtitleHealth';
+import type { InlineAiControl } from '../../hooks/useInlineAi';
+import {
+  cueSnapshot,
+  cueStructure,
+  type InlineAiSuggestion,
+} from '../../lib/inlineAi';
 import type { SpeakerFilter } from '../proofread/SpeakerToolbar';
 import {
   associateMissedSpeechWarnings,
@@ -49,6 +64,14 @@ import {
 } from '../../../types/proofreadData';
 
 interface SubtitleListProps {
+  /** Render the small review selection in its parent scroll area. */
+  inline?: boolean;
+  visibleIndices?: number[];
+  failureFilter?: { enabled: boolean; onChange: (enabled: boolean) => void };
+  hideDiagnostics?: boolean;
+  sourceLanguage?: string;
+  targetLanguage?: string;
+  inlineAi?: InlineAiControl;
   mergedSubtitles: Subtitle[];
   missedSpeechWarnings?: MissedSpeechWarning[];
   onSeekMissedSpeech?: (startMs: number) => void;
@@ -60,6 +83,7 @@ interface SubtitleListProps {
     field: 'sourceContent' | 'targetContent',
     value: string,
   ) => void;
+  onCommitRow?: () => void;
   isTranslationFailed: (subtitle: Subtitle) => boolean;
   getFailedTranslationIndices: () => number[];
   goToNextFailedTranslation: () => void;
@@ -91,6 +115,9 @@ interface SubtitleListProps {
   onCreateSpeaker?: (index: number) => number;
 }
 
+const emptySpeakers: SpeakerInfo[] = [];
+const emptyWarnings: MissedSpeechWarning[] = [];
+
 interface RowLabels {
   currentPlaying: string;
   translationFailedLabel: string;
@@ -120,6 +147,13 @@ const toPreview = (text: string | undefined): string =>
   (text || '').replace(/\s*\n\s*/g, ' ').trim();
 
 interface SubtitleRowProps {
+  sourceLanguage?: string;
+  targetLanguage?: string;
+  suggestion?: InlineAiSuggestion;
+  suggestionStale: boolean;
+  onAcceptAi: (index: number) => void;
+  onDismissAi: (index: number) => void;
+  onRetryAi: (index: number) => void;
   subtitle: Subtitle;
   index: number;
   isCurrent: boolean;
@@ -168,6 +202,13 @@ interface SubtitleRowProps {
 
 // 行组件：紧凑单行（默认） / 展开编辑（当前行）
 const SubtitleRow = memo(function SubtitleRow({
+  sourceLanguage,
+  targetLanguage,
+  suggestion,
+  suggestionStale,
+  onAcceptAi,
+  onDismissAi,
+  onRetryAi,
   subtitle,
   index,
   isCurrent,
@@ -221,7 +262,7 @@ const SubtitleRow = memo(function SubtitleRow({
     </TooltipProvider>
   ) : null;
 
-  const expanded = isCurrent || forceExpanded;
+  const expanded = isCurrent || forceExpanded || !!suggestion;
   const bodyFont =
     fontScale === 's'
       ? 'text-[11px]'
@@ -235,7 +276,7 @@ const SubtitleRow = memo(function SubtitleRow({
     return (
       <div
         id={`subtitle-${index}`}
-        className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs cursor-pointer transition-colors select-none ${
+        className={`flex h-9 items-center gap-1.5 rounded-md px-1.5 py-1 text-xs cursor-pointer transition-colors select-none ${
           isSelected ? 'bg-accent' : 'bg-card hover:bg-accent/50'
         } ${failedEdge}`}
         onClick={(e) => onRowClick(index, e.shiftKey)}
@@ -266,6 +307,17 @@ const SubtitleRow = memo(function SubtitleRow({
         {isFailed && (
           <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-destructive" />
         )}
+        <SubtitleHealth
+          text={
+            (shouldShowTranslation
+              ? subtitle.targetContent
+              : subtitle.sourceContent) || ''
+          }
+          start={subtitle.startTimeInSeconds}
+          end={subtitle.endTimeInSeconds}
+          language={shouldShowTranslation ? targetLanguage : sourceLanguage}
+          compact
+        />
       </div>
     );
   }
@@ -381,6 +433,8 @@ const SubtitleRow = memo(function SubtitleRow({
 
       <Textarea
         id={`subtitle-src-${index}`}
+        data-subtitle-editor="source"
+        aria-label={`${labels.originalSubtitle} ${index + 1}`}
         className={`mb-2 min-h-[24px] resize-none p-1 ${bodyFont}`}
         value={subtitle.sourceContent}
         onChange={(e) => onFieldChange(index, 'sourceContent', e.target.value)}
@@ -393,6 +447,8 @@ const SubtitleRow = memo(function SubtitleRow({
       {shouldShowTranslation && (
         <Textarea
           id={`subtitle-tgt-${index}`}
+          data-subtitle-editor="target"
+          aria-label={`${labels.translatedSubtitle} ${index + 1}`}
           className={`resize-none p-1 ${bodyFont} ${
             subtitle.targetContent ? 'min-h-[24px]' : 'min-h-[20px]'
           } ${
@@ -410,18 +466,47 @@ const SubtitleRow = memo(function SubtitleRow({
           }
         />
       )}
+      <div className="mt-1">
+        <SubtitleHealth
+          text={
+            (shouldShowTranslation
+              ? subtitle.targetContent
+              : subtitle.sourceContent) || ''
+          }
+          start={subtitle.startTimeInSeconds}
+          end={subtitle.endTimeInSeconds}
+          language={shouldShowTranslation ? targetLanguage : sourceLanguage}
+        />
+      </div>
+      {suggestion && (
+        <InlineAiReview
+          suggestion={suggestion}
+          stale={suggestionStale}
+          onAccept={() => onAcceptAi(index)}
+          onDismiss={() => onDismissAi(index)}
+          onRetry={() => onRetryAi(index)}
+        />
+      )}
     </div>
   );
 });
 
 const SubtitleList: React.FC<SubtitleListProps> = ({
+  inline = false,
+  sourceLanguage,
+  targetLanguage,
+  inlineAi,
   mergedSubtitles,
-  missedSpeechWarnings = [],
+  missedSpeechWarnings = emptyWarnings,
+  visibleIndices,
+  failureFilter,
+  hideDiagnostics = false,
   onSeekMissedSpeech,
   currentSubtitleIndex,
   shouldShowTranslation,
   handleSubtitleClick,
   handleSubtitleChange,
+  onCommitRow,
   isTranslationFailed,
   getFailedTranslationIndices,
   goToNextFailedTranslation,
@@ -435,22 +520,44 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   onMergeRange,
   expandAll,
   fontScale,
-  speakers = [],
+  speakers = emptySpeakers,
   speakerFilter = 'all',
   onCueSpeakersChange,
   onCreateSpeaker,
 }) => {
   const { t } = useTranslation('home');
+  const hasSuggestions = !!inlineAi?.suggestions.size;
+  const structure = useMemo(
+    () => (hasSuggestions ? cueStructure(mergedSubtitles) : ''),
+    [mergedSubtitles, hasSuggestions],
+  );
+  const aiRef = useRef(inlineAi);
+  aiRef.current = inlineAi;
+  const onAcceptAi = useCallback((index: number) => {
+    aiRef.current?.accept(index);
+  }, []);
+  const onDismissAi = useCallback((index: number) => {
+    aiRef.current?.dismiss(index);
+  }, []);
+  const onRetryAi = useCallback((index: number) => {
+    void aiRef.current?.run(
+      [index],
+      aiRef.current.suggestions.get(index)?.intent,
+      aiRef.current.suggestions.get(index)?.field,
+    );
+  }, []);
   const warnings = useMemo(
     () =>
-      associateMissedSpeechWarnings(
-        missedSpeechWarnings,
-        mergedSubtitles.map((cue) => ({
-          id: cue.id,
-          startMs: (cue.startTimeInSeconds ?? 0) * 1000,
-          endMs: (cue.endTimeInSeconds ?? 0) * 1000,
-        })),
-      ),
+      missedSpeechWarnings.length
+        ? associateMissedSpeechWarnings(
+            missedSpeechWarnings,
+            mergedSubtitles.map((cue) => ({
+              id: cue.id,
+              startMs: (cue.startTimeInSeconds ?? 0) * 1000,
+              endMs: (cue.endTimeInSeconds ?? 0) * 1000,
+            })),
+          )
+        : [],
     [missedSpeechWarnings, mergedSubtitles],
   );
   const warningTitles = useMemo(() => {
@@ -467,19 +574,24 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   }, [warnings, t]);
 
   // 获取翻译失败的字幕索引
-  const failedIndices = getFailedTranslationIndices();
+  const failedIndices = useMemo(
+    () => getFailedTranslationIndices(),
+    [getFailedTranslationIndices, mergedSubtitles],
+  );
   const hasFailedTranslations = failedIndices.length > 0;
 
   // 只看失败：开启时记录基线 N0，随失败行减少展示"已处理 x/N0"
-  const [failedOnly, setFailedOnly] = useState(false);
+  const [localFailedOnly, setFailedOnly] = useState(false);
+  const failedOnly = failureFilter?.enabled ?? localFailedOnly;
   const [failedBaseline, setFailedBaseline] = useState(0);
 
   const handleFailedOnlyChange = useCallback(
     (on: boolean) => {
       setFailedOnly(on);
+      failureFilter?.onChange(on);
       setFailedBaseline(on ? failedIndices.length : 0);
     },
-    [failedIndices.length],
+    [failedIndices.length, failureFilter],
   );
 
   const processedCount = Math.max(0, failedBaseline - failedIndices.length);
@@ -509,23 +621,31 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
       })
       .filter((index) => index >= 0);
   }, [mergedSubtitles, speakerFilter]);
+  const speakerFilteredSet = useMemo(
+    () => (speakerFilteredIndices ? new Set(speakerFilteredIndices) : null),
+    [speakerFilteredIndices],
+  );
 
   // 过滤映射：null = 不过滤（虚拟索引即真实索引）
-  let displayIndices: number[] | null = null;
-  if (failedOnly) {
-    const pinned = pinnedIndexRef.current;
+  const pinned = pinnedIndexRef.current;
+  const displayIndices = useMemo(() => {
+    if (visibleIndices) return visibleIndices;
+    if (!failedOnly) return speakerFilteredIndices;
     const failedDisplayIndices =
       pinned >= 0 && !failedIndices.includes(pinned)
         ? [...failedIndices, pinned].sort((a, b) => a - b)
         : failedIndices;
-    displayIndices = speakerFilteredIndices
-      ? failedDisplayIndices.filter((index) =>
-          speakerFilteredIndices.includes(index),
-        )
+    return speakerFilteredSet
+      ? failedDisplayIndices.filter((index) => speakerFilteredSet.has(index))
       : failedDisplayIndices;
-  } else if (speakerFilteredIndices) {
-    displayIndices = speakerFilteredIndices;
-  }
+  }, [
+    visibleIndices,
+    failedOnly,
+    failedIndices,
+    pinned,
+    speakerFilteredIndices,
+    speakerFilteredSet,
+  ]);
   const displayCount = displayIndices
     ? displayIndices.length
     : mergedSubtitles.length;
@@ -547,6 +667,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     onDeleteClick,
     onTimeChange,
     currentSubtitleIndex,
+    onCommitRow,
   });
   latestRef.current = {
     handleSubtitleClick,
@@ -557,30 +678,92 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     onDeleteClick,
     onTimeChange,
     currentSubtitleIndex,
+    onCommitRow,
   };
 
-  const virtualizer = useVirtualizer({
+  // A new key function invalidates TanStack's measurements for every cue.
+  // Scrolling must only measure visible rows, including filtered views.
+  const getItemKey = useCallback(
+    (index: number) => (displayIndices ? displayIndices[index] : index),
+    [displayIndices],
+  );
+  const suggestions = inlineAi?.suggestions;
+  const rangeExtractor = useCallback(
+    (range: Range) =>
+      subtitleVirtualRange(range, (listIndex) => {
+        const index = displayIndices ? displayIndices[listIndex] : listIndex;
+        return (
+          expandAll ||
+          index === currentSubtitleIndex ||
+          !!suggestions?.has(index)
+        );
+      }),
+    [displayIndices, expandAll, currentSubtitleIndex, suggestions],
+  );
+  const virtualizer = useVirtualizer<HTMLDivElement, HTMLElement>({
+    enabled: !inline,
+    directDomUpdates: true,
     count: displayCount,
     getScrollElement: () => scrollContainerRef.current,
-    // 紧凑行 ~30px；展开行由 measureElement 动态测量
-    estimateSize: () => 34,
+    // Compact rows are 36px + 4px spacing, including speaker badges.
+    // Exact estimates avoid recalculating the remaining 10000 rows as each
+    // new compact row enters view; expanded rows are measured dynamically.
+    estimateSize: () => 40,
+    // New compact rows have a fixed height. Avoid a synchronous layout read
+    // for each mount; expanded/editing/Diff rows still use ResizeObserver.
+    measureElement: (element, entry, instance) =>
+      element.dataset.compact === 'true'
+        ? 40
+        : measureElement(element, entry, instance),
     overscan: 10,
+    rangeExtractor,
     // 以真实索引作为 key，过滤切换/失败行减少时测量缓存仍对得上行
-    getItemKey: (i) => (displayIndices ? displayIndices[i] : i),
+    getItemKey,
+  });
+  const focusRequest = useRef<{ index: number; field: 'src' | 'tgt' } | null>(
+    null,
+  );
+  const displayRef = useRef(displayIndices);
+  displayRef.current = displayIndices;
+  const countRef = useRef(mergedSubtitles.length);
+  countRef.current = mergedSubtitles.length;
+  const virtualizerRef = useRef(virtualizer);
+  virtualizerRef.current = virtualizer;
+  useLayoutEffect(() => {
+    const request = focusRequest.current;
+    if (!request) return;
+    if (request.index !== currentSubtitleIndex) {
+      focusRequest.current = null;
+      return;
+    }
+    const field = document.getElementById(
+      `subtitle-${request.field}-${request.index}`,
+    ) as HTMLTextAreaElement | null;
+    if (field) {
+      focusRequest.current = null;
+      field.focus({ preventScroll: true });
+      if (inline) field.scrollIntoView({ block: 'nearest' });
+      field.select();
+    }
   });
 
-  // 展开/收起全部或字号变化会改变行高，强制虚拟列表重算。
-  // 注意：measure() 清空缓存后依赖 ResizeObserver 回填，但「高度未变化」的当前展开行
-  // 不会触发 ResizeObserver，会停留在估算高度（34px）导致下一行压上来重叠。
-  // 因此清空后再对所有已渲染行强制重新测量，确保当前行也拿到真实高度。
-  useEffect(() => {
-    virtualizer.measure();
+  // Reset offscreen estimates when the presentation changes, and restore the
+  // mounted heights before paint. measureElement may skip reads while scrolling;
+  // unchanged AI/editing rows will never trigger ResizeObserver to fill that gap.
+  // Batch the reads before resizeItem writes positions to avoid layout thrashing.
+  useLayoutEffect(() => {
     const container = scrollContainerRef.current;
-    if (!container) return;
-    container
-      .querySelectorAll<HTMLElement>('[data-index]')
-      .forEach((node) => virtualizer.measureElement(node));
-  }, [expandAll, fontScale, virtualizer]);
+    if (inline || !container) return;
+    const sizes = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-index]'),
+      (node) => ({
+        index: Number(node.dataset.index),
+        height: node.dataset.compact === 'true' ? 40 : node.offsetHeight,
+      }),
+    );
+    virtualizer.measure();
+    sizes.forEach(({ index, height }) => virtualizer.resizeItem(index, height));
+  }, [expandAll, fontScale, virtualizer, inline]);
 
   // 多选区间（归一化 [lo, hi]，含两端）；anchor 为最后一次普通点击的行
   const [selRange, setSelRange] = useState<[number, number] | null>(null);
@@ -670,24 +853,71 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     }
   };
 
+  const advanceRow = useCallback(
+    (
+      e: React.KeyboardEvent<HTMLTextAreaElement>,
+      index: number,
+      field: 'src' | 'tgt',
+    ) => {
+      if (
+        e.nativeEvent.isComposing ||
+        e.repeat ||
+        e.key !== 'Enter' ||
+        e.altKey ||
+        e.shiftKey ||
+        (isMacPlatform() ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey)
+      )
+        return false;
+      e.preventDefault();
+      latestRef.current.onCommitRow?.();
+      const indices = displayRef.current;
+      const position = indices ? indices.indexOf(index) : index;
+      const next = indices ? indices[position + 1] : index + 1;
+      if (position < 0 || next === undefined || next >= countRef.current)
+        return true;
+      focusRequest.current = { index: next, field };
+      skipNextAutoScrollRef.current = false;
+      virtualizerRef.current.scrollToIndex(position + 1, { align: 'auto' });
+      latestRef.current.handleSubtitleClick(next);
+      return true;
+    },
+    [],
+  );
+
   const onSourceKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>, index: number) => {
+      if (
+        advanceRow(e, index, 'src') ||
+        e.nativeEvent.isComposing ||
+        e.altKey ||
+        e.ctrlKey ||
+        e.metaKey
+      )
+        return;
       if (e.key === 'Tab' && !e.shiftKey && shouldShowTranslation) {
         e.preventDefault();
         focusRowField(index, 'tgt');
       }
     },
-    [shouldShowTranslation],
+    [shouldShowTranslation, advanceRow],
   );
 
   const onTargetKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>, index: number) => {
+      if (
+        advanceRow(e, index, 'tgt') ||
+        e.nativeEvent.isComposing ||
+        e.altKey ||
+        e.ctrlKey ||
+        e.metaKey
+      )
+        return;
       if (e.key === 'Tab' && e.shiftKey) {
         e.preventDefault();
         focusRowField(index, 'src');
       }
     },
-    [],
+    [advanceRow],
   );
 
   const onAiOptimize = useCallback((index: number) => {
@@ -730,6 +960,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   // 用户主动点击的字幕不滚动；等一帧让展开行完成测量后再定位
   // 过滤模式下需把真实索引映射为列表位置；不在列表中则不滚动
   useEffect(() => {
+    if (inline) return;
     if (skipNextAutoScrollRef.current) {
       skipNextAutoScrollRef.current = false;
       return;
@@ -745,17 +976,26 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     return () => cancelAnimationFrame(frame);
     // displayIndices 内容随失败行变化，仅在当前行/过滤开关变化时重定位
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSubtitleIndex, failedOnly, speakerFilter, virtualizer]);
+  }, [currentSubtitleIndex, failedOnly, speakerFilter, virtualizer, inline]);
 
-  const virtualItems = virtualizer.getVirtualItems();
+  const virtualItems = inline
+    ? Array.from({ length: displayCount }, (_, index) => ({
+        index,
+        key: getItemKey(index),
+      }))
+    : virtualizer.getVirtualItems();
 
   return (
-    <div className="h-full flex flex-col border rounded-md overflow-hidden">
-      <MissedSpeechControls warnings={warnings} onSeek={onSeekMissedSpeech} />
+    <div
+      className={`${inline ? '' : 'h-full overflow-hidden'} flex min-w-0 flex-col rounded-md bg-card`}
+    >
+      {!hideDiagnostics && (
+        <MissedSpeechControls warnings={warnings} onSeek={onSeekMissedSpeech} />
+      )}
       {/* 状态/失败操作栏（视图控制已上移至编辑工具栏；窄宽下换行避免重叠）
           纯转写模式无翻译状态与失败操作，整条隐藏避免空栏 */}
-      {shouldShowTranslation && (
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 p-2 border-b bg-muted/30 flex-shrink-0">
+      {shouldShowTranslation && !hideDiagnostics && (
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 p-2 bg-muted/40 flex-shrink-0">
           <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
             <>
               <div className="flex flex-shrink-0 items-center gap-1.5">
@@ -894,7 +1134,10 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
       )}
 
       {/* 字幕列表（虚拟化；只看失败时为过滤视图） */}
-      <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
+      <div
+        className={inline ? '' : 'min-h-0 flex-1 overflow-y-auto'}
+        ref={scrollContainerRef}
+      >
         {displayCount === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-sm text-muted-foreground">
             <CheckCircle2 className="h-8 w-8 text-success" />
@@ -915,7 +1158,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
         ) : (
           <div
             className="relative w-full"
-            style={{ height: virtualizer.getTotalSize() }}
+            ref={inline ? undefined : virtualizer.containerRef}
           >
             {virtualItems.map((virtualItem) => {
               const index = displayIndices
@@ -927,11 +1170,29 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                 <div
                   key={virtualItem.key}
                   data-index={virtualItem.index}
-                  ref={virtualizer.measureElement}
-                  className="absolute left-0 top-0 w-full px-1 pb-1"
-                  style={{ transform: `translateY(${virtualItem.start}px)` }}
+                  data-compact={
+                    index !== currentSubtitleIndex &&
+                    !expandAll &&
+                    !inlineAi?.suggestions.get(index)
+                  }
+                  ref={inline ? undefined : virtualizer.measureElement}
+                  className={`${inline ? '' : 'absolute left-0 top-0'} w-full px-1 pb-1`}
+                  style={{ contain: 'layout style' }}
                 >
                   <SubtitleRow
+                    sourceLanguage={sourceLanguage}
+                    targetLanguage={targetLanguage}
+                    suggestion={inlineAi?.suggestions.get(index)}
+                    suggestionStale={
+                      !!inlineAi?.suggestions.get(index) &&
+                      (inlineAi.suggestions.get(index)!.structure !==
+                        structure ||
+                        inlineAi.suggestions.get(index)!.snapshot !==
+                          cueSnapshot(subtitle))
+                    }
+                    onAcceptAi={onAcceptAi}
+                    onDismissAi={onDismissAi}
+                    onRetryAi={onRetryAi}
                     subtitle={subtitle}
                     index={index}
                     isCurrent={index === currentSubtitleIndex}

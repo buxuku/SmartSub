@@ -2,17 +2,14 @@ import React, { useState } from 'react';
 import { FileText, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import ConfigItemHint from '@/components/tasks/ConfigItemHint';
+import { cn } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
 
 interface ManuscriptControlProps {
   form: any;
   formData: any;
+  className?: string;
 }
 
 interface ManuscriptSelection {
@@ -25,6 +22,7 @@ interface ManuscriptSelection {
 const ManuscriptControl: React.FC<ManuscriptControlProps> = ({
   form,
   formData,
+  className,
 }) => {
   const { t } = useTranslation('tasks');
   const [selecting, setSelecting] = useState(false);
@@ -80,48 +78,85 @@ const ManuscriptControl: React.FC<ManuscriptControlProps> = ({
   };
 
   return (
-    <div className="flex items-center gap-1.5 min-w-0">
-      <span className="text-xs text-muted-foreground whitespace-nowrap">
-        {t('manuscript.label')}
-      </span>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 max-w-[210px] gap-1.5 px-2 text-xs"
-              onClick={selectManuscript}
-              disabled={selecting}
-            >
-              {selecting ? (
-                <Loader2 className="h-3.5 w-3.5 flex-none animate-spin" />
-              ) : (
-                <FileText className="h-3.5 w-3.5 flex-none" />
-              )}
-              <span className="truncate">
-                {manuscriptName || t('manuscript.select')}
-              </span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-[360px]">
-            {manuscriptPath || t('manuscript.hint')}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+    <div
+      className={cn('space-y-2', className)}
+      data-testid="setting-manuscript"
+    >
+      {/* 一行：标签（长说明收进 ⓘ）+ 选择按钮；选定后按钮换成「清除」，文件卡片在下方 */}
+      <div className="flex min-h-8 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="min-w-0 text-[13px] leading-snug">
+            {t('manuscript.globalLabel')}
+          </span>
+          <ConfigItemHint
+            text={t('manuscript.globalAdvancedHint')}
+            testId="setting-hint"
+          />
+        </div>
+        {manuscriptPath ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={clearManuscript}
+            className="h-6 flex-none px-1.5 text-xs text-muted-foreground hover:text-destructive"
+          >
+            <X className="h-3.5 w-3.5 mr-1" />
+            {t('manuscript.clear')}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={selectManuscript}
+            disabled={selecting}
+            className="h-8 flex-none gap-1.5 text-xs"
+          >
+            {selecting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileText className="h-3.5 w-3.5" />
+            )}
+            <span>{t('manuscript.select')}</span>
+          </Button>
+        )}
+      </div>
+
       {manuscriptPath && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 flex-none text-muted-foreground hover:text-destructive"
-          aria-label={t('manuscript.clear')}
-          title={t('manuscript.clear')}
-          onClick={clearManuscript}
-        >
-          <X className="h-3.5 w-3.5" />
-        </Button>
+        <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/40 p-2.5 text-xs">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <FileText className="h-4 w-4 flex-none text-primary" />
+            <div className="min-w-0 flex-1">
+              <div
+                className="font-medium text-foreground truncate"
+                title={manuscriptName}
+              >
+                {manuscriptName}
+              </div>
+              <div
+                className="text-[11px] text-muted-foreground truncate"
+                title={manuscriptPath}
+              >
+                {manuscriptPath}
+              </div>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={selectManuscript}
+            disabled={selecting}
+            className="h-7 px-2 text-xs flex-none"
+          >
+            {selecting ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              t('manuscript.changeScript')
+            )}
+          </Button>
+        </div>
       )}
     </div>
   );

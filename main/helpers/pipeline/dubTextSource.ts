@@ -46,7 +46,7 @@ export interface DubSubtitleCue {
 
 export type DubTextSource =
   | { type: 'ready'; path: string }
-  | { type: 'sidecar'; sidecarPath: string }
+  | { type: 'sidecar'; sidecarPath: string; content?: 'source' }
   | { type: 'error'; reason: 'missing-subtitle' | 'bilingual-unresolvable' };
 
 function isPlainText(p?: string): boolean {
@@ -78,7 +78,7 @@ export function pickDubTextSource(
   formData: Pick<
     IFormData,
     'taskType' | 'translateContent' | 'subtitleOutputFormat'
-  > & { translateProvider?: string },
+  > & { translateProvider?: string; subtitleLayout?: string },
   exists: (p: string) => boolean,
 ): DubTextSource {
   if (taskHasTranslation(formData)) {
@@ -102,6 +102,17 @@ export function pickDubTextSource(
   }
 
   // 无翻译：源字幕（ASR 产物 / 用户导入的字幕文件 / noSave 时的临时缓存）
+  if (
+    formData.subtitleLayout === 'two-line' &&
+    file.proofreadDataFile &&
+    exists(file.proofreadDataFile)
+  ) {
+    return {
+      type: 'sidecar',
+      sidecarPath: file.proofreadDataFile,
+      content: 'source',
+    };
+  }
   const candidates = [file.tempSrtFile, file.srtFile, file.filePath];
   for (const candidate of candidates) {
     if (candidate && !isPlainText(candidate) && exists(candidate)) {

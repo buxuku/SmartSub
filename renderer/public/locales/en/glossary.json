@@ -1,6 +1,7 @@
 {
+  "scope": { "project": "Project only", "global": "Global" },
   "list": {
-    "title": "Global glossaries",
+    "title": "Glossaries",
     "priorityHint": "Top wins",
     "toggleAria": "Enable or disable glossary {{name}}",
     "entryCount": "{{count}} entries"
@@ -33,7 +34,7 @@
     "noGlossaries": "No glossaries yet",
     "noGlossariesHint": "Create separate glossaries for a show or domain, then enable the ones you need.",
     "selectGlossary": "Select a glossary",
-    "selectGlossaryHint": "Glossaries are global resources, so tasks never need a separate glossary selection.",
+    "selectGlossaryHint": "Project terms apply only to their project; global terms apply across projects.",
     "noEntries": "This glossary has no entries",
     "noEntriesHint": "Add an entry or import a CSV / TXT file.",
     "noSearchResults": "No matching entries",
@@ -45,7 +46,7 @@
   },
   "aiGuide": {
     "title": "Enabled glossaries apply automatically to AI translation",
-    "description": "Each AI/LLM batch receives only terms matched in its source subtitles. Translation tasks, proofread retranslations, and translation AI optimization share the same rule. If enabled glossaries contain the same source, the top glossary wins and the conflict is logged."
+    "description": "Each AI/LLM batch receives matching terms from its project and global glossaries. Project terms take precedence over global terms; within each scope, the top enabled glossary wins. Conflicts are logged."
   },
   "traditionalGuide": {
     "title": "Configure terminology for machine translation at the provider",

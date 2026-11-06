@@ -55,17 +55,25 @@ gh_base() {
 gh_url() { echo "$(gh_base)/$1"; }
 gitcode_url() { echo "https://gitcode.com/${GITCODE_OWNER}/${GITCODE_REPO}/releases/download/${GITCODE_TAG}/$1"; }
 
-# 读取远端文件内容（取不到返回空，不报错）
-remote_fetch() { curl -fsSL --connect-timeout 20 --max-time 120 "$1" 2>/dev/null || true; }
+# 读取远端文件内容（取不到返回空，不报错）。
+# 新鲜度判定依赖它：一次瞬时失败不能被当成「远端没有 / 两边不一致」而触发数 GB 的无谓重传，
+# 所以带重试（--retry-all-errors 连连接重置 / 空响应一类的瞬时错误也重试）。
+remote_fetch() {
+  curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
+    --connect-timeout 20 --max-time 120 "$1" 2>/dev/null || true
+}
 
 # GitCode 上 FILES 是否齐全（任一缺失即返回非 0）。
 # 注意：GitCode 对 release 资源的 HEAD 请求一律返回 401，不能用 curl -I 探测存在性
 # （会被误判为缺失，导致新鲜度检查永远认为「需要同步」）；改用 GET 首字节（-r 0-0，
 # 命中返回 206 / 200），既能判断存在又几乎不下载内容。
+# 探测带重试：任何一个文件的一次瞬时失败（503 / 连接重置等）若直接判「缺失」，会让
+# 无人值守的每日任务白白重传数 GB 并重置 GitCode release；真缺失（404）重试几次后仍会返回 1。
 gitcode_has_all_files() {
   local name
   for name in "${FILES[@]}"; do
-    curl -fsL -r 0-0 --connect-timeout 20 --max-time 60 -o /dev/null "$(gitcode_url "$name")" >/dev/null 2>&1 || return 1
+    curl -fsL --retry 3 --retry-delay 2 --retry-all-errors \
+      -r 0-0 --connect-timeout 20 --max-time 60 -o /dev/null "$(gitcode_url "$name")" >/dev/null 2>&1 || return 1
   done
   return 0
 }
@@ -388,17 +396,28 @@ sort_files_by_size() {
 }
 
 # PATCH release 描述（供 update_body 钩子调用）。
+# 描述只是附加信息，所有失败都只记日志、绝不让已经传完的同步以非 0 退出（set -e 下 exit 1 会让
+# 外层 wrapper 把整次同步当失败，重置并重传 GB 级产物）：
+#   - 预演模式：api_request 只打印不请求，get_release_id 必然拿不到结果，直接跳过；
+#   - 取不到 release id：GitCode 现在的 release 详情和列表都不再返回 id，或接口暂时失败；
+#   - PATCH 请求本身失败。
 patch_release_body() {
   local body="$1" release_id
-  release_id=$(get_release_id)
-  [ -n "$release_id" ] || return 0
   if [ "$GITCODE_DRY_RUN" = "1" ]; then log "[dry-run] would update release body"; return 0; fi
-  curl -sS -X PATCH \
+  release_id=$(get_release_id) || release_id=""
+  if [ -z "$release_id" ]; then
+    log "Skip updating release description (release id unavailable)"
+    return 0
+  fi
+  if curl -sS -X PATCH \
     -H "Authorization: Bearer ${GITCODE_TOKEN}" -H "Content-Type: application/json" \
     -d "$(jq -n --arg tag "$GITCODE_TAG" --arg name "${RELEASE_NAME}" --arg body "$body" \
       '{tag_name:$tag,name:$name,body:$body}')" \
-    "${GITCODE_API_URL}/repos/${GITCODE_OWNER}/${GITCODE_REPO}/releases/${release_id}" >/dev/null
-  log "Updated GitCode release description"
+    "${GITCODE_API_URL}/repos/${GITCODE_OWNER}/${GITCODE_REPO}/releases/${release_id}" >/dev/null; then
+    log "Updated GitCode release description"
+  else
+    log "Warning: failed to update release description (non-fatal)"
+  fi
 }
 
 # --- 通用步骤 -----------------------------------------------------------------

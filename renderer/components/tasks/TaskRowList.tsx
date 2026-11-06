@@ -1,15 +1,20 @@
-import React, { useRef } from 'react';
+import { TaskActivityDetails } from './TaskActivityDetails';
+import React, { useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   AudioLines,
   Captions,
   CheckCircle2,
   ChevronRight,
+  Circle,
   CircleAlert,
   Diamond,
   Edit2,
+  FileText,
   FileUp,
   FolderOpen,
   Loader2,
+  Minus,
   Play,
   RotateCcw,
   Settings2,
@@ -31,6 +36,7 @@ import {
   getFileStages,
   getFileRail,
   getStageStatus,
+  getTaskDisplayStatus,
   getGateStatus,
   getDockedGate,
   getFilePercent,
@@ -45,13 +51,19 @@ import {
   type RailItem,
   type StageDef,
 } from './stageUtils';
-import { SPEAKER_DIARIZATION_METADATA_SAVE_FAILED } from '../../../types/speakerDiarization';
+import { formatTaskMessage } from './taskMessages';
+import { ROW_TONE_BAR, ROW_TONE_BORDER, getRowTone } from './rowTone';
+import { TaskFileName } from './TaskFileName';
+import { ManuscriptRowBadge } from './ManuscriptRowBadge';
+import { SpeechReviewBadge } from './SpeechReviewBadge';
 
 interface TaskRowListProps {
   files: any[];
   typeDef: TaskTypeDef;
   formData: any;
   taskStatus: string;
+  inputsLocked?: boolean;
+  manuscriptPool?: any[];
   onProofread: (file: any) => void;
   onDelete: (uuid: string) => void;
   onRetry: (file: any) => void;
@@ -59,6 +71,13 @@ interface TaskRowListProps {
   onReleaseGate?: (file: any, gate: 'subtitle' | 'dubbing') => void;
   /** 打开配音工作台检查该文件的配音 */
   onInspectDubbing?: (file: any) => void;
+  onAssignManuscript?: (
+    file: any,
+    manuscriptPath: string,
+    manuscriptName?: string,
+  ) => void;
+  onImport?: () => void;
+  scrollElementRef?: React.RefObject<HTMLDivElement>;
 }
 
 export function RailChips({
@@ -73,14 +92,25 @@ export function RailChips({
   className?: string;
 }) {
   return (
-    <div className={cn('flex items-center gap-1 flex-shrink-0', className)}>
+    <div
+      data-testid="task-stage-rail"
+      className={cn(
+        'flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1.5',
+        className,
+      )}
+    >
       {rail.map((item, index) => {
         if (item.kind === 'gate') {
           const status = getGateStatus(file, item.gate.key);
           return (
-            <React.Fragment key={item.gate.key}>
+            <span
+              className="inline-flex items-center gap-1"
+              key={item.gate.key}
+            >
               {index > 0 && <ChevronRight className="h-3 w-3 text-faint" />}
               <span
+                data-testid="rail-chip"
+                data-status={status}
                 className={cn(
                   'inline-flex items-center gap-1 text-xs whitespace-nowrap',
                   status === 'pending' && 'text-faint',
@@ -102,7 +132,7 @@ export function RailChips({
                   ? t('gate.reviewBadge')
                   : t(item.gate.labelKey)}
               </span>
-            </React.Fragment>
+            </span>
           );
         }
         const stage = item.stage;
@@ -141,35 +171,78 @@ export function RailChips({
               ),
             })
           : undefined;
+        const translationFailureCount = file?.translationFailures?.length || 0;
+        const translationFailureTitle = translationFailureCount
+          ? t('row.translationFailureWarning', {
+              count: translationFailureCount,
+            })
+          : undefined;
+        const stageWarning = Boolean(file?.[`${stage.key}Error`]);
+        const summarizeWarning =
+          stage.key === 'summarizeEpisode' && status === 'done'
+            ? file?.summarizeEpisodeError
+            : '';
+        const summarizeTitle = summarizeWarning
+          ? t(`summarize.error.${summarizeWarning}`, {
+              defaultValue: summarizeWarning,
+            })
+          : undefined;
+        const outcome = file.stageRuns?.[stage.key]?.outcome;
+        const outcomeLabel = outcome ? t(`runs.outcome.${outcome}`) : '';
+        const stageTitle = [
+          t(stage.labelKey),
+          outcomeLabel,
+          stage.key === 'extractSubtitle' ? missedSpeechTitle : undefined,
+          stage.key === 'translateSubtitle'
+            ? translationFailureTitle
+            : undefined,
+          summarizeTitle,
+          manuscriptTitle,
+        ]
+          .filter(Boolean)
+          .join(' · ');
         return (
-          <React.Fragment key={stage.key}>
+          <span className="inline-flex items-center gap-1" key={stage.key}>
             {index > 0 && <ChevronRight className="h-3 w-3 text-faint" />}
             <span
+              data-testid="rail-chip"
+              data-status={status}
+              data-outcome={outcome}
+              aria-label={stageTitle}
               className={cn(
                 'inline-flex items-center gap-1 text-xs whitespace-nowrap',
                 status === 'pending' && 'text-faint',
                 status === 'loading' && 'text-primary font-medium',
                 status === 'done' &&
-                  (manuscriptWarning ? 'text-warning' : 'text-success'),
+                  (stageWarning ? 'text-warning' : 'text-success'),
                 status === 'error' && 'text-destructive font-medium',
               )}
-              title={
-                stage.key === 'extractSubtitle' && missedSpeechTitle
-                  ? missedSpeechTitle
-                  : manuscriptTitle
-              }
+              title={stageTitle}
             >
+              {/* 每种状态都占同样大小的图标位：阶段推进时标签不会左右跳动 */}
+              {status === 'pending' && <Circle className="h-3 w-3" />}
               {status === 'loading' && (
                 <Loader2 className="h-3 w-3 animate-spin" />
               )}
               {status === 'done' &&
-                (manuscriptWarning ? (
+                (stageWarning ? (
                   <CircleAlert className="h-3 w-3" />
+                ) : outcome === 'reused' ? (
+                  <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                ) : outcome === 'not_applicable' ? (
+                  <Minus className="h-3 w-3" aria-hidden="true" />
                 ) : (
                   <CheckCircle2 className="h-3 w-3" />
                 ))}
               {status === 'error' && <CircleAlert className="h-3 w-3" />}
-              {t(stage.labelKey)}
+              {stage.key === 'extractSubtitle' &&
+              status === 'loading' &&
+              file.speechReviewStage
+                ? t('row.speechReviewing')
+                : t(stage.labelKey)}
+              {stage.key === 'extractSubtitle' && status === 'done' ? (
+                <SpeechReviewBadge file={file} />
+              ) : null}
               {status === 'done' && manuscriptSummary && (
                 <span className="text-[10px]">
                   {manuscriptSummary.replacedCues}/{manuscriptSummary.totalCues}
@@ -193,8 +266,18 @@ export function RailChips({
                   </span>
                 </span>
               ) : null}
+              {stage.key === 'translateSubtitle' &&
+              translationFailureCount > 0 ? (
+                <span
+                  className="inline-flex items-center gap-0.5 text-warning"
+                  title={translationFailureTitle}
+                >
+                  <CircleAlert className="h-3 w-3" />
+                  <span className="text-[10px]">{translationFailureCount}</span>
+                </span>
+              ) : null}
             </span>
-          </React.Fragment>
+          </span>
         );
       })}
     </div>
@@ -202,18 +285,41 @@ export function RailChips({
 }
 
 const TaskRowList: React.FC<TaskRowListProps> = ({
+  inputsLocked = false,
   files,
   typeDef,
   formData,
   taskStatus,
+  manuscriptPool,
   onProofread,
   onDelete,
   onRetry,
   onReleaseGate,
   onInspectDubbing,
+  onAssignManuscript,
+  onImport,
+  scrollElementRef,
 }) => {
   const { t } = useTranslation('tasks');
+  const virtual = files.length >= 50 && Boolean(scrollElementRef);
+  // Stable keys preserve measurements across progress snapshots, while still
+  // invalidating them when files are inserted, removed or reordered.
+  const keySignature = JSON.stringify(files.map((file) => file.uuid));
+  const getItemKey = useMemo(() => {
+    const keys = files.map((file) => file.uuid);
+    return (index: number) => keys[index] ?? index;
+  }, [keySignature]);
+  const virtualizer = useVirtualizer({
+    enabled: virtual,
+    count: files.length,
+    getScrollElement: () => scrollElementRef?.current ?? null,
+    getItemKey,
+    estimateSize: () => 112,
+    gap: 8,
+    overscan: 5,
+  });
   const queueBusy =
+    inputsLocked ||
     taskStatus === 'running' ||
     taskStatus === 'paused' ||
     taskStatus === 'cancelling';
@@ -252,7 +358,16 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
   };
 
   const handleImport = () => {
-    const fileType = typeDef.accepts === 'subtitle' ? 'srt' : 'media';
+    if (onImport) {
+      onImport();
+      return;
+    }
+    const fileType =
+      typeDef.accepts === 'subtitle'
+        ? 'srt'
+        : typeDef.needsModel
+          ? 'media-and-manuscript'
+          : 'media';
     window?.ipc?.send('openDialog', { dialogType: 'openDialog', fileType });
   };
 
@@ -266,6 +381,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
   if (!files.length) {
     // 空态：统一三步引导（P0 动线统一，与配音/合成页同形态）
     const subtitleInput = typeDef.accepts === 'subtitle';
+    const canAcceptManuscript = !subtitleInput && Boolean(typeDef.needsModel);
     return (
       <div
         className="h-[380px] cursor-pointer rounded-lg border-2 border-dashed border-border-strong transition-colors hover:border-primary/50"
@@ -278,7 +394,9 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
               title: t('empty.step1'),
               desc: subtitleInput
                 ? t('empty.subtitleFormats')
-                : t('empty.mediaFormats'),
+                : canAcceptManuscript
+                  ? t('empty.mediaAndManuscriptFormats')
+                  : t('empty.mediaFormats'),
             },
             {
               icon: Settings2,
@@ -292,18 +410,34 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
             },
           ]}
           actions={
-            <Button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleImport();
-              }}
-            >
-              <FileUp className="h-4 w-4" />
-              {t('import')}
-            </Button>
+            <div className="flex flex-col items-center gap-2">
+              {Boolean(canAcceptManuscript && manuscriptPool?.length) && (
+                <div className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                  <FileText className="h-3.5 w-3.5" />
+                  <span>
+                    {t('manuscript.emptyWaitingVideos', {
+                      count: manuscriptPool!.length,
+                    })}
+                  </span>
+                </div>
+              )}
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleImport();
+                }}
+              >
+                <FileUp className="h-4 w-4" />
+                {t('import')}
+              </Button>
+            </div>
           }
           dropHint={
-            subtitleInput ? t('empty.dragSubtitle') : t('empty.dragMedia')
+            subtitleInput
+              ? t('empty.dragSubtitle')
+              : canAcceptManuscript
+                ? t('empty.dragMediaAndManuscript')
+                : t('empty.dragMedia')
           }
         />
       </div>
@@ -311,21 +445,39 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
   }
 
   return (
-    <div className="space-y-1.5">
-      {files.map((file) => {
+    <div
+      data-testid="task-list"
+      className={virtual ? 'relative' : 'space-y-2'}
+      style={virtual ? { height: virtualizer.getTotalSize() } : undefined}
+    >
+      {(virtual
+        ? virtualizer
+            .getVirtualItems()
+            .map((item) => ({ file: files[item.index], item }))
+        : files.map((file) => ({ file, item: null }))
+      ).map(({ file, item }) => {
         const stages = getFileStages(file, typeDef, formData);
         const rail = getFileRail(file, typeDef, formData);
         const dockedGate = getDockedGate(file, formData);
+        const status = getTaskDisplayStatus(
+          file,
+          stages,
+          taskStatus,
+          dockedGate,
+        );
         const percent = getFilePercent(file, stages);
         const failed = hasFileError(file, stages);
         const rawError = failed ? getFileError(file, stages) : '';
-        const errorMsg =
-          rawError === 'TASK_INTERRUPTED' ? t('interrupted') : rawError;
-        const rawWarning = getFileWarning(file, stages);
-        const warningMsg =
-          rawWarning === SPEAKER_DIARIZATION_METADATA_SAVE_FAILED
-            ? t('row.speakerDiarizationMetadataSaveFailed')
-            : rawWarning;
+        const errorMsg = formatTaskMessage(
+          rawError,
+          t,
+          file?.translationFailures?.length || 0,
+        );
+        const warningMsg = formatTaskMessage(
+          getFileWarning(file, stages),
+          t,
+          file?.translationFailures?.length || 0,
+        );
         const missedSpeechWarning = file?.missedSpeechSummary?.count
           ? t('row.missedSpeechWarning', {
               count: file.missedSpeechSummary.count,
@@ -334,15 +486,23 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
               ),
             })
           : '';
-        const displayWarning = [warningMsg, missedSpeechWarning]
-          .filter(Boolean)
-          .join(' · ');
+        const translationFailureWarning =
+          !failed && file?.translationFailures?.length
+            ? t('row.translationFailureWarning', {
+                count: file.translationFailures.length,
+              })
+            : '';
+        const displayWarning = Array.from(
+          new Set(
+            [warningMsg, missedSpeechWarning, translationFailureWarning].filter(
+              Boolean,
+            ),
+          ),
+        ).join(' · ');
+        const tone = getRowTone(status.state, failed, Boolean(displayWarning));
         const started = stages.some(
           (s) => getStageStatus(file, s.key) !== 'pending',
         );
-        const cancelling =
-          taskStatus === 'cancelling' &&
-          stages.some((s) => getStageStatus(file, s.key) === 'loading');
         const meta = [
           formatBytes(file?.fileSize),
           formatMediaDuration(file?.duration),
@@ -365,13 +525,28 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
         return (
           <div
             key={file?.uuid}
+            data-index={item?.index}
+            ref={item ? virtualizer.measureElement : undefined}
+            style={
+              item
+                ? {
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${item.start}px)`,
+                  }
+                : undefined
+            }
+            data-testid="task-row"
+            data-tone={tone}
+            data-state={status.state}
             className={cn(
-              'group rounded-lg border px-3 py-2.5 transition-colors hover:bg-muted/40',
-              failed && 'border-destructive/30',
-              !failed && displayWarning && 'border-warning/30',
+              'group rounded-lg border bg-card px-3 py-2.5 transition-colors hover:bg-muted/40',
+              ROW_TONE_BORDER[tone],
             )}
           >
-            <div className="flex items-center gap-3">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_160px_64px_auto] items-center gap-x-3 gap-y-2">
               <div className="flex items-center gap-1.5 min-w-0 flex-1">
                 <button
                   type="button"
@@ -382,19 +557,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="cursor-default truncate text-sm font-medium min-w-0">
-                        {file?.fileName}
-                        {file?.fileExtension}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-md">
-                      <p className="break-all">{file?.filePath}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <TaskFileName file={file} className="text-sm font-medium" />
                 {file?.embeddedSubtitle && (
                   <TooltipProvider>
                     <Tooltip>
@@ -409,6 +572,15 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                     </Tooltip>
                   </TooltipProvider>
                 )}
+                {typeDef?.needsModel && (
+                  <ManuscriptRowBadge
+                    file={file}
+                    formData={formData}
+                    disabled={queueBusy}
+                    manuscriptPool={manuscriptPool}
+                    onAssignManuscript={onAssignManuscript}
+                  />
+                )}
                 {meta && (
                   <span className="hidden md:inline text-[11px] text-muted-foreground whitespace-nowrap flex-shrink-0">
                     {meta}
@@ -416,21 +588,33 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                 )}
               </div>
 
-              <RailChips file={file} rail={rail} t={t} />
+              <RailChips
+                file={file}
+                rail={rail}
+                t={t}
+                className="col-span-full row-start-2 pl-5"
+              />
 
               <div className="flex items-center gap-2 w-[160px] flex-shrink-0">
-                <Progress value={percent} className="h-1.5" />
+                <Progress
+                  value={percent}
+                  className="h-1.5"
+                  indicatorClassName={ROW_TONE_BAR[tone]}
+                />
                 <span className="text-[11px] tabular-nums text-muted-foreground w-[34px] text-right">
                   {started ? `${percent}%` : '--'}
                 </span>
               </div>
-              {etaMinutes != null && (
-                <span className="text-[11px] text-muted-foreground whitespace-nowrap flex-shrink-0">
-                  {etaMinutes < 1
+              {/* 固定宽度槽位：某行开始计时不会把它的进度条推向别的行 */}
+              <span
+                data-testid="task-eta"
+                className="w-16 shrink-0 whitespace-nowrap text-right text-[11px] text-muted-foreground"
+              >
+                {etaMinutes != null &&
+                  (etaMinutes < 1
                     ? t('meta.etaLessMin')
-                    : t('meta.etaMin', { min: Math.ceil(etaMinutes) })}
-                </span>
-              )}
+                    : t('meta.etaMin', { min: Math.ceil(etaMinutes) }))}
+              </span>
 
               <div className="flex items-center gap-1 flex-shrink-0">
                 {/* 停靠在检查点：校对/检查配音 + 放行 */}
@@ -474,6 +658,21 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                     </Button>
                   </>
                 )}
+                {failed &&
+                  file.dubbingSessionId &&
+                  onInspectDubbing &&
+                  !dockedGate && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1 text-xs"
+                      disabled={queueBusy}
+                      onClick={() => onInspectDubbing(file)}
+                    >
+                      <AudioLines className="h-3 w-3" />
+                      {t('gate.inspectDubbing')}
+                    </Button>
+                  )}
                 {failed && (
                   <Button
                     variant="outline"
@@ -486,27 +685,30 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                     {t('row.retry')}
                   </Button>
                 )}
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          aria-label={t('row.proofread')}
-                          disabled={proofreadDisabled}
-                          onClick={() => onProofread(file)}
-                        >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-[280px]">
-                      {proofreadTooltip}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                {/* 字幕检查点的「校对」按钮就是同一个动作，不再并排放第二个铅笔图标 */}
+                {dockedGate?.key !== 'subtitleGate' && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            aria-label={t('row.proofread')}
+                            disabled={proofreadDisabled}
+                            onClick={() => onProofread(file)}
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-[280px]">
+                        {proofreadTooltip}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -526,40 +728,25 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
               </div>
             </div>
 
-            {cancelling && (
-              <p className="mt-1.5 pl-5 text-xs text-warning">
-                {t('row.cancelling')}
-              </p>
-            )}
-
-            {failed && errorMsg && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <p className="mt-1.5 pl-5 text-xs text-destructive truncate cursor-default">
-                      {errorMsg}
-                    </p>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-md">
-                    <p className="break-all">{errorMsg}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-            {!failed && displayWarning && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <p className="mt-1.5 pl-5 text-xs text-warning truncate cursor-default">
-                      {displayWarning}
-                    </p>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-md">
-                    <p className="break-all">{displayWarning}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
+            <TaskActivityDetails
+              // 状态文字对齐文件名（跳过 ✕ 按钮占位），箭头对齐右侧操作图标
+              className="pl-5 pr-1.5"
+              activity={file.taskActivity}
+              state={status.state}
+              stage={status.stage}
+              statusText={
+                errorMsg ||
+                t(`activity.status.${status.state}`, {
+                  stage: status.labelKey ? t(status.labelKey) : '',
+                })
+              }
+              warning={displayWarning}
+              progress={
+                file.taskActivity?.stage
+                  ? file[`${file.taskActivity.stage}Progress`]
+                  : undefined
+              }
+            />
           </div>
         );
       })}

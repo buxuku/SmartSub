@@ -22,12 +22,14 @@ const channel = (() => {
 })();
 
 const sherpa = require(path.join(__dirname, '..', 'vendor', 'sherpa-onnx.js'));
+// wav 读取：Windows 非 ASCII 路径上原生 readWave 打不开，改由 JS 读取（见 wav-io.js）。
+const wavIo = require(path.join(__dirname, 'wav-io.js'));
 
 function diarize(req) {
   const diarizer = new sherpa.OfflineSpeakerDiarization(
     buildSpeakerDiarizationConfig(req),
   );
-  const wave = sherpa.readWave(req.audioFile, false);
+  const wave = wavIo.readWave(sherpa, req.audioFile, false);
   if (wave.sampleRate !== diarizer.sampleRate) {
     throw new Error(
       `speaker diarization expects ${diarizer.sampleRate} Hz audio, got ${wave.sampleRate} Hz`,

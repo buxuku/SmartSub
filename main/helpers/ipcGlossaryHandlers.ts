@@ -1,6 +1,8 @@
+import { dialogWindow } from '../automation/events';
+import { ipcMain } from '../automation/handlers';
 import fs from 'fs';
 import path from 'path';
-import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { BrowserWindow, dialog } from 'electron';
 import type { GlossaryFileFormat } from '../../types/glossary';
 import {
   parseGlossaryContent,
@@ -17,6 +19,7 @@ import {
   moveGlossary,
   saveGlossaryEntry,
   updateGlossary,
+  addContextGlossaryEntry,
 } from './glossaryManager';
 import { logMessage, store } from './storeManager';
 
@@ -31,6 +34,18 @@ function safeFileName(name: string): string {
 
 export function setupGlossaryHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('glossaries:list', () => listGlossaries());
+  ipcMain.handle('glossaries:add-context-entry', (_event, input) => {
+    try {
+      const data = addContextGlossaryEntry(input || {});
+      return {
+        success: !data.conflict,
+        data,
+        ...(data.conflict ? { error: 'ENTRY_CONFLICT' } : {}),
+      };
+    } catch (error) {
+      return { success: false, error: errorCode(error) };
+    }
+  });
 
   ipcMain.handle('glossaries:create', (_event, input) => {
     try {
@@ -84,45 +99,50 @@ export function setupGlossaryHandlers(mainWindow: BrowserWindow): void {
     }),
   );
 
-  ipcMain.handle('glossaries:import', async (_event, glossaryId: string) => {
-    try {
-      if (!getGlossary(glossaryId)) {
-        return { success: false, error: 'GLOSSARY_NOT_FOUND' };
+  ipcMain.handle(
+    'glossaries:import',
+    async (_event, glossaryId: string, sourcePath?: string) => {
+      try {
+        if (!getGlossary(glossaryId)) {
+          return { success: false, error: 'GLOSSARY_NOT_FOUND' };
+        }
+        const language = store.get('settings')?.language || 'zh';
+        const result = sourcePath
+          ? { canceled: false, filePaths: [sourcePath] }
+          : await dialog.showOpenDialog(dialogWindow(mainWindow), {
+              title: language === 'zh' ? '导入词条' : 'Import glossary entries',
+              filters: [
+                { name: 'CSV / TXT', extensions: ['csv', 'txt'] },
+                { name: 'CSV', extensions: ['csv'] },
+                { name: 'TXT', extensions: ['txt'] },
+              ],
+              properties: ['openFile'],
+            });
+        if (result.canceled || result.filePaths.length === 0) {
+          return { success: false, canceled: true };
+        }
+        const filePath = result.filePaths[0];
+        const extension = path.extname(filePath).toLowerCase();
+        const format: GlossaryFileFormat | null =
+          extension === '.csv' ? 'csv' : extension === '.txt' ? 'txt' : null;
+        if (!format) return { success: false, error: 'UNSUPPORTED_FILE_TYPE' };
+        const content = await fs.promises.readFile(filePath, 'utf-8');
+        const entries = parseGlossaryContent(content, format);
+        if (!entries.length) {
+          return { success: false, error: 'NO_VALID_ENTRIES' };
+        }
+        const imported = importGlossaryEntries(glossaryId, entries);
+        logMessage(
+          `词库导入完成：${path.basename(filePath)}，新增 ${imported.added}，更新 ${imported.updated}，跳过 ${imported.skipped}`,
+          'info',
+        );
+        return { success: true, data: imported };
+      } catch (error) {
+        logMessage(`词库导入失败：${errorCode(error)}`, 'error');
+        return { success: false, error: errorCode(error) };
       }
-      const language = store.get('settings')?.language || 'zh';
-      const result = await dialog.showOpenDialog(mainWindow, {
-        title: language === 'zh' ? '导入词条' : 'Import glossary entries',
-        filters: [
-          { name: 'CSV / TXT', extensions: ['csv', 'txt'] },
-          { name: 'CSV', extensions: ['csv'] },
-          { name: 'TXT', extensions: ['txt'] },
-        ],
-        properties: ['openFile'],
-      });
-      if (result.canceled || result.filePaths.length === 0) {
-        return { success: false, canceled: true };
-      }
-      const filePath = result.filePaths[0];
-      const extension = path.extname(filePath).toLowerCase();
-      const format: GlossaryFileFormat | null =
-        extension === '.csv' ? 'csv' : extension === '.txt' ? 'txt' : null;
-      if (!format) return { success: false, error: 'UNSUPPORTED_FILE_TYPE' };
-      const content = await fs.promises.readFile(filePath, 'utf-8');
-      const entries = parseGlossaryContent(content, format);
-      if (!entries.length) {
-        return { success: false, error: 'NO_VALID_ENTRIES' };
-      }
-      const imported = importGlossaryEntries(glossaryId, entries);
-      logMessage(
-        `词库导入完成：${path.basename(filePath)}，新增 ${imported.added}，更新 ${imported.updated}，跳过 ${imported.skipped}`,
-        'info',
-      );
-      return { success: true, data: imported };
-    } catch (error) {
-      logMessage(`词库导入失败：${errorCode(error)}`, 'error');
-      return { success: false, error: errorCode(error) };
-    }
-  });
+    },
+  );
 
   ipcMain.handle(
     'glossaries:export',
@@ -131,7 +151,12 @@ export function setupGlossaryHandlers(mainWindow: BrowserWindow): void {
       {
         glossaryId,
         format,
-      }: { glossaryId: string; format: GlossaryFileFormat },
+        outputPath,
+      }: {
+        glossaryId: string;
+        format: GlossaryFileFormat;
+        outputPath?: string;
+      },
     ) => {
       try {
         const glossary = getGlossary(glossaryId);
@@ -141,16 +166,18 @@ export function setupGlossaryHandlers(mainWindow: BrowserWindow): void {
         const normalizedFormat: GlossaryFileFormat =
           format === 'txt' ? 'txt' : 'csv';
         const language = store.get('settings')?.language || 'zh';
-        const result = await dialog.showSaveDialog(mainWindow, {
-          title: language === 'zh' ? '导出词库' : 'Export glossary',
-          defaultPath: `${safeFileName(glossary.name)}.${normalizedFormat}`,
-          filters: [
-            {
-              name: normalizedFormat.toUpperCase(),
-              extensions: [normalizedFormat],
-            },
-          ],
-        });
+        const result = outputPath
+          ? { canceled: false, filePath: outputPath }
+          : await dialog.showSaveDialog(dialogWindow(mainWindow), {
+              title: language === 'zh' ? '导出词库' : 'Export glossary',
+              defaultPath: `${safeFileName(glossary.name)}.${normalizedFormat}`,
+              filters: [
+                {
+                  name: normalizedFormat.toUpperCase(),
+                  extensions: [normalizedFormat],
+                },
+              ],
+            });
         if (result.canceled || !result.filePath) {
           return { success: false, canceled: true };
         }
@@ -161,7 +188,7 @@ export function setupGlossaryHandlers(mainWindow: BrowserWindow): void {
         await fs.promises.writeFile(
           result.filePath,
           normalizedFormat === 'csv' ? `\uFEFF${serialized}` : serialized,
-          'utf-8',
+          { encoding: 'utf-8', flag: outputPath ? 'wx' : 'w' },
         );
         logMessage(
           `词库「${glossary.name}」已导出：${result.filePath}`,
@@ -178,7 +205,7 @@ export function setupGlossaryHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('glossaries:export-template', async () => {
     try {
       const language = store.get('settings')?.language || 'zh';
-      const result = await dialog.showSaveDialog(mainWindow, {
+      const result = await dialog.showSaveDialog(dialogWindow(mainWindow), {
         title:
           language === 'zh'
             ? '导出词库导入模板'

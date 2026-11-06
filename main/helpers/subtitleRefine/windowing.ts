@@ -18,11 +18,14 @@ export interface WindowingOptions {
   minUnits?: number;
   /** 达到该词数必须切（默认 500）。 */
   maxUnits?: number;
+  /** Explicit task pause boundary, independent of the usual minimum window size. */
+  preserveGapMs?: number;
 }
 
 const WINDOW_DEFAULTS: Required<WindowingOptions> = {
   minUnits: 300,
   maxUnits: 500,
+  preserveGapMs: Number.POSITIVE_INFINITY,
 };
 
 /** 章节级停顿：gap ≥ 4s 且已凑满 1/6 窗口即提前切。 */
@@ -44,7 +47,8 @@ export function splitWordsIntoWindows(
   options?: WindowingOptions,
 ): RefineWord[][] {
   const opts = { ...WINDOW_DEFAULTS, ...options };
-  if (words.length <= opts.maxUnits) return words.length ? [words] : [];
+  if (words.length <= opts.maxUnits && !Number.isFinite(opts.preserveGapMs))
+    return words.length ? [words] : [];
 
   const windows: RefineWord[][] = [];
   let windowStart = 0;
@@ -57,7 +61,10 @@ export function splitWordsIntoWindows(
     const gap = gapAfter(words, i);
 
     // 章节级停顿：提前切，让窗口边界贴合大静音。
-    if (gap >= HARD_GAP_MS && count >= Math.ceil(opts.minUnits / 6)) {
+    if (
+      gap > opts.preserveGapMs ||
+      (gap >= HARD_GAP_MS && count >= Math.ceil(opts.minUnits / 6))
+    ) {
       windows.push(words.slice(windowStart, i + 1));
       windowStart = i + 1;
       count = 0;
@@ -120,7 +127,10 @@ export function splitCuesIntoWindows(
     units += cueUnits(cues[i]?.[2] ?? '');
     const gap = cueGapAfter(cues, i);
 
-    if (gap >= HARD_GAP_MS && units >= Math.ceil(opts.minUnits / 6)) {
+    if (
+      gap > opts.preserveGapMs ||
+      (gap >= HARD_GAP_MS && units >= Math.ceil(opts.minUnits / 6))
+    ) {
       ranges.push([windowStart, i + 1]);
       windowStart = i + 1;
       units = 0;

@@ -1,7 +1,6 @@
-import { spawn } from 'child_process';
 import { app } from 'electron';
 import path from 'path';
-import { isAppleSilicon, isWin32 } from './utils';
+import { isAppleSilicon } from './utils';
 import { BrowserWindow, DownloadItem } from 'electron';
 import decompress from 'decompress';
 import fs from 'fs-extra';
@@ -187,31 +186,6 @@ export const downloadModelSync = async (
     }
   });
 };
-
-export async function checkOpenAiWhisper(): Promise<boolean> {
-  return new Promise((resolve) => {
-    const command = isWin32() ? 'whisper.exe' : 'whisper';
-    const env = { ...process.env, PYTHONIOENCODING: 'UTF-8' };
-    const childProcess = spawn(command, ['-h'], { env, shell: true });
-
-    const timeout = setTimeout(() => {
-      childProcess.kill();
-      resolve(false);
-    }, 5000);
-
-    childProcess.on('error', (error) => {
-      clearTimeout(timeout);
-      console.log('spawn error: ', error);
-      resolve(false);
-    });
-
-    childProcess.on('exit', (code) => {
-      clearTimeout(timeout);
-      console.log('exit code: ', code);
-      resolve(code === 0);
-    });
-  });
-}
 
 export const reinstallWhisper = async () => {
   const whisperPath = getPath('whisperPath');

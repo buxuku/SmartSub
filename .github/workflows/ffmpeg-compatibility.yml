@@ -1,0 +1,90 @@
+name: FFmpeg compatibility
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, fix/ffmpeg-compatibility]
+    paths:
+      - 'main/helpers/**'
+      - 'types/**'
+      - 'scripts/compose/**'
+      - 'scripts/toolbox/**'
+      - 'scripts/test-audio-stream-selection.cjs'
+      - 'scripts/test-compose-canvas.ts'
+      - 'scripts/test-proofread-waveform.ts'
+      - 'scripts/test-audio-cache.cjs'
+      - 'scripts/voice-clone/**'
+      - 'package*.json'
+      - '.github/workflows/ffmpeg-compatibility.yml'
+  pull_request:
+    paths:
+      - 'main/helpers/**'
+      - 'types/**'
+      - 'scripts/compose/**'
+      - 'scripts/toolbox/**'
+      - 'scripts/test-audio-stream-selection.cjs'
+      - 'scripts/test-compose-canvas.ts'
+      - 'scripts/test-proofread-waveform.ts'
+      - 'scripts/test-audio-cache.cjs'
+      - 'scripts/voice-clone/**'
+      - 'package*.json'
+      - '.github/workflows/ffmpeg-compatibility.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ffmpeg-compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compatibility:
+    name: Real FFmpeg (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+      - name: Install test dependencies without native speech engines
+        run: npm ci --ignore-scripts
+      - name: Install the bundled FFmpeg binary
+        run: node node_modules/ffmpeg-static/install.js
+      - name: Install Linux subtitle fonts
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core fonts-noto-cjk
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Real media compatibility regressions
+        env:
+          ELECTRON_OVERRIDE_DIST_PATH: ${{ runner.temp }}
+        run: |
+          mkdir -p artifacts
+          npm run test:ffmpeg-compatibility 2>&1 | tee artifacts/ffmpeg-compatibility.log
+      - name: Existing compose, toolbox and audio regressions
+        env:
+          ELECTRON_OVERRIDE_DIST_PATH: ${{ runner.temp }}
+        run: |
+          failed=0
+          for suite in test:compose test:compose-output test:compose-canvas test:toolbox test:proofread-waveform test:audio-cache test:voice-clone; do
+            npm run "$suite" || failed=1
+          done
+          exit "$failed"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ffmpeg-compatibility-${{ matrix.os }}
+          path: artifacts/ffmpeg-compatibility.log
+          if-no-files-found: ignore
+          retention-days: 14

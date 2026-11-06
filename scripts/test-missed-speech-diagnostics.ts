@@ -143,3 +143,71 @@ const endpointWords = detectMissedSpeech({
 assert(endpointWords.length === 0, 'do not infer endpoint word gaps');
 
 console.log('All missed speech diagnostics tests passed');
+
+const reviewedNoise = detectMissedSpeech({
+  ...base,
+  cues: [...base.cues, { id: '2', startMs: 5000, endMs: 6000, text: 'world' }],
+  reviewCompleted: true,
+  reviewSpeechSegments: [],
+});
+assert(
+  reviewedNoise.length === 1 && reviewedNoise[0].level === 'low',
+  'negative VAD retains energy gaps as low-confidence items for quiet speech',
+);
+const incompleteReview = detectMissedSpeech({
+  ...base,
+  cues: [...base.cues, { id: '2', startMs: 5000, endMs: 6000, text: 'world' }],
+  reviewCompleted: false,
+  reviewSpeechSegments: [],
+});
+assert(
+  incompleteReview.length === 1,
+  'failed review retains legacy warning evidence',
+);
+const shortReview = detectMissedSpeech({
+  ...base,
+  reviewCompleted: true,
+  reviewSpeechSegments: [{ startMs: 2200, endMs: 2450 }],
+  reviewPending: [{ startMs: 2200, endMs: 2450, suggestedText: ' Yes.' }],
+});
+assert(
+  shortReview.length === 1 && shortReview[0].suggestedText === ' Yes.',
+  'unconfirmed short speech survives the legacy 800ms limit with a candidate',
+);
+const groupedReview = detectMissedSpeech({
+  ...base,
+  reviewCompleted: true,
+  reviewSpeechSegments: [{ startMs: 2000, endMs: 4000 }],
+  reviewPending: [
+    { startMs: 2000, endMs: 2800 },
+    { startMs: 3000, endMs: 4000 },
+  ],
+});
+assert(
+  groupedReview.length === 1 && groupedReview[0].endMs === 4000,
+  'adjacent speech fragments and overlapping evidence form one review item',
+);
+
+const mismatchReview = detectMissedSpeech({
+  durationMs: 10000,
+  energySegments: [],
+  cues: [{ id: '1', startMs: 0, endMs: 10000, text: 'Fully covered cue' }],
+  reviewPending: [
+    { startMs: 2000, endMs: 2300, issue: 'timing', suggestedText: 'Great.' },
+    {
+      startMs: 5000,
+      endMs: 5300,
+      issue: 'text',
+      originalText: 'around',
+      suggestedText: 'near',
+    },
+  ],
+});
+assert(
+  mismatchReview.length === 2 &&
+    mismatchReview[0].signals.includes('timingMismatch') &&
+    mismatchReview[1].signals.includes('textMismatch') &&
+    mismatchReview[1].originalText === 'around' &&
+    mismatchReview[1].suggestedText === 'near',
+  'explicit timing and text differences survive full subtitle coverage without invented energy',
+);

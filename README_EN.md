@@ -4,7 +4,7 @@
 
 # SmartSub
 
-**Generate, translate, dub, and burn subtitles — an all-in-one open-source desktop app**
+**Generate, translate, dub, and burn subtitles with built-in AI Assistant & MCP/CLI automation — an all-in-one open-source desktop app**
 
 Make every frame speak beautifully
 
@@ -18,32 +18,72 @@ Make every frame speak beautifully
 
 [中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md)
 
-[Download](#download-and-install) · [Features](#features) · [Free Workflow](#a-completely-free-workflow) · [FAQ](#faq) · [Changelog](https://github.com/buxuku/SmartSub/releases)
+[Download](#download-and-install) · [Features](#features) · [AI Assistant & Automation](#-ai-creative-assistant-in-app-copilot) · [Free Workflow](#a-completely-free-workflow) · [FAQ](#faq) · [Changelog](https://github.com/buxuku/SmartSub/releases)
 
 </div>
 
 ![SmartSub home screen](./resources/preview/home-en.png)
 
+## Special Sponsor
+
+<a href="https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM" target="_blank" rel="noopener noreferrer"><img src="./resources/sponsors/crazytoken-en.png" alt="SmartSub × CrazyToken: all models, save up to 99%, from 0.05x, new users get $20 in free trial credits" /></a>
+
+❤️ Thank you to [**CrazyToken**](https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM) for sponsoring SmartSub!
+
+#### CrazyToken | Multiple models for more natural subtitle translation across languages — rates as low as 0.05x, savings of up to 99%
+
+CrazyToken offers APIs for leading models including Claude, GPT, Gemini, Kimi, GLM, DeepSeek, Qwen, and Grok, supporting subtitle translation, contextual understanding, terminology consistency, proofreading, and polishing. Whether you work with educational videos, interviews and podcasts, or multilingual content, you can choose the model that best fits your language and task.
+
+- 💰 **As low as 0.05× for more affordable subtitle translation**: Model pricing starts at just 5% of official prices, with transparent, token-level billing you can review. Reduce model API costs for translating subtitles for long videos and processing subtitles in batches.
+- ✨ **Native access through official channels**: No watered-down responses, model mixing, or long-context compression. Get model support for understanding surrounding context, maintaining consistent terminology, and refining translations.
+- ⚡ **Stable, fast, high-concurrency access with no rate limits**: Reliable API services for batch subtitle translation and multitasking help reduce waiting time.
+- 🎁 **$20 in free credits for new users**: Register through the [exclusive link](https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM) to receive **$20 in trial credits**, plus additional bonuses when you top up. **One-on-one remote setup assistance** is also available, with a real person helping you configure your model API.
+
 ## What is SmartSub?
 
 SmartSub is an open-source subtitle and dubbing tool that packs the whole pipeline — **speech-to-text → subtitle translation → proofreading → AI dubbing → burn-in** — into one desktop app, with a built-in online video downloader: paste a YouTube / Bilibili link and the source video is fetched for you. Transcription runs on local models (whisper.cpp, sherpa-onnx and more), so your files never leave your machine. It handles batch jobs, accelerates on NVIDIA / AMD / Intel / Apple Silicon GPUs, and runs on Windows, macOS, and Linux.
 
-If you've been juggling separate tools for transcription, translation, text-to-speech, and burning subtitles with ffmpeg, SmartSub is a free, offline-friendly way to do all of it in one place. **The entire pipeline can run at zero cost**: local Whisper transcription, built-in free translation sources, local TTS dubbing with voice cloning, and local ffmpeg burn-in — no API keys required, no usage caps on local processing. When you want more, plug in any of 20 translation services, 9 cloud transcription providers, and 6 cloud TTS services.
+SmartSub deeply integrates modern AI copilot and agentic automation capabilities:
+
+- **In-App AI Creative Assistant (Copilot)**: Toggle anytime via keyboard shortcut with deep workspace context awareness, multimodal screenshot diagnostics, real-time undoable subtitle editing, and agentic tool execution using natural language.
+- **MCP Protocol & CLI Automation**: Full Model Context Protocol support with 111 production-grade tools and matching CLI commands. Ships with its own Electron/Node runtime (zero external Node.js config required), connecting seamlessly with Cursor, Claude Code, OpenAI Codex, and headless automated scripts.
+
+**The entire pipeline can run at zero cost**: local Whisper transcription, built-in free translation sources, local TTS dubbing with voice cloning, and local ffmpeg burn-in — no API keys required, no usage caps on local processing. When you want more, plug in any of 20 translation services, 9 cloud transcription providers, and 6 cloud TTS services.
 
 ## What can it do for you?
 
-| Your goal                                     | How SmartSub handles it                                                                    |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Watch foreign videos or lectures without subs | Drop in the video, transcribe locally, translate — get bilingual subtitles instantly       |
-| Subtitle an online video (YouTube / Bilibili) | Paste the link — the video downloads in-app, official subs auto-pair, no third-party tools |
-| Localize content for other markets            | Translate subtitles, then dub them into a new audio track with TTS                         |
-| Narrate videos in your own voice              | Record a short sample, clone your voice, and have it read the whole video                  |
-| Archive podcasts, courses, meeting recordings | Batch-transcribe into SRT files for editing, search, or archiving                          |
-| Ship videos with polished subtitles           | Proofread line by line, then hardcode or soft-mux with WYSIWYG styling                     |
+| Your goal                                     | How SmartSub handles it                                                                                                                                    |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Polish subtitles & troubleshoot with AI       | Summon the in-app AI assistant anytime with workspace context & vision screenshot diagnostics; rephrase dialogue, fix jargon, or dispatch tasks hands-free |
+| Automate workflows with Cursor / Claude / CLI | Use 111 MCP tools & CLI commands to let external AI agents or terminal scripts transcribe, translate, dub, and burn videos automatically                   |
+| Watch foreign videos or lectures without subs | Drop in the video, transcribe locally, translate — get bilingual subtitles instantly                                                                       |
+| Subtitle an online video (YouTube / Bilibili) | Paste the link — the video downloads in-app, official subs auto-pair, no third-party tools                                                                 |
+| Localize content for other markets            | Translate subtitles, then dub them into a new audio track with TTS                                                                                         |
+| Narrate videos in your own voice              | Record a short sample, clone your voice, and have it read the whole video                                                                                  |
+| Archive podcasts, courses, meeting recordings | Batch-transcribe into SRT files for editing, search, or archiving                                                                                          |
+| Ship videos with polished subtitles           | Proofread line by line, then hardcode or soft-mux with WYSIWYG styling                                                                                     |
 
 ## Features
 
-Online video **download** / local media → **transcribe** → **translate** → **proofread** → **dub** → **export**. Use each step on its own, or chain them into a batch pipeline.
+Online video **download** / local media → **transcribe** → **translate** → **proofread** → **dub** → **export**. Use each step on its own, or chain them into a batch pipeline — assisted by the **in-app AI Copilot** or orchestrated via **MCP / CLI**.
+
+### 🌟 AI Creative Assistant (In-App Copilot)
+
+- **Instant summon & multi-turn chat**: Open from the top toolbar or press `⌘J` (macOS) / `Ctrl+J` (Windows / Linux) to slide out the resizable assistant drawer. Conversation history is persisted locally.
+- **Deep workspace context awareness**: Automatically senses current playback position, selected subtitle line, adjacent lines, task queue status, and recent error logs — no need to copy-paste context repeatedly.
+- **Agentic tool execution**: Fully wired to 111 internal automation tools! Beyond chat, it can execute tasks on your behalf: transcribe and translate videos, synthesize dubbing tracks, query models, and troubleshoot errors.
+- **Non-destructive & safe editing**: Ask the assistant to "make this sentence more conversational", "explain this jargon", or "fix homophone errors". Edits are reflected immediately in the editor with full undo/redo stack support (`Ctrl+Z`), protected by document versioning, and only saved to disk when you say "save".
+- **Multimodal vision screenshot diagnostics**: Encounter a task failure or unfamiliar setting? The assistant can capture the workspace (or click the camera button) and use vision-capable LLMs to inspect dialogs, error toasts, and UI controls for instant troubleshooting.
+- **File Chat with media**: Drag and drop audio, video, subtitles (SRT/VTT/ASS/LRC), reference transcripts (TXT/MD), or images into the chat. Audio/video media is never uploaded to the cloud — only local absolute paths are passed to local processing tools, preserving privacy and performance.
+- **Flexible LLM support**: Supports DeepSeek, Qwen (DashScope), Gemini, SiliconFlow, DeerAPI, and any OpenAI-compatible API endpoint with streaming and customizable prompts. See [AI Assistant Guide](docs/docs/features/ai-assistant.md).
+
+### ⚡ MCP Protocol & CLI Automation (Agentic Automation)
+
+- **111 standard MCP tools & matching CLI commands**: Full coverage of video downloading, transcription, translation, subtitle editing, TTS dubbing, container muxing, format conversion, audio extraction, and engine/provider management. See [Operations Reference](docs/docs/guides/automation-reference.md).
+- **Zero-config Node.js runtime**: Runs directly on the bundled Electron/Node runtime — **no external Node.js installation required** for users or AI clients.
+- **One-click integration for top AI tools**: Navigate to Settings → Connect AI Tools (MCP) to one-click import into **Cursor** (via official MCP install protocol), copy **OpenAI Codex** TOML configuration, register with **Claude Code** (`setup mcp --client claude --install`), or copy generic client JSON.
+- **Headless background daemon**: Automatically launches a headless background process on first MCP/CLI invocation that shares task queues, configuration, and models with the desktop UI, auto-stopping when idle.
+- **Robust CLI & script pipelines**: Use `smartsub` CLI with `pipeline.run` to execute complete end-to-end workflows with JSON / stdin streaming, task deduplication (`requestId`), and polling (`tasks.wait`), seamlessly integrating with developer scripts and CI/CD pipelines. See [MCP & CLI Guide](docs/docs/guides/automation.md).
 
 ### Online video download
 
@@ -63,7 +103,7 @@ Online video **download** / local media → **transcribe** → **translate** →
 
 ### Subtitle translation
 
-- 20 translation services: built-in free translation (Bing / Google free endpoints with automatic fallback and rate limiting), Baidu, Aliyun, Tencent, iFlytek, Volcano Engine, Doubao, NiuTrans, DeepLX, Azure, Google, plus LLM services such as Ollama (local models), DeepSeek, Gemini, Qwen, SiliconFlow, Azure OpenAI, and [DeerAPI](https://api.deerapi.com/register?aff=QvHM)
+- 20 translation services: built-in free translation (Youdao / Bing / Google free endpoints with automatic fallback and rate limiting), Baidu, Aliyun, Tencent, iFlytek, Volcano Engine, Doubao, NiuTrans, DeepLX, Azure, Google, plus LLM services such as Ollama (local models), DeepSeek, Gemini, Qwen, SiliconFlow, Azure OpenAI, and [DeerAPI](https://api.deerapi.com/register?aff=QvHM)
 - Compatible with any OpenAI-style API — bring your own endpoint
 - Output translation only, or bilingual "original + translation" subtitles
 - Per-service custom request parameters configured right in the UI, with import/export — no code changes
@@ -72,7 +112,15 @@ Online video **download** / local media → **transcribe** → **translate** →
 
 - Built-in editor to review and fix lines side by side with the video
 - Undo/redo; per-line delete with restore
-- One-click AI polish
+- One-click AI polish, plus sidebar AI Assistant for natural language editing and Q&A
+
+### 🎙️ AI Assistant & Automation Synergies
+
+Beyond conventional UI operations, SmartSub provides a cutting-edge copilot experience and developer automation:
+
+- **Real-Time Collaboration (Copilot)**: Summon the assistant on any page to refine subtitle phrasing, troubleshoot failed jobs, or explain domain-specific jargon.
+- **Visual Diagnostics (Multimodal Vision)**: Click the camera button to snapshot dialogs, error toasts, or parameter settings for visual inspection and guidance by vision LLMs.
+- **External AI & Script Automation (MCP & CLI)**: Drive batch processing and end-to-end pipelines through Cursor, Claude Code, or terminal shell scripts without opening the UI window.
 
 ### TTS dubbing and voice cloning
 
@@ -107,13 +155,13 @@ Online video **download** / local media → **transcribe** → **translate** →
 
 If you're cost-conscious, this route costs nothing and requires no sign-ups:
 
-| Step           | Free option                                                                            | Notes                                     |
-| -------------- | -------------------------------------------------------------------------------------- | ----------------------------------------- |
-| Video download | yt-dlp / lux open-source engines                                                       | Installed in-app with one click, free     |
-| Transcription  | whisper.cpp / faster-whisper / FunASR / Qwen3-ASR / FireRedASR / Parakeet local models | Download a model once, works offline      |
-| Translation    | Built-in free translation (Bing / Google endpoints with fallback), Ollama, DeepLX      | Free translation works with zero setup    |
-| TTS dubbing    | Local Kokoro / VITS / ZipVoice voice cloning; Edge TTS free tier                       | Local synthesis is offline, no usage caps |
-| Burn-in        | Bundled ffmpeg                                                                         | Fully local                               |
+| Step           | Free option                                                                                | Notes                                     |
+| -------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| Video download | yt-dlp / lux open-source engines                                                           | Installed in-app with one click, free     |
+| Transcription  | whisper.cpp / faster-whisper / FunASR / Qwen3-ASR / FireRedASR / Parakeet local models     | Download a model once, works offline      |
+| Translation    | Built-in free translation (Youdao / Bing / Google endpoints with fallback), Ollama, DeepLX | Free translation works with zero setup    |
+| TTS dubbing    | Local Kokoro / VITS / ZipVoice voice cloning; Edge TTS free tier                           | Local synthesis is offline, no usage caps |
+| Burn-in        | Bundled ffmpeg                                                                             | Fully local                               |
 
 Paid cloud services (OpenAI, ElevenLabs, Volcengine, Tencent Cloud, and others) are optional upgrades — use them only if you want them.
 
@@ -143,6 +191,16 @@ brew upgrade --cask smartsub # upgrade
 1. After installing, follow the onboarding guide to download a speech model (no GPU or no model? Configure Cloud ASR instead)
 2. Pick a task from the launchpad, drop in media or subtitle files (or paste a link to download an online video), and set source language, target language, and other options
 3. Start processing — then proofread, dub, or burn in the results
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+
+- **Scope**: the Windows installer (`SmartSub_Windows_<version>_x64.exe`). Signing runs automatically in GitHub Actions, and every release needs a manual approval before it is signed. Signing applies from the first release after the certificate was issued; earlier releases are unsigned.
+- **Team roles**:
+  - Authors (may change the source directly) and Reviewers (review pull requests from external contributors): [@buxuku](https://github.com/buxuku)
+  - Approvers (approve every release for signing): [@buxuku](https://github.com/buxuku)
+- **Privacy policy**: SmartSub does not collect or upload any usage data and contains no analytics SDK. On startup it contacts the network automatically only to check for updates, in two places: the app update check (a request to GitHub Releases; turn it off with "Check for updates on startup" in Settings) and, only if the faster-whisper runtime is installed, a once-a-day check for a newer runtime (a request to GitHub; it only notifies you, never downloads anything by itself, and is not controlled by that switch). Downloading models, acceleration packs and video download engines, downloading online videos, and cloud translation, Cloud ASR and cloud dubbing connect to the network only when you use those features, and send content only to the services you choose or configure — each of which applies its own privacy policy. Crash diagnostics and logs stay on your machine and are never uploaded automatically.
 
 ## Going deeper
 
@@ -270,6 +328,37 @@ When you create a cloned voice, the reference audio is automatically quality-che
 </details>
 
 <details>
+<summary><b>AI Assistant & MCP / CLI Automation Setup</b></summary>
+
+<br/>
+
+#### 1. In-App AI Creative Assistant (Copilot)
+
+- **Keyboard Shortcut**: Press `⌘J` (macOS) or `Ctrl+J` (Windows / Linux) to toggle the assistant drawer anytime; the prompt input will be auto-focused.
+- **Provider Setup**: Any LLM provider configured under the "Translation" settings page (OpenAI-compatible, DeepSeek, Qwen, Gemini, SiliconFlow, DeerAPI, etc.) can be directly selected in the assistant footer.
+- **Workspace Context**: "Include current context" is checked by default, granting the assistant immediate visibility into current playback timing, active subtitle lines, task statuses, and application logs.
+- **Visual Diagnostics**: Click the camera icon in the assistant toolbar to capture the current workspace layout, dialogs, or error banners for instant multimodal inspection and debugging.
+- **File & Media Chat**: Drag and drop media files (MP4, MKV, MP3, WAV, etc.), subtitle files, or reference transcripts into the conversation. Local paths are fed into internal MCP tools without uploading heavy files.
+
+#### 2. Connecting External AI Tools (Cursor / Codex / Claude Code)
+
+Go to **Settings → Connect AI Tools (MCP)**:
+
+- **Cursor**: Click "Import to Cursor" to initiate one-click deep link registration with Cursor's MCP protocol.
+- **OpenAI Codex**: Click "Copy Configuration" and merge the generated TOML block into your `~/.codex/config.toml`.
+- **Claude Code**: Run the bundled installer in your terminal:
+  ```bash
+  # macOS
+  "/Applications/SmartSub.app/Contents/Resources/automation/smartsub" setup cli --install
+  "$HOME/.local/bin/smartsub" setup mcp --client claude --install
+  ```
+- **Other MCP Clients**: Copy the generic JSON configuration and merge the `smartsub` entry into your client's `mcpServers` object. **Zero external Node.js configuration required!**
+
+For deep dives, check out the [AI Assistant Feature Guide](docs/docs/features/ai-assistant.md) and the [MCP & CLI Guide](docs/docs/guides/automation.md).
+
+</details>
+
+<details>
 <summary><b>Manually downloading and importing models</b></summary>
 
 <br/>
@@ -367,6 +456,7 @@ If this project helps you, a star is appreciated — or buy the author a coffee 
 - [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) — runtime for FunASR / Qwen3-ASR / FireRedASR / Parakeet and local TTS
 - [FFmpeg](https://ffmpeg.org/) — media processing and subtitle burn-in
 - [Bob](https://bobtranslate.com/) — documentation on translation service signup
+- [LINUX DO](https://linux.do) — "Where possible begins." Thanks for the discussions and feedback
 
 ## License
 

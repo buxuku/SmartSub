@@ -33,7 +33,7 @@ const LocalCliPanel: React.FC<LocalCliPanelProps> = ({
         {t('engines.localCli.desc')}
       </p>
 
-      <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3">
+      <div className="flex items-center justify-between gap-3 rounded-lg bg-card p-3">
         <div className="min-w-0">
           <Label htmlFor="localcli-enable" className="text-sm font-medium">
             {t('engines.localCli.enable')}
@@ -49,7 +49,7 @@ const LocalCliPanel: React.FC<LocalCliPanelProps> = ({
         />
       </div>
 
-      <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3">
+      <div className="space-y-1.5 rounded-lg bg-card p-3">
         <div className="flex items-center gap-1.5">
           <label htmlFor="localcli-command" className="text-sm font-medium">
             {t('engines.localCli.commandLabel')}

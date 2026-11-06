@@ -42,6 +42,11 @@ export interface TtsSegmentRequest {
   speed?: number;
   outWavPath: string;
   signal?: AbortSignal;
+  /** Main-process-only incremental preview; regular synthesis remains file-based. */
+  preview?: {
+    settings?: import('./dubbing').DubbingSpeakerSettings;
+    onPcm: (pcm: Uint8Array, sampleRate: number) => void;
+  };
 }
 
 /** TTS 服务商类型（schema 驱动表单，字段声明同 ASR/翻译服务商）。 */

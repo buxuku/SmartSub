@@ -5,7 +5,6 @@
  */
 import type { IFormData } from '../../types';
 import type { RecipeGoals, TaskRecipe } from '../../types/recipe';
-import { stripSpeakerDiarizationConfig } from '../../types/speakerDiarization';
 import { resolveSubtitleOutputFormats } from '../../types/subtitleOutput';
 
 /** 启动台拖放带入向导的 sessionStorage 交接键 */
@@ -31,6 +30,7 @@ export const BUILTIN_RECIPES: TaskRecipe[] = [
     builtin: true,
     goals: { translate: true, dub: false, video: false },
     accepts: 'media',
+    // 不固定 translateContent：卡片与任务页等价，输出样式沿用用户保存的偏好。
   },
   {
     id: 'builtin-generate',
@@ -135,7 +135,7 @@ export function recipeToWizardPrefill(recipe: TaskRecipe): RecipeWizardPrefill {
     dubbingGateOn: gates ? gates.dubbing === 'manual' : false,
     config: recipe.config
       ? {
-          ...stripSpeakerDiarizationConfig(recipe.config),
+          ...recipe.config,
           ...(recipe.config.subtitleOutputFormat ||
           recipe.config.subtitleOutputFormats
             ? {

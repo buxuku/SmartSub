@@ -24,3 +24,6 @@ extraResources/sherpa/native/
 .longgap/
 # TypeScript 增量构建缓存（构建产物，不入库）
 *.tsbuildinfo
+
+# Local Python speech review test caches
+__pycache__/

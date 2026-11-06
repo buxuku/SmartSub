@@ -29,6 +29,20 @@ const DeleteModel = ({
 }: DeleteModelProps) => {
   const { t } = useTranslation('common');
   const [visibility, setVisibility] = React.useState(false);
+  // CT2 模型可能位于与其他软件共用的 HuggingFace 缓存里，删除前把将要删掉的目录列
+  // 出来，让用户确认的是一个具体的位置。其他引擎的目录布局固定，保持原来的通用说明。
+  const [folders, setFolders] = React.useState<string[]>([]);
+  const handleOpen = async () => {
+    setVisibility(true);
+    if (format !== 'ct2') return;
+    setFolders([]);
+    try {
+      const dirs = await window?.ipc?.invoke('getCt2DeleteTargets', modelName);
+      setFolders(Array.isArray(dirs) ? dirs : []);
+    } catch {
+      // 只是预览：查不到时退回通用说明，不影响删除本身。
+    }
+  };
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
     const channel = format === 'ct2' ? 'deleteCt2Model' : 'deleteModel';
@@ -38,7 +52,7 @@ const DeleteModel = ({
   };
   return (
     <AlertDialog open={visibility}>
-      <AlertDialogTrigger asChild onClick={() => setVisibility(true)}>
+      <AlertDialogTrigger asChild onClick={handleOpen}>
         {children}
       </AlertDialogTrigger>
       <AlertDialogContent>
@@ -47,6 +61,22 @@ const DeleteModel = ({
           <AlertDialogDescription>
             {t('deleteModelDesc')}
           </AlertDialogDescription>
+          {folders.length > 0 && (
+            <div className="space-y-1.5 text-sm text-muted-foreground">
+              <p>{t('deleteModelFolders')}</p>
+              <ul className="space-y-1">
+                {folders.map((dir) => (
+                  <li
+                    key={dir}
+                    className="break-all rounded bg-muted px-2 py-1 font-mono text-xs text-foreground"
+                  >
+                    {dir}
+                  </li>
+                ))}
+              </ul>
+              <p>{t('deleteModelSharedNote')}</p>
+            </div>
+          )}
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel

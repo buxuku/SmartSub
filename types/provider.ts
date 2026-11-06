@@ -382,9 +382,12 @@ const apiBatchFields = (
   defaultBatchSize: number,
   batchSizeTips: string,
   requestIntervalField: ProviderField = FIELD_REQUEST_INTERVAL,
+  defaultBatchConcurrency?: number,
 ): ProviderField[] => [
   batchSizeField(defaultBatchSize, batchSizeTips),
-  FIELD_BATCH_CONCURRENCY,
+  defaultBatchConcurrency === undefined
+    ? FIELD_BATCH_CONCURRENCY
+    : { ...FIELD_BATCH_CONCURRENCY, defaultValue: defaultBatchConcurrency },
   requestIntervalField,
 ];
 
@@ -434,7 +437,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         label: 'fallbackChain',
         type: 'chain',
         required: false,
-        defaultValue: 'bingFree,googleFree,deeplx',
+        defaultValue: 'youdaoFree,bingFree,googleFree,deeplx',
         tips: 'fallbackChainTips',
       },
       {
@@ -450,6 +453,35 @@ export const PROVIDER_TYPES: ProviderType[] = [
         ...FIELD_REQUEST_INTERVAL,
         defaultValue: 0.3,
       }),
+    ],
+  },
+  {
+    id: 'youdaoFree',
+    name: 'youdaoFree',
+    isBuiltin: true,
+    isAi: false,
+    group: 'free',
+    icon: '📖',
+    iconImg: '/images/providers/youdao.png',
+    fields: [
+      {
+        key: 'windowMaxRequests',
+        label: 'windowMaxRequests',
+        type: 'number',
+        required: false,
+        defaultValue: 0,
+        tips: 'windowMaxRequestsTips',
+        placeholder: 'phWindowMaxRequests',
+      },
+      ...apiBatchFields(
+        30,
+        'batchSizeYoudaoFreeTips',
+        {
+          ...FIELD_REQUEST_INTERVAL,
+          defaultValue: 0.2,
+        },
+        2,
+      ),
     ],
   },
   {

@@ -9,11 +9,16 @@
  */
 
 import fs from 'fs';
+import path from 'node:path';
+import { getTaskContext } from './taskContext';
 import { logMessage } from './storeManager';
 import type { RefineWord, WordTimelineSidecar } from './subtitleRefine/types';
 
 export function wordTimelineSidecarPath(tempAudioFile: string): string {
-  return `${tempAudioFile}.words.json`;
+  const directory = getTaskContext()?.stageOutputDirectory;
+  return directory
+    ? path.join(directory, 'audio.words.json')
+    : `${tempAudioFile}.words.json`;
 }
 
 /** 写入 sidecar；成功返回路径，失败/无内容返回 undefined（调用方据此置 file 字段）。 */

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp, Play } from 'lucide-react';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import {
   Tooltip,
   TooltipContent,
@@ -29,7 +30,12 @@ export function missedSpeechDescription(
   warning: MissedSpeechWarning,
   t: Translate,
 ): string {
-  return `${t('missedSpeech.title')} (${t(`missedSpeech.level.${warning.level}`)})\n${speechRangeTime(warning.startMs)} - ${speechRangeTime(warning.endMs)}\n${warning.signals.map((signal) => t(`missedSpeech.signal.${signal}`)).join(', ')}\n${t('missedSpeech.caution')}`;
+  const title = warning.signals.includes('timingMismatch')
+    ? 'missedSpeech.signal.timingMismatch'
+    : warning.signals.includes('textMismatch')
+      ? 'missedSpeech.signal.textMismatch'
+      : 'missedSpeech.title';
+  return `${t(title)} (${t(`missedSpeech.level.${warning.level}`)})\n${speechRangeTime(warning.startMs)} - ${speechRangeTime(warning.endMs)}\n${warning.signals.map((signal) => t(`missedSpeech.signal.${signal}`)).join(', ')}\n${t('missedSpeech.caution')}`;
 }
 
 export default function MissedSpeechControls({
@@ -63,7 +69,18 @@ export default function MissedSpeechControls({
       data-testid="missed-speech-controls"
     >
       <AlertTriangle className="h-4 w-4 shrink-0" />
-      <span>{t('missedSpeech.count', { count: warnings.length })}</span>
+      <span>
+        {t(
+          warnings.some(
+            (w) =>
+              w.signals.includes('timingMismatch') ||
+              w.signals.includes('textMismatch'),
+          )
+            ? 'missedSpeech.reviewCount'
+            : 'missedSpeech.count',
+          { count: warnings.length },
+        )}
+      </span>
       <label className="min-w-0 max-w-full flex-1">
         <span className="sr-only">{t('missedSpeech.range')}</span>
         <select
@@ -132,6 +149,37 @@ export default function MissedSpeechControls({
           .join(', ')}
         . {t('missedSpeech.caution')}
       </span>
+      {active.suggestedText && (
+        <div className="w-full rounded border bg-muted/30 p-2 text-foreground">
+          {active.originalText && (
+            <p className="mb-1">
+              <span className="text-muted-foreground">
+                {t('missedSpeech.original')}{' '}
+              </span>
+              {active.originalText}
+            </p>
+          )}
+          <span className="text-muted-foreground">
+            {t('missedSpeech.suggestion')}{' '}
+          </span>
+          {active.suggestedText}
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-2"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(active.suggestedText!);
+                toast.success(t('missedSpeech.copied'));
+              } catch {
+                toast.error(t('missedSpeech.copyFailed'));
+              }
+            }}
+          >
+            {t('missedSpeech.copy')}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

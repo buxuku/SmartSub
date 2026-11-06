@@ -27,7 +27,6 @@ import {
   shiftedTimeline,
   DEFAULT_SPEECH_RATES,
   DEFAULT_TAIL_PADDING_MS,
-  RESYNTH_MARGIN,
   type AlignCue,
 } from '../../main/helpers/dubbing/alignment';
 import {
@@ -85,7 +84,14 @@ import {
   parseTtsVoiceLabels,
   resolveTtsVoiceLabel,
 } from '../../types/ttsProvider';
-import { loadDubbingSpeakerMetadata } from '../../main/helpers/dubbing/speakerMetadata';
+import {
+  findDubbingProofreadDataFile,
+  loadDubbingSpeakerMetadata,
+} from '../../main/helpers/dubbing/speakerMetadata';
+import {
+  LEGACY_PROOFREAD_DIR,
+  setProofreadDataRoot,
+} from '../../main/helpers/proofreadDataStorage';
 import { resolveTtsModelRequestForVoice } from '../../main/helpers/dubbing/ttsLanguageRules';
 import {
   detectDubbingLanguage,
@@ -101,7 +107,17 @@ import {
   dubbingInputNeedsUpdate,
 } from '../../main/helpers/dubbing/synthesisIdentity';
 import { pipelineDubLanguage } from '../../main/helpers/pipeline/dubTextSource';
+import {
+  bilingualContentType,
+  composeDisplayText,
+  resolveDubbingScript,
+} from '../../main/helpers/dubbing/bilingualScript';
+import { layoutSubtitleColumns } from '../../main/helpers/subtitleLayout';
+import { renderTemplate } from '../../main/helpers/template';
+import { CONTENT_TEMPLATES } from '../../main/translate/constants';
+import { prefixTextWithSpeakerNames } from '../../types/proofreadData';
 import type { DubbingConfig } from '../../types/dubbing';
+import type { ProofreadDataFileV2 } from '../../types/proofreadData';
 
 let passed = 0;
 let failed = 0;
@@ -287,8 +303,8 @@ function ok(cond: boolean, name: string): void {
   };
   eq(
     dubbingInputNeedsUpdate(undefined, key, cloud),
-    false,
-    'identity: retain legacy cloud audio without explicit language',
+    true,
+    'identity: legacy cloud alignment must be regenerated without deleting the WAV',
   );
   eq(
     dubbingInputNeedsUpdate(undefined, key, { ...cloud, language: 'zh' }),
@@ -428,10 +444,12 @@ function cue(
   const slots = computeSlots([cue(0, 1000, 3000), cue(1, 5000, 7000)], {
     mediaDurationMs: 10000,
   });
-  eq(slots[0].slotMs, 4000, 'slots: 间隙并入本条槽位');
+  eq(slots[0].slotMs, 2000, 'slots: 原字幕区间不自动借用空白');
+  eq(slots[0].availableGapMs, 2000, 'slots: 显式借用可用的空白');
   eq(slots[0].overlapNext, false, 'slots: 无重叠不标记');
   // 末条：媒体总长 10000 − start 5000 = 5000
-  eq(slots[1].slotMs, 5000, 'slots: 末条槽位 = 媒体总长 − start');
+  eq(slots[1].slotMs, 2000, 'slots: 末条仍使用原字幕时间窗');
+  eq(slots[1].availableGapMs, 3000, 'slots: 已知媒体尾部可显式借用');
 }
 
 {
@@ -440,7 +458,7 @@ function cue(
   eq(
     slots[0].slotMs,
     2000 + DEFAULT_TAIL_PADDING_MS,
-    'slots: 无媒体时长末条回落自身+余量',
+    'slots: 未知媒体尾部不增加假定空白',
   );
 }
 
@@ -451,7 +469,7 @@ function cue(
   });
   eq(slots[0].slotMs, 5000, 'slots: 重叠时本条槽位回落自身时长(不挤压)');
   eq(slots[0].overlapNext, true, 'slots: 重叠标记在前条');
-  eq(slots[1].slotMs, 7000, 'slots: 重叠后条槽位正常(到媒体末尾)');
+  eq(slots[1].slotMs, 5000, 'slots: 重叠后条保留原时间窗');
 }
 
 {
@@ -459,7 +477,7 @@ function cue(
   const slots = computeSlots([cue(0, 1000, 1000), cue(1, 2000, 3000)], {
     mediaDurationMs: 5000,
   });
-  eq(slots[0].slotMs, 1000, 'slots: 零长 cue 仍拿到到下条的窗口');
+  eq(slots[0].slotMs, 0, 'slots: 零长 cue 不自动借用后续窗口');
   // 完全同刻零长 + 有长下条:窗口为 0,回落自身 0
   const slots2 = computeSlots([cue(0, 1000, 1000), cue(1, 1000, 3000)], {
     mediaDurationMs: 5000,
@@ -518,46 +536,46 @@ function cue(
   eq(calibratedEstimate(1000, cal), 1000, 'calibration: 双向样本回归 1.0');
 }
 
-// ── decideSpeedAction:四档决策树 ────────────────────────────────────────────
+// Estimates never change the requested speech speed, including native/SSML.
 
 {
   // ≤1.0:原速
   eq(
     decideSpeedAction(900, 1000, 'native'),
-    { preSpeed: 1, needsRecheck: false, estimatedOverlong: false, ratio: 0.9 },
-    'decide: ratio≤1 原速无复测',
+    { preSpeed: 1, needsRecheck: true, estimatedOverlong: false, ratio: 0.9 },
+    'decide: 即使估计可用仍需实测',
   );
   // (1.0, 1.15]:预控制一次到位
   const d2 = decideSpeedAction(1100, 1000, 'native');
   eq(
     [d2.preSpeed, d2.needsRecheck, d2.estimatedOverlong],
-    [1.1, false, false],
-    'decide: ratio≤1.15 预控制一次到位',
+    [1, true, false],
+    'decide: ratio≤1.15 保持用户语速等待实测',
   );
   // (1.15, 1.5]:预控制 + 复测
   const d3 = decideSpeedAction(1400, 1000, 'native');
   eq(
     [d3.preSpeed, d3.needsRecheck, d3.estimatedOverlong],
-    [1.4, true, false],
-    'decide: ratio≤1.5 预控制+复测',
+    [1, true, true],
+    'decide: ratio=1.4 超限候选但不自动提速',
   );
   // >1.5:过长候选,预控制封顶红线
   const d4 = decideSpeedAction(2000, 1000, 'native');
   eq(
     [d4.preSpeed, d4.needsRecheck, d4.estimatedOverlong],
-    [ALIGN_OVERLONG_THRESHOLD, true, true],
-    'decide: ratio>1.5 过长候选,speed 封顶红线',
+    [1, true, true],
+    'decide: 大幅超限仍不自动提速',
   );
   // 边界值恰在阈值上
   eq(
     decideSpeedAction(1150, 1000, 'native').needsRecheck,
-    false,
-    'decide: ratio=1.15 归一次到位档',
+    true,
+    'decide: ratio=1.15 必须实测',
   );
   eq(
     decideSpeedAction(1500, 1000, 'native').estimatedOverlong,
-    false,
-    'decide: ratio=1.5 不判过长',
+    true,
+    'decide: ratio=1.5 是过长候选',
   );
 }
 
@@ -592,17 +610,11 @@ function cue(
     { type: 'fit', padMs: 100 },
     'recheck: 落槽补静音',
   );
-  // 本地超槽红线内:重合成(带 5% 余量)
-  const r = recheckAfterSynthesis(1200, 1000, 1.1, { canResynthesize: true });
-  ok(
-    r.type === 'resynthesize' &&
-      Math.abs((r as any).speed - Math.min(1.1 * 1.2 * RESYNTH_MARGIN, 1.5)) <
-        1e-9,
-    'recheck: 本地重合成 speed=已用×残余×1.05',
-  );
+  const r = recheckAfterSynthesis(1150, 1000, 1, { canResynthesize: true });
+  eq(r, { type: 'atempo', factor: 1.15 }, 'recheck: 恰好15%使用保持音高压缩');
   // 已重合成过仍超:不再迭代,转 atempo(保证终止)
   eq(
-    recheckAfterSynthesis(1100, 1000, 1.2, {
+    recheckAfterSynthesis(1100, 1000, 1, {
       canResynthesize: true,
       alreadyResynthesized: true,
     }),
@@ -611,8 +623,8 @@ function cue(
   );
   // 云端:atempo 残余倍率
   eq(
-    recheckAfterSynthesis(1200, 1000, 1.1, { canResynthesize: false }),
-    { type: 'atempo', factor: 1.2 },
+    recheckAfterSynthesis(1100, 1000, 1, { canResynthesize: false }),
+    { type: 'atempo', factor: 1.1 },
     'recheck: 云端超槽走 atempo',
   );
   // 综合倍率超红线:过长(零漏报)——1.4(已用)×1.2(残余)=1.68>1.5
@@ -633,6 +645,55 @@ function cue(
     { type: 'fit', padMs: 1000 },
     'recheck: 空音频视为落槽',
   );
+  eq(ALIGN_OVERLONG_THRESHOLD, 1.15, 'recheck: 自动压缩硬上限15%');
+  eq(
+    recheckAfterSynthesis(1151, 1000, 1, { canResynthesize: true }).type,
+    'overlong',
+    'recheck: 超过边界1ms不自动压缩',
+  );
+  eq(
+    recheckAfterSynthesis(1001, 1000, 1, { canResynthesize: false }).type,
+    'atempo',
+    'recheck: 小幅超限也不能静默截断',
+  );
+}
+
+{
+  const list = [
+    cue(0, 0, 5000),
+    cue(1, 1000, 2000),
+    cue(2, 3000, 4000),
+    cue(3, 8000, 9000),
+  ];
+  const slots = computeSlots(list.reverse());
+  eq(
+    slots.map((slot) => slot.availableGapMs),
+    [3000, 0, 0, 0],
+    'gap: 无序嵌套区间不把其他角色讲话当空白',
+  );
+  const borrowed = computeSlots([
+    { ...cue(0, 0, 2000), borrowedMs: 800 },
+    cue(1, 4000, 5000),
+  ]);
+  eq(borrowed[0].slotMs, 2800, 'gap: 只有显式借用增加时间窗');
+  eq(
+    computeSlots([
+      { ...cue(0, 0, 2000), borrowedMs: 2500 },
+      cue(1, 4000, 5000),
+    ])[0].slotMs,
+    2000,
+    'gap: 失效借用不延伸到后文',
+  );
+  eq(
+    computeSlots([cue(0, 0, 2000), cue(1, 2000, 3000)])[0].availableGapMs,
+    0,
+    'gap: 相邻行无空白',
+  );
+  eq(
+    computeSlots([cue(0, 0, 2000)], { mediaDurationMs: 1800 })[0].slotMs,
+    1800,
+    'gap: 不越过媒体结尾',
+  );
 }
 
 // ── buildAlignmentPlan:cursor 走查 ─────────────────────────────────────────
@@ -646,7 +707,7 @@ function cue(
       {
         index: 0,
         startMs: 1000,
-        durationMs: 3500,
+        durationMs: 1500,
         action: { type: 'none' },
         overlong: false,
       },
@@ -664,8 +725,8 @@ function cue(
   eq(
     plan.items.map((i) => [i.targetStartMs, i.durationMs, i.padMs]),
     [
-      [1000, 3500, 500],
-      [5000, 2000, 3000],
+      [1000, 1500, 500],
+      [5000, 2000, 0],
     ],
     'plan: 正常行锚定原 start,补静音=槽位-时长',
   );
@@ -1071,12 +1132,32 @@ function cue(
       { LocalName: 'NoId' },
     ]),
     [
-      { id: 'zh-CN-XiaoxiaoNeural', name: '晓晓 (zh-CN)' },
+      { id: 'zh-CN-XiaoxiaoNeural', name: '晓晓 (zh-CN)', lang: 'zh-CN' },
       { id: 'en-US-GuyNeural', name: 'Guy' },
     ],
     'azure: voices/list 映射(LocalName+locale、DisplayName 回落、缺 id 跳过)',
   );
   eq(mapAzureVoices({}), [], 'azure: 非数组响应返回空');
+  eq(
+    mapAzureVoices([
+      {
+        ShortName: 'declared',
+        Gender: 'Female',
+        Locale: 'en_US',
+        StyleList: ['newscast', 'narration-professional'],
+      },
+    ]),
+    [
+      {
+        id: 'declared',
+        name: 'declared',
+        lang: 'en-US',
+        gender: 'female',
+        styles: ['news', 'story'],
+      },
+    ],
+    'azure: declared voice metadata is normalized and retained',
+  );
 }
 
 // ── elevenlabsTtsUtils:base 规范化 / speed clamp / body 构造 ────────────────
@@ -1146,6 +1227,31 @@ function cue(
     'eleven: voices 响应宽容解析(空名回落 id、坏条目跳过)',
   );
   eq(mapElevenLabsVoices({}), [], 'eleven: 无 voices 字段返回空');
+  eq(
+    mapElevenLabsVoices({
+      voices: [
+        {
+          voice_id: 'child',
+          labels: {
+            age: 'child',
+            gender: 'female',
+            language: 'zh-CN',
+            use_case: 'animation',
+          },
+        },
+      ],
+    }),
+    [
+      {
+        id: 'child',
+        name: 'child',
+        lang: 'zh-CN',
+        gender: 'child',
+        styles: ['anime'],
+      },
+    ],
+    'eleven: declared child/language/style metadata is retained',
+  );
 
   const labeled = {
     type: 'elevenlabs',
@@ -1477,6 +1583,156 @@ function cue(
   fs.rmSync(root, { recursive: true, force: true });
 }
 
+// ── sidecar 自动发现：显式路径 → 托管目录 → 字幕旁旧目录；同一位置多个命中取最近修改 ──
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dub-sidecar-order-'));
+  const managedRoot = path.join(root, 'userData', 'proofread-data');
+  const videoDir = path.join(root, 'videos');
+  const legacyDir = path.join(videoDir, LEGACY_PROOFREAD_DIR);
+  fs.mkdirSync(managedRoot, { recursive: true });
+  fs.mkdirSync(legacyDir, { recursive: true });
+  const subtitlePath = path.join(videoDir, 'episode.srt');
+  const otherSubtitlePath = path.join(videoDir, 'other.srt');
+  fs.writeFileSync(subtitlePath, 'fixture');
+
+  const sidecarJson = (targetFile: string) =>
+    JSON.stringify({
+      version: 2,
+      meta: {
+        createdAt: '2026-10-01T00:00:00.000Z',
+        updatedAt: '2026-10-01T00:00:00.000Z',
+        targetFile,
+      },
+      speakers: [{ id: 1, displayName: '主持人', color: '#2563eb' }],
+      cues: [
+        {
+          id: '1',
+          startMs: 0,
+          endMs: 1000,
+          source: '',
+          target: '你好',
+          speakerIds: [1],
+          primarySpeakerId: 1,
+        },
+      ],
+    });
+  const baseSeconds = Math.floor(Date.now() / 1000) - 3600;
+  const touch = (filePath: string, age: number) => {
+    const seconds = baseSeconds + age;
+    fs.utimesSync(filePath, seconds, seconds);
+  };
+  const put = (dir: string, name: string, targetFile: string, age: number) => {
+    const filePath = path.join(dir, name);
+    fs.writeFileSync(filePath, sidecarJson(targetFile));
+    touch(filePath, age);
+    return filePath;
+  };
+  const found = (explicitPath?: string) =>
+    findDubbingProofreadDataFile(subtitlePath, explicitPath)?.filePath ?? null;
+
+  try {
+    setProofreadDataRoot(undefined);
+    const legacyOld = put(legacyDir, 'a-old.json', subtitlePath, 10);
+    const legacyNew = put(legacyDir, 'b-new.json', subtitlePath, 20);
+    eq(
+      found(),
+      legacyNew,
+      'sidecar discovery: 旧目录有多个命中时取最近修改，而不是目录遍历的第一个',
+    );
+
+    setProofreadDataRoot(managedRoot);
+    eq(
+      found(),
+      legacyNew,
+      'sidecar discovery: 托管目录没有匹配项时回落字幕旁的旧目录',
+    );
+
+    const managedA = put(managedRoot, 'a.json', subtitlePath, 5);
+    eq(
+      found(),
+      managedA,
+      'sidecar discovery: 托管目录优先于旧目录，即使旧目录的更新',
+    );
+
+    const managedB = put(managedRoot, 'b.json', subtitlePath, 30);
+    eq(found(), managedB, 'sidecar discovery: 托管目录有多个命中时取最近修改');
+
+    touch(managedA, 40);
+    eq(
+      found(),
+      managedA,
+      'sidecar discovery: 修改时间变化后重新选择最近修改的一份',
+    );
+
+    put(managedRoot, 'unrelated.json', otherSubtitlePath, 100);
+    const broken = path.join(managedRoot, 'broken.json');
+    fs.writeFileSync(broken, '{ not json');
+    touch(broken, 110);
+    eq(
+      found(),
+      managedA,
+      'sidecar discovery: 属于其他字幕或无法解析的文件即使最新也被忽略',
+    );
+
+    eq(
+      found(legacyOld),
+      legacyOld,
+      'sidecar discovery: 显式给定且可解析的路径优先于托管目录',
+    );
+    eq(
+      found(path.join(root, 'missing.json')),
+      managedA,
+      'sidecar discovery: 显式路径不存在时继续按托管目录查找',
+    );
+    eq(
+      found(broken),
+      managedA,
+      'sidecar discovery: 显式路径无法解析时继续按托管目录查找',
+    );
+
+    const metadata = loadDubbingSpeakerMetadata(subtitlePath, [
+      { startMs: 0, endMs: 1000, text: '你好' },
+    ]);
+    eq(
+      metadata.proofreadDataFile,
+      managedA,
+      'sidecar discovery: 角色信息读取的是托管目录里的那份',
+    );
+    eq(
+      metadata.speakers.map((speaker) => speaker.name),
+      ['主持人'],
+      'sidecar discovery: 托管目录里的角色名称照常带入配音',
+    );
+
+    // 同一份 sidecar 被改写成不再匹配：缓存的路径摘要必须随之失效
+    fs.writeFileSync(managedA, sidecarJson(otherSubtitlePath));
+    touch(managedA, 200);
+    eq(
+      found(),
+      managedB,
+      'sidecar discovery: 改写后不再匹配的 sidecar 不会被缓存继续命中',
+    );
+
+    fs.rmSync(managedB);
+    eq(
+      found(),
+      legacyNew,
+      'sidecar discovery: 被删除的 sidecar 不会被缓存继续命中，回落旧目录',
+    );
+
+    setProofreadDataRoot(undefined);
+    put(managedRoot, 'c.json', subtitlePath, 300);
+    eq(
+      found(),
+      legacyNew,
+      'sidecar discovery: 宿主没有注入托管目录时只在旧目录里找',
+    );
+  } finally {
+    setProofreadDataRoot(undefined);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 // ── sessionStore：会话持久化（元数据往返 / hash 校验 / 产物缺失降级 / 删除）──
 {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dub-session-test-'));
@@ -1604,6 +1860,571 @@ function cue(
   ok(!fs.existsSync(dir), 'session: 删除清理会话目录');
 
   fs.rmSync(root, { recursive: true, force: true });
+}
+
+// ── 双语交付物（issue #537）：配音只念译文，展示层保留双语 ──────────────────
+{
+  const dir = path.join(os.tmpdir(), 'bilingual-script-paths');
+  const delivered = path.join(dir, 'episode.zh-en.srt');
+  const sidecarOf = (
+    translateContent: string | undefined,
+    cues: Array<{
+      source: string;
+      target: string;
+      startMs?: number;
+      endMs?: number;
+    }>,
+    meta: Partial<ProofreadDataFileV2['meta']> = {},
+  ): ProofreadDataFileV2 => ({
+    version: 2,
+    meta: {
+      createdAt: '2026-10-01T00:00:00.000Z',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+      sourceLanguage: 'en',
+      targetLanguage: 'zh-hant',
+      translateContent,
+      sourceFile: path.join(dir, 'episode.srt'),
+      targetFile: path.join(dir, 'episode.zh.srt'),
+      finalTargetFile: delivered,
+      translatedSubtitleFiles: [delivered],
+      ...meta,
+    },
+    speakers: [],
+    cues: cues.map((cue, index) => ({
+      id: String(index + 1),
+      startMs: cue.startMs ?? index * 1000,
+      endMs: cue.endMs ?? index * 1000 + 900,
+      source: cue.source,
+      target: cue.target,
+    })),
+  });
+  const parsed = (texts: string[]) =>
+    texts.map((text, index) => ({
+      startMs: index * 1000,
+      endMs: index * 1000 + 900,
+      text,
+    }));
+  const flatten = (text: string) => text.replace(/\n+/g, ' ').trim();
+
+  // 原文在前：译文是最后一行
+  {
+    const script = resolveDubbingScript(
+      delivered,
+      parsed(['Hello there.\n你好。', 'How are you?\n你好吗？']),
+      sidecarOf('sourceAndTranslate', [
+        { source: 'Hello there.', target: '你好。' },
+        { source: 'How are you?', target: '你好吗？' },
+      ]),
+    );
+    eq(
+      script.bilingual,
+      'sourceAndTranslate',
+      'bilingual script: 识别原文在前的双语交付物',
+    );
+    eq(
+      script.cues.map((cue) => cue.text),
+      ['你好。', '你好吗？'],
+      'bilingual script: 配音文本只含译文',
+    );
+    eq(
+      script.cues[0].display,
+      { lines: ['Hello there.', '你好。'], from: 1, to: 2 },
+      'bilingual script: 展示结构记录译文所在的行',
+    );
+    eq(script.unresolved, [], 'bilingual script: 全部定位成功时没有遗漏');
+    eq(
+      script.targetLanguage,
+      'zh-Hant',
+      'bilingual script: 译文语言取 sidecar 的目标语言并规范化',
+    );
+  }
+
+  // 译文在前：译文是第一行
+  {
+    const script = resolveDubbingScript(
+      delivered,
+      parsed(['你好。\nHello there.', '你好吗？\nHow are you?']),
+      sidecarOf('translateAndSource', [
+        { source: 'Hello there.', target: '你好。' },
+        { source: 'How are you?', target: '你好吗？' },
+      ]),
+    );
+    eq(
+      script.bilingual,
+      'translateAndSource',
+      'bilingual script: 识别译文在前的双语交付物',
+    );
+    eq(
+      script.cues.map((cue) => cue.text),
+      ['你好。', '你好吗？'],
+      'bilingual script: 译文在前时同样只念译文',
+    );
+    eq(
+      script.cues[1].display,
+      { lines: ['你好吗？', 'How are you?'], from: 0, to: 1 },
+      'bilingual script: 译文在前时区间从第一行开始',
+    );
+  }
+
+  // 版面折叠：sidecar 里的多行在交付物中被折成一行（CJK 之间不补空格）
+  {
+    const script = resolveDubbingScript(
+      delivered,
+      parsed(['Hello, how are you?\n你好，你好吗？']),
+      sidecarOf('sourceAndTranslate', [
+        { source: 'Hello,\nhow are you?', target: '你好，\n你好吗？' },
+      ]),
+    );
+    eq(
+      script.cues[0].text,
+      '你好，你好吗？',
+      'bilingual script: 折叠后的译文照样能与 sidecar 对上（忽略空白差异）',
+    );
+    eq(
+      script.cues[0].display,
+      { lines: ['Hello, how are you?', '你好，你好吗？'], from: 1, to: 2 },
+      'bilingual script: 折叠后的展示结构',
+    );
+  }
+
+  // 旧式模板：原文、译文各自保留多行
+  {
+    const script = resolveDubbingScript(
+      delivered,
+      parsed(['Line one,\nline two.\n你好，\n你好吗？']),
+      sidecarOf('sourceAndTranslate', [
+        { source: 'Line one,\nline two.', target: '你好，\n你好吗？' },
+      ]),
+    );
+    eq(
+      script.cues[0].text,
+      '你好， 你好吗？',
+      'bilingual script: 多行译文按空格连成一句，与纯译文字幕的处理一致',
+    );
+    eq(
+      script.cues[0].display,
+      {
+        lines: ['Line one,', 'line two.', '你好，', '你好吗？'],
+        from: 2,
+        to: 4,
+      },
+      'bilingual script: 多行译文的区间覆盖全部译文行',
+    );
+  }
+
+  // 手工改过的交付物：以文件为准，只要有一列还对得上就能定位
+  {
+    const script = resolveDubbingScript(
+      delivered,
+      parsed([
+        'Hello there.\n改过的译文',
+        'How are you (edited)?\n你好吗？',
+        'Bye (edited).\n再见（改）。',
+      ]),
+      sidecarOf('sourceAndTranslate', [
+        { source: 'Hello there.', target: '旧译文' },
+        { source: 'How are you?', target: '你好吗？' },
+        { source: 'Bye.', target: '再见。' },
+      ]),
+    );
+    eq(
+      script.cues.map((cue) => cue.text),
+      ['改过的译文', '你好吗？', 'Bye (edited). 再见（改）。'],
+      'bilingual script: 改了译文用原文列定位，改了原文用译文列定位，两列都改则保持整行',
+    );
+    eq(
+      script.cues.map((cue) => cue.display?.to),
+      [2, 2, undefined],
+      'bilingual script: 只有定位成功的行带展示结构',
+    );
+    eq(script.unresolved, [2], 'bilingual script: 无法定位的行被记录下来');
+    eq(
+      script.bilingual,
+      'sourceAndTranslate',
+      'bilingual script: 个别行无法定位不影响整体识别',
+    );
+  }
+
+  // 只有一行的 cue
+  {
+    const script = resolveDubbingScript(
+      delivered,
+      parsed(['你好。', 'Hello']),
+      sidecarOf('sourceAndTranslate', [
+        { source: '', target: '你好。' },
+        { source: 'Hello', target: '' },
+      ]),
+    );
+    eq(
+      script.cues[0].display,
+      { lines: ['你好。'], from: 0, to: 1 },
+      'bilingual script: 原文为空时整行就是译文',
+    );
+    eq(
+      script.cues.map((cue) => cue.text),
+      ['你好。', 'Hello'],
+      'bilingual script: 缺译文的行保持原样，不把原文当译文猜',
+    );
+    eq(script.unresolved, [1], 'bilingual script: 缺译文的行记入未定位');
+  }
+
+  // 原文与译文相同（专有名词、数字）：按交付顺序取，不会取错行
+  {
+    const forward = resolveDubbingScript(
+      delivered,
+      parsed(['OK\nOK']),
+      sidecarOf('sourceAndTranslate', [{ source: 'OK', target: 'OK' }]),
+    );
+    eq(
+      forward.cues[0].display,
+      { lines: ['OK', 'OK'], from: 1, to: 2 },
+      'bilingual script: 原文在前时取最后一行',
+    );
+    const backward = resolveDubbingScript(
+      delivered,
+      parsed(['OK\nOK']),
+      sidecarOf('translateAndSource', [{ source: 'OK', target: 'OK' }]),
+    );
+    eq(
+      backward.cues[0].display,
+      { lines: ['OK', 'OK'], from: 0, to: 1 },
+      'bilingual script: 译文在前时取第一行',
+    );
+  }
+
+  // 与 sidecar 的对齐沿用角色元数据的规则：起止时间优先，条数相同按下标，其余不猜
+  {
+    const sidecar = sidecarOf('sourceAndTranslate', [
+      { source: 'A', target: '甲', startMs: 0, endMs: 900 },
+      { source: 'B', target: '乙', startMs: 1000, endMs: 1900 },
+      { source: 'C', target: '丙', startMs: 2000, endMs: 2900 },
+    ]);
+    const byTime = resolveDubbingScript(
+      delivered,
+      [
+        { startMs: 1000, endMs: 1900, text: 'B\n乙' },
+        { startMs: 2000, endMs: 2900, text: 'C\n丙' },
+      ],
+      sidecar,
+    );
+    eq(
+      byTime.cues.map((cue) => cue.text),
+      ['乙', '丙'],
+      'bilingual script: 条数不同但起止时间一致时按时间对齐',
+    );
+    const unmatched = resolveDubbingScript(
+      delivered,
+      [
+        { startMs: 5000, endMs: 5900, text: 'B\n乙' },
+        { startMs: 6000, endMs: 6900, text: 'C\n丙' },
+      ],
+      sidecar,
+    );
+    eq(
+      unmatched.cues.map((cue) => cue.text),
+      ['B 乙', 'C 丙'],
+      'bilingual script: 时间对不上且条数也不同则不猜，保持整行',
+    );
+    eq(unmatched.unresolved, [0, 1], 'bilingual script: 对不上的行全部记录');
+    const retimed = resolveDubbingScript(
+      delivered,
+      [
+        { startMs: 100, endMs: 1000, text: 'A\n甲' },
+        { startMs: 1100, endMs: 2000, text: 'B\n乙' },
+        { startMs: 2100, endMs: 3000, text: 'C\n丙' },
+      ],
+      sidecar,
+    );
+    eq(
+      retimed.cues.map((cue) => cue.text),
+      ['甲', '乙', '丙'],
+      'bilingual script: 条数相同但时间轴被外部调整时按下标对齐',
+    );
+  }
+
+  // 不是双语交付物就原样返回（行为与改动前完全一致）
+  {
+    const twoLine = parsed(['第一行\n第二行', '单行']);
+    const legacy = twoLine.map((cue) => flatten(cue.text));
+    const cues = [
+      { source: 'x', target: '第一行' },
+      { source: 'y', target: '单行' },
+    ];
+    const bilingualSidecar = sidecarOf('sourceAndTranslate', cues);
+    const cases: Array<[string, string, ProofreadDataFileV2 | null]> = [
+      ['纯译文文件', bilingualSidecar.meta.targetFile!, bilingualSidecar],
+      ['源语言文件', bilingualSidecar.meta.sourceFile!, bilingualSidecar],
+      ['无关文件', path.join(dir, 'other.srt'), bilingualSidecar],
+      ['没有 sidecar', delivered, null],
+      ['纯译文交付', delivered, sidecarOf('onlyTranslate', cues)],
+      ['交付内容未知', delivered, sidecarOf(undefined, cues)],
+    ];
+    for (const [name, subtitlePath, sidecar] of cases) {
+      const script = resolveDubbingScript(subtitlePath, twoLine, sidecar);
+      eq(
+        script.cues.map((cue) => cue.text),
+        legacy,
+        `bilingual script: ${name}保持整行配音`,
+      );
+      eq(
+        script.cues.some((cue) => cue.display),
+        false,
+        `bilingual script: ${name}没有展示结构`,
+      );
+      eq(
+        script.bilingual,
+        undefined,
+        `bilingual script: ${name}不算双语交付物`,
+      );
+      eq(script.unresolved, [], `bilingual script: ${name}没有未定位的行`);
+    }
+  }
+
+  // 归属：所有交付路径（含第二格式与 tempFinalSubtitleFile）才算双语交付物
+  {
+    const vtt = path.join(dir, 'episode.zh-en.vtt');
+    const tempFinal = path.join(dir, 'tmp', 'episode.final.srt');
+    const tempSource = path.join(dir, 'tmp', 'episode.source.srt');
+    const sourceDelivery = path.join(dir, 'episode.en.srt');
+    const { meta } = sidecarOf('translateAndSource', [], {
+      translatedSubtitleFiles: [delivered, vtt],
+      tempFinalSubtitleFile: tempFinal,
+      tempSrtFile: tempSource,
+      sourceSubtitleFiles: [sourceDelivery],
+    });
+    for (const file of [delivered, vtt, tempFinal]) {
+      eq(
+        bilingualContentType(meta, file),
+        'translateAndSource',
+        `bilingual script: ${path.basename(file)} 是双语交付物`,
+      );
+    }
+    for (const file of [
+      meta.targetFile!,
+      meta.sourceFile!,
+      tempSource,
+      sourceDelivery,
+      path.join(dir, 'other.srt'),
+    ]) {
+      eq(
+        bilingualContentType(meta, file),
+        undefined,
+        `bilingual script: ${path.basename(file)} 不是双语交付物`,
+      );
+    }
+    eq(
+      bilingualContentType(
+        { ...meta, translateContent: 'onlyTranslate' },
+        delivered,
+      ),
+      undefined,
+      'bilingual script: 纯译文交付不是双语',
+    );
+    eq(
+      bilingualContentType({ ...meta, translateContent: undefined }, delivered),
+      undefined,
+      'bilingual script: 交付内容未知时不猜',
+    );
+  }
+
+  // 生产环境的排版函数写出的交付字幕（组合方式与 ipcHandlers 的
+  // buildSubtitleFileContent 一致）：两种顺序 × 模板/两行布局 × 有无说话人名。
+  // 不管怎么折行、有没有名字前缀，都要定位到译文，导出时还能原样还原。
+  {
+    const pairs: Array<[string, string, string]> = [
+      ['en-zh', 'Hello there.', '你好。'],
+      [
+        'en-zh 长句',
+        'Hello there, welcome to our show, we have a lot to cover today.',
+        '你好，欢迎来到我们的节目，今天我们有很多内容要讲。',
+      ],
+      ['ja-en', 'こんにちは、元気ですか。', 'Hello, how are you?'],
+      ['de-fr', 'Guten Morgen, wie geht es dir?', 'Bonjour, comment vas-tu ?'],
+      [
+        'zh-ja',
+        '你好，欢迎收看。',
+        'こんにちは、ご覧いただきありがとうございます。',
+      ],
+      [
+        '多行双列',
+        'Hello there,\nwelcome to the show.',
+        '你好，\n欢迎来到节目。',
+      ],
+      ['多行原文', 'Hello there,\nwelcome.', '你好，欢迎。'],
+      ['原文译文相同', 'OK', 'OK'],
+      ['纯括号内容', '[Music]', '[音乐]'],
+    ];
+    const speakers = [{ id: 1, displayName: 'Alice', color: '#2563eb' }];
+    const failures: string[] = [];
+    let combinations = 0;
+    for (const content of [
+      'sourceAndTranslate',
+      'translateAndSource',
+    ] as const) {
+      for (const layout of ['template', 'two-line'] as const) {
+        for (const named of [false, true]) {
+          for (const [name, source, target] of pairs) {
+            combinations++;
+            const cue = { speakerIds: named ? [1] : [] };
+            const label = named
+              ? `${prefixTextWithSpeakerNames('', cue, speakers)} `
+              : '';
+            const text =
+              layout === 'two-line'
+                ? layoutSubtitleColumns(
+                    source,
+                    target,
+                    content,
+                    { subtitleLayout: 'two-line', subtitleLineWidth: 42 },
+                    label,
+                  )
+                : prefixTextWithSpeakerNames(
+                    renderTemplate(CONTENT_TEMPLATES[content], {
+                      sourceContent: source,
+                      targetContent: target,
+                    }).replace(/\n+$/, ''),
+                    cue,
+                    speakers,
+                  );
+            const script = resolveDubbingScript(
+              delivered,
+              parsed([text]),
+              sidecarOf(content, [{ source, target }]),
+            );
+            const spoken = script.cues[0].text;
+            // 说话人名写在整段文本之前：译文在前时它属于译文行，否则不属于。
+            const expected =
+              (content === 'translateAndSource' ? label : '') + target;
+            const restored = composeDisplayText({
+              text: spoken,
+              display: script.cues[0].display,
+            });
+            if (
+              script.unresolved.length ||
+              spoken.replace(/\s+/g, '') !== expected.replace(/\s+/g, '') ||
+              restored !== text
+            )
+              failures.push(
+                `${content} / ${layout} / ${named ? '带说话人名' : '无说话人名'} / ${name}`,
+              );
+          }
+        }
+      }
+    }
+    eq(combinations, 72, 'bilingual script: 生产排版的组合数');
+    eq(
+      failures,
+      [],
+      'bilingual script: 生产排版写出的双语字幕都能定位译文并原样还原',
+    );
+  }
+
+  // 顺延字幕展示文本：没改过原样还原，改过只替换译文行
+  {
+    const display = { lines: ['Hello there.', '你好。'], from: 1, to: 2 };
+    eq(
+      composeDisplayText({ text: '你好。', display }),
+      'Hello there.\n你好。',
+      'display: 未编辑时还原交付字幕的双语',
+    );
+    eq(
+      composeDisplayText({ text: '您好。', display }),
+      'Hello there.\n您好。',
+      'display: 编辑后只替换译文行，原文行保留',
+    );
+    eq(
+      composeDisplayText({ text: '  ', display }),
+      'Hello there.',
+      'display: 译文被清空时只剩原文行',
+    );
+    eq(
+      composeDisplayText({ text: '你好。' }),
+      '你好。',
+      'display: 没有展示结构时取会话文本',
+    );
+    const multi = {
+      lines: ['Line one,', 'line two.', '你好，', '你好吗？'],
+      from: 2,
+      to: 4,
+    };
+    eq(
+      composeDisplayText({ text: '你好， 你好吗？', display: multi }),
+      'Line one,\nline two.\n你好，\n你好吗？',
+      'display: 多行译文未编辑时逐行原样还原',
+    );
+    eq(
+      composeDisplayText({ text: '新的译文', display: multi }),
+      'Line one,\nline two.\n新的译文',
+      'display: 多行译文编辑后合并成一行',
+    );
+    eq(
+      composeDisplayText({
+        text: '改',
+        display: { lines: ['你好。', 'Hello there.'], from: 0, to: 1 },
+      }),
+      '改\nHello there.',
+      'display: 译文在前时替换第一行',
+    );
+  }
+}
+
+// ── 双语交付物的 sidecar 归属：第二交付格式与 tempFinalSubtitleFile 也能认领 ──
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dub-bilingual-owner-'));
+  const managedRoot = path.join(root, 'proofread-data');
+  fs.mkdirSync(managedRoot, { recursive: true });
+  const files = {
+    primarySrt: path.join(root, 'episode.srt'),
+    secondVtt: path.join(root, 'episode.vtt'),
+    tempFinal: path.join(root, 'tmp', 'episode.final.srt'),
+    tempSource: path.join(root, 'tmp', 'episode.source.srt'),
+    sourceVtt: path.join(root, 'episode.en.vtt'),
+    pureTranslation: path.join(root, 'tmp', 'episode.zh.srt'),
+  };
+  const sidecarFile = path.join(managedRoot, 'episode.json');
+  fs.writeFileSync(
+    sidecarFile,
+    JSON.stringify({
+      version: 2,
+      speakers: [],
+      meta: {
+        createdAt: '2026-10-01T00:00:00.000Z',
+        updatedAt: '2026-10-01T00:00:00.000Z',
+        translateContent: 'sourceAndTranslate',
+        sourceFile: path.join(root, 'episode.en.srt'),
+        targetFile: files.pureTranslation,
+        finalTargetFile: files.primarySrt,
+        translatedSubtitleFiles: [files.primarySrt, files.secondVtt],
+        sourceSubtitleFiles: [
+          path.join(root, 'episode.en.srt'),
+          files.sourceVtt,
+        ],
+        tempSrtFile: files.tempSource,
+        tempFinalSubtitleFile: files.tempFinal,
+      },
+      cues: [
+        { id: '1', startMs: 0, endMs: 900, source: 'Hello', target: '你好' },
+      ],
+    }),
+  );
+  try {
+    setProofreadDataRoot(managedRoot);
+    for (const [name, file] of Object.entries(files)) {
+      eq(
+        findDubbingProofreadDataFile(file)?.filePath ?? null,
+        sidecarFile,
+        `sidecar discovery: ${name} 属于记录它的 sidecar`,
+      );
+    }
+    eq(
+      findDubbingProofreadDataFile(path.join(root, 'unrelated.srt')),
+      null,
+      'sidecar discovery: 无关字幕不被认领',
+    );
+  } finally {
+    setProofreadDataRoot(undefined);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

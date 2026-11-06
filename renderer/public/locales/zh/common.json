@@ -13,6 +13,7 @@
     "proofread": "校对",
     "compose": "合成",
     "dubbing": "配音",
+    "toolbox": "工具箱",
     "engines": "引擎",
     "translation": "翻译",
     "glossary": "词库",
@@ -20,8 +21,21 @@
     "settings": "设置"
   },
   "statusbar": {
+    "checking": "检测中",
+    "checkFailed": "状态检测失败",
+    "unverified": "服务已配置 · 连接未验证",
+    "connected": "连接已验证（5 分钟内）",
+    "failed": "连接失败",
+    "serviceConnected": "{{count}} 个服务连接已验证",
+    "serviceFailed": "服务连接异常",
     "engineReady": "引擎就绪",
-    "gpuPending": "待检测"
+    "gpuPending": "待检测",
+    "modelReady": "本地模型可用",
+    "modelMissing": "未安装本地模型",
+    "serviceConfigured": "云服务已配置",
+    "serviceMissing": "未配置云服务",
+    "gpuAccel": "GPU 加速",
+    "cpuMode": "CPU 模式"
   },
   "tasks": "任务",
   "modelManagement": "模型管理",
@@ -35,6 +49,7 @@
   "newVersionAvailable": "有新版本可用",
   "provider": {
     "autoFree": "自动免费翻译",
+    "youdaoFree": "有道免费翻译",
     "bingFree": "必应免费翻译",
     "googleFree": "谷歌免费翻译",
     "baidu": "百度翻译",
@@ -124,6 +139,8 @@
   "downloading": "下载中",
   "confirmDeleteModel": "确认删除该模型？",
   "deleteModelDesc": "删除之后，如果您需要再次使用该模型，需要重新下载。",
+  "deleteModelFolders": "将从磁盘删除以下目录：",
+  "deleteModelSharedNote": "如果某个目录与其他 HuggingFace 软件共用，对方也将无法再使用这个模型。",
   "cancel": "取消",
   "delete": "删除",
   "download": "下载",
@@ -191,6 +208,59 @@
     "checkUpdates": "检查更新",
     "reportIssue": "反馈问题"
   },
+  "diagnostics": {
+    "action": "导出诊断包",
+    "title": "导出诊断包",
+    "description": "把最近的日志、崩溃记录和环境信息打包成一个 zip，方便排查闪退等问题。文件只保存在你选择的位置，不会自动上传。",
+    "loading": "正在读取…",
+    "contentsTitle": "包里会有什么",
+    "logs": "最近 {{count}} 天的应用日志（约 {{size}}）",
+    "logsNone": "暂无应用日志",
+    "events": "{{count}} 条崩溃记录",
+    "eventsNone": "暂无崩溃记录",
+    "dumpSummaries": "{{count}} 份崩溃转储的摘要（异常码、故障模块、CPU 型号）",
+    "dumpSummariesNone": "暂无崩溃转储",
+    "system": "系统、CPU 指令集、显卡与加速环境",
+    "settings": "部分设置（不含 API Key 与服务商配置，路径只说明是否自定义）",
+    "privacy": "日志中的用户目录已替换为 ~，API Key 已脱敏。日志里仍可能出现文件名等信息，发给他人前可以先解压检查。",
+    "rawDumps": "附带原始崩溃转储（{{count}} 个，共 {{size}}）",
+    "rawDumpsWarning": "原始转储可能包含崩溃时的内存片段，默认不包含。仅在开发者要求时勾选。",
+    "crashReporterOff": "崩溃转储记录已被环境变量关闭，不会产生新的转储。",
+    "export": "导出",
+    "exporting": "正在导出…",
+    "doneTitle": "诊断包已导出",
+    "doneDesc": "文件大小 {{size}}。请把 zip 发给开发者，或在 GitHub 反馈问题时拖进去上传。",
+    "warnings": "有 {{count}} 项信息没能收集到，其余内容已正常导出。",
+    "reveal": "在文件夹中显示",
+    "reportIssue": "在 GitHub 反馈问题",
+    "close": "关闭",
+    "failed": "导出失败：{{error}}",
+    "previousRun": {
+      "title": "上次运行似乎意外结束了",
+      "description": "找到了崩溃记录。导出诊断包发给开发者，能帮助定位原因；文件不会自动上传。",
+      "descriptionDetail": "找到了崩溃记录（{{detail}}）。导出诊断包发给开发者，能帮助定位原因；文件不会自动上传。",
+      "action": "导出诊断包",
+      "suppressedFamily": "内置语音识别加速包已被停用（这台电脑的 CPU 可能缺少所需的指令集）。请改用云端语音识别，或在“GPU 加速”设置中重新尝试。",
+      "suppressedBackends": "{{backends}} 加速后端已被自动停用，转写会改用其他方式。可在“GPU 加速”设置中重新尝试。",
+      "listSeparator": "、"
+    },
+    "probe": {
+      "title": "Whisper 转写诊断",
+      "description": "请先暂停其他转写任务。使用内置短音频和已安装模型，单独测试 Vulkan / CPU 或 VAD 开关。每次测试最多 3 分钟，不会修改加速设置。",
+      "unavailable": "需要已安装的 whisper.cpp 模型及 Vulkan 或 CPU 加速包。",
+      "model": "测试模型",
+      "backend": "测试后端",
+      "vad": "启用语音活动检测（VAD）",
+      "run": "运行测试",
+      "running": "正在测试，可随时取消……",
+      "completed": "测试完成。",
+      "error": "测试返回错误。",
+      "exited": "测试进程异常结束。",
+      "timeout": "测试超时。",
+      "cancelled": "测试已取消。",
+      "saved": "结果已保存，导出诊断包即可附上最近 6 次测试记录。"
+    }
+  },
   "faq": {
     "title": "常见问题",
     "macDamagedQ": "macOS 提示「应用程序已损坏，无法打开」？",
@@ -250,6 +320,7 @@
     "groupTasks": "任务页",
     "groupEditor": "校对编辑器",
     "commandPalette": "命令面板",
+    "toggleAssistant": "展开 / 收起 AI 助手",
     "openSettings": "打开设置",
     "showShortcuts": "快捷键速查",
     "importFiles": "导入文件",
@@ -318,6 +389,46 @@
     "sampleProjectName": "示例 · 第一个字幕",
     "sampleFailed": "示例任务创建失败，请重试或手动导入文件"
   },
+  "draftRecovery": {
+    "readFailedTitle": "草稿无法读取",
+    "readFailedDescription": "草稿数据损坏或本地存储暂时不可用，原始数据已保留。可重试读取，或明确放弃这份草稿。",
+    "retryRead": "重试读取",
+    "title": "恢复未保存的工作？",
+    "description": "检测到此工作的未保存草稿，恢复后可以继续编辑。",
+    "restore": "恢复草稿",
+    "discard": "放弃草稿",
+    "storageFailed": "草稿存储失败，请在关闭应用前保存当前工作。",
+    "wizardStorageFailed": "草稿未写入本地存储，重启后可能丢失。请释放存储空间后重试保存。"
+  },
+  "providerPersistence": {
+    "loading": "正在读取服务配置…",
+    "loadFailed": "服务配置读取失败，暂不可修改。",
+    "saveFailed": "服务配置未保存。",
+    "repair": "请检查配置目录权限与可用空间，修复后重试。当前修改仍保留。",
+    "conflict": "服务配置已被另一个窗口修改。当前输入仍保留；请核对后放弃本页修改并重新读取。",
+    "reload": "重新读取",
+    "discardReload": "放弃修改并重新读取",
+    "discardDescription": "这将放弃本页未保存的服务配置，并读取磁盘上的最新配置。"
+  },
+  "saveState": {
+    "retry": "重试保存",
+    "idle": "",
+    "dirty": "未保存的修改",
+    "saving": "保存中...",
+    "saved": "已保存",
+    "save_error": "保存失败",
+    "details": "错误详情"
+  },
+  "navigationGuard": {
+    "discardFailed": "草稿未能放弃，请检查页面错误详情后重试，当前修改仍保留。",
+    "title": "未保存的修改",
+    "desc": "当前页面有尚未保存的内容，离开将丢失未保存的改动。是否先保存？",
+    "keepEditing": "留在当前页",
+    "discardAndLeave": "放弃并离开",
+    "saveAndLeave": "保存并离开",
+    "saving": "保存中...",
+    "changedDuringSave": "保存期间又有内容发生修改。请再次保存，或留在当前页检查。"
+  },
   "undo": "撤销",
   "checkingForUpdates": "正在检查更新…",
   "alreadyLatestVersion": "已是最新版本",
@@ -334,6 +445,12 @@
   "cpuModeBadge": "CPU 模式",
   "cpuModeTip": "当前使用 CPU 转写，点击查看加速选项",
   "coarseTimeline": "粗粒度时间轴",
+  "gateRelease": {
+    "pending": "正在确认放行结果",
+    "failed": "未能确认放行结果",
+    "details": "详细信息",
+    "retry": "重试放行"
+  },
   "engineBadge": {
     "builtin": "Whisper.cpp",
     "fasterWhisper": "Faster-Whisper",
@@ -343,5 +460,104 @@
     "parakeet": "Parakeet",
     "localCli": "本地命令",
     "cloud": "云端听写"
+  },
+  "assistant": {
+    "title": "AI 助手",
+    "new": "新建会话",
+    "close": "收起助手",
+    "history": "会话历史",
+    "delete": "删除会话",
+    "deleteHint": "只删除聊天记录，创作任务会保留。",
+    "service": "AI 服务",
+    "chooseService": "选择兼容的 AI 服务",
+    "configure": "前往翻译服务配置支持工具调用的 AI 模型",
+    "you": "你",
+    "line": "第 {{index}} 行",
+    "draft": "未保存",
+    "context": "引用当前上下文",
+    "hasErrors": "含报错信息",
+    "input": "给 AI 助手的消息",
+    "placeholder": "发送消息，或拖入文件…",
+    "inputHint": "Enter 发送 · Shift+Enter 换行 · {{shortcut}} 展开/收起助手",
+    "send": "发送",
+    "stop": "停止",
+    "working": "正在处理…",
+    "progress": "处理进度",
+    "viewTask": "查看任务",
+    "cancelTask": "取消任务",
+    "welcome": "让 AI 协助你的创作",
+    "description": "随时提问、上传文件，或结合工作台完成创作。字幕修改保留为可撤销草稿。",
+    "exampleEdit": "把当前这一句改得更口语化",
+    "exampleTask": "把当前视频转成中英双语字幕并合成",
+    "exampleModels": "查看我安装了哪些模型",
+    "interrupted": "本轮已停止。已提交的任务会继续运行，可在任务卡中取消。",
+    "limited": "已达到本轮执行上限。发送“继续”可接着处理，已有任务会保留。",
+    "errorHint": "本轮未能完成。请检查服务和模型是否支持工具调用，或根据下方错误调整后重试。",
+    "status": {
+      "running": "执行中",
+      "completed": "已完成",
+      "failed": "失败",
+      "interrupted": "已中断",
+      "queued": "排队中",
+      "paused": "已暂停",
+      "cancelling": "取消中",
+      "cancelled": "已取消",
+      "review": "待审核"
+    },
+    "tools": {
+      "discover_tools": "查找可用工具",
+      "load_tools": "加载工具",
+      "context": "读取当前上下文",
+      "editor_read": "读取字幕",
+      "editor_edit": "修改字幕草稿",
+      "editor_locate": "定位字幕",
+      "editor_save": "保存字幕",
+      "capture_screen": "截取界面"
+    },
+    "captureScreen": "截取当前界面",
+    "screenshotPreview": "工作区截图",
+    "openScreenshot": "查看文件",
+    "screenshotFailed": "截取界面失败，请重试。",
+    "resize": "拖动调整助手宽度",
+    "closeHistory": "收起会话历史",
+    "emptyHistory": "还没有会话",
+    "attach": "添加文件",
+    "removeAttachment": "移除 {{name}}",
+    "dropFiles": "松开以添加文件",
+    "attachmentHint": "音视频、字幕、参考文稿、JSON 文件只发送本地路径；图片发送实际内容，限 5 MB，需视觉模型。最多 8 个文件。",
+    "attachmentLimit": "每条消息最多添加 8 个文件。",
+    "attachmentFailed": "无法添加文件，请重试或选择本地文件。",
+    "analyzeAttachments": "请分析这些附件。",
+    "attachmentKind": {
+      "audio": "音频 · 仅引用本地路径",
+      "video": "视频 · 仅引用本地路径",
+      "image": "需要视觉模型",
+      "file": "仅引用本地路径"
+    },
+    "attachmentErrors": {
+      "ATTACHMENT_TOO_LARGE": "图片限 5 MB。",
+      "ATTACHMENT_NOT_FILE": "请选择文件，暂不支持文件夹。",
+      "unreadable": "无法访问文件，请确认文件仍在本地。",
+      "ATTACHMENT_UNSUPPORTED": "不支持此格式。请添加音视频、字幕、TXT／MD 文稿、JSON 文件或图片。"
+    }
+  },
+  "cpuAdvisory": {
+    "missing": {
+      "title": "这台电脑的 CPU 可能不支持内置语音识别",
+      "description": "内置语音识别需要 CPU 支持 {{features}} 指令集，但没有在这台电脑上检测到。继续使用可能导致应用闪退。建议改用云端语音识别或其他引擎。",
+      "legacyPack": {
+        "description": "也可以尝试实验性的「旧 CPU 兼容包」（只需要 AVX 指令集，但速度明显更慢）：下载后，在「引擎 → whisper.cpp（内置）→ GPU 加速 · 管理 / 高级 → 自定义加速包」中导入。",
+        "action": "查看下载与导入说明"
+      },
+      "customAddon": {
+        "title": "已启用自定义加速包",
+        "description": "这台电脑的 CPU 缺少内置加速包需要的 {{features}} 指令集。请确认导入的是「旧 CPU 兼容包」（文件名带 -avx）；如果转写时仍然闪退，请清除自定义加速包，改用云端语音识别或其他引擎。"
+      }
+    },
+    "translated": {
+      "title": "当前通过转译方式运行",
+      "descriptionMac": "这是 Intel（x64）版本，正在 Apple 芯片上通过 Rosetta 转译运行：速度较慢，且转译环境不一定提供内置语音识别需要的全部指令集，可能导致闪退。建议改用 Apple 芯片（arm64）版本。",
+      "descriptionOther": "这是 x64 版本，正在 ARM 设备上通过转译运行：速度较慢，且转译环境不一定提供内置语音识别需要的全部指令集，可能导致闪退。建议改用云端语音识别或其他引擎。"
+    }
   }
 }

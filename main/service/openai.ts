@@ -1,4 +1,6 @@
 import OpenAI from 'openai';
+import http from 'http';
+import https from 'https';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { TranslationResultSchema } from '../translate/constants/schema';
 import { ParameterProcessor } from '../helpers/parameterProcessor';
@@ -8,6 +10,7 @@ import {
   throwIfSignalCancelled,
 } from '../helpers/taskContext';
 import type { TranslationRequestOptions } from '../translate/types';
+import { toSdkRequestOptions } from './sdkRequestOptions';
 import {
   isStructuredOutputUnsupportedError,
   resolveStructuredOutputMode,
@@ -45,7 +48,7 @@ type OpenAIProvider = {
  * - 去除误粘的 /chat/completions 后缀（SDK 会自动拼接）
  * - 对模型详情页 / 模型端点（/models、/models/xxx）给出可读报错
  */
-function normalizeOpenAIBaseURL(apiUrl?: string): string {
+export function normalizeOpenAIBaseURL(apiUrl?: string): string {
   const trimmedUrl = apiUrl?.trim();
   if (!trimmedUrl) {
     throw new Error('OpenAI-compatible API base URL is required');
@@ -238,7 +241,7 @@ async function callWithJsonSchema(
           },
         },
       },
-      { signal: options?.signal },
+      toSdkRequestOptions(options),
     )) as OpenAI.Chat.Completions.ChatCompletion;
     throwIfSignalCancelled(options?.signal);
     options?.onResponseMeta?.(extractOpenAIResponseMeta(completion));
@@ -256,7 +259,7 @@ async function callWithJsonSchema(
         'translation',
       ),
     },
-    { signal: options?.signal },
+    toSdkRequestOptions(options),
   );
 
   console.log('JSON Schema completion:', completion?.choices);
@@ -289,9 +292,10 @@ async function callWithStandardAPI(
 
   await options?.beforeRequest?.();
   throwIfSignalCancelled(options?.signal);
-  const completion = (await openai.chat.completions.create(requestParams, {
-    signal: options?.signal,
-  })) as OpenAI.Chat.Completions.ChatCompletion;
+  const completion = (await openai.chat.completions.create(
+    requestParams,
+    toSdkRequestOptions(options),
+  )) as OpenAI.Chat.Completions.ChatCompletion;
   console.log('Standard completion:', completion?.choices);
   throwIfSignalCancelled(options?.signal);
   options?.onResponseMeta?.(extractOpenAIResponseMeta(completion));
@@ -312,7 +316,6 @@ export async function translateWithOpenAI(
     throw new Error('OpenAI API key is required');
   }
   const normalizedApiUrl = normalizeOpenAIBaseURL(provider.apiUrl);
-  console.log('translateWithOpenAI', text, provider);
   try {
     throwIfSignalCancelled(options?.signal);
     console.log('Provider config:', {
@@ -329,6 +332,10 @@ export async function translateWithOpenAI(
       ...(options?.beforeRequest ? { maxRetries: 0 } : {}),
       baseURL: normalizedApiUrl,
       apiKey: provider.apiKey,
+      // The SDK's own default agent bypasses the application's proxy settings.
+      httpAgent: normalizedApiUrl.startsWith('https:')
+        ? https.globalAgent
+        : http.globalAgent,
       defaultHeaders: {
         ...customHeaders, // Apply custom headers from parameter processor
       },
@@ -349,10 +356,7 @@ export async function translateWithOpenAI(
           processedParams.validationErrors.length > 0
             ? processedParams.validationErrors
             : 'none',
-        finalBodyParams:
-          Object.keys(processedParams.body).length > 0
-            ? processedParams.body
-            : 'none',
+        bodyParameterKeys: Object.keys(processedParams.body),
       });
     } else {
       console.log('No custom parameters configured for this provider');
@@ -390,10 +394,7 @@ export async function translateWithOpenAI(
                 model: baseParams.model,
                 temperature: baseParams.temperature,
                 structuredOutputMode: mode,
-                customHeaders:
-                  Object.keys(customHeaders).length > 0
-                    ? customHeaders
-                    : 'none',
+                customHeaderNames: Object.keys(customHeaders),
               });
               return mode === 'json_schema'
                 ? callWithJsonSchema(openai, baseParams, options)

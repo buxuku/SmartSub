@@ -1,3 +1,4 @@
+import type { ActivityObserver, ActivityUnit } from '../../types/taskActivity';
 /**
  * 字幕批量校正共享服务（openspec: add-ai-subtitle-refine D7）。
  *
@@ -29,12 +30,13 @@ import { validateAnchoredBatch } from '../translate/utils/alignment';
 import { BATCH_SCHEMA_MAX_PROPERTIES } from '../translate/constants/schema';
 import {
   buildGlossaryPromptBlock,
+  describeGlossaryContext,
   injectGlossaryPromptBlock,
   matchGlossaryEntries,
   selectGlossaryPromptEntries,
 } from '../glossary/core';
 import {
-  getActiveGlossaryResolution,
+  getTaskGlossaryResolution,
   logGlossaryConflicts,
   logGlossaryMatches,
 } from './glossaryManager';
@@ -63,6 +65,8 @@ export interface CorrectionItemOutcome {
 }
 
 export interface CorrectionParams {
+  onActivity?: ActivityObserver;
+  projectId?: string;
   items: CorrectionItem[];
   provider: Provider;
   translator: TranslatorFunction;
@@ -76,10 +80,14 @@ export interface CorrectionParams {
   maxRetries?: number;
   signal?: AbortSignal;
   useGlossary?: boolean;
+  /** 本次任务选用词库；undefined = 回落全部已启用。 */
+  glossaryIds?: string[];
   /** 术语冲突/命中日志的场景标签（如「校对页批量 AI 优化」/「AI 字幕校正」）。 */
   glossaryLabel?: string;
   /** anchored：低置信词标注（whisper token p 低于阈值的词，辅助定点修正）。 */
   suspectWords?: string[];
+  fillerPolicy?: 'remove-hesitations' | 'preserve';
+  onResult?: (result: CorrectionItemOutcome) => void;
   /** 每批开始前回调（与既有校对台进度事件语义一致：processedCount 为已完成数）。 */
   onBatchProgress?: (info: {
     processedCount: number;
@@ -121,6 +129,20 @@ const ANCHORED_CORRECTION_SYSTEM_PROMPT = `You are a professional subtitle proof
 </rules>
 
 Output format: return ONLY a valid JSON object. Keys must be exactly the input subtitle IDs. Each value is an object {"src": <exact copy of the input text>, "tr": <the corrected text>}. No markdown, no explanations.`;
+
+function anchoredCorrectionPrompt(
+  policy: CorrectionParams['fillerPolicy'],
+): string {
+  if (!policy) return ANCHORED_CORRECTION_SYSTEM_PROMPT;
+  const instruction =
+    policy === 'preserve'
+      ? 'Preserve all interjections, hesitation words, repetitions and non-verbal markers that express emotion, hesitation, emphasis or character voice; do not remove them for concision'
+      : 'Remove only semantically empty hesitation fillers (um, uh, 呃, 嗯, 啊, 就是) when context confirms they are speech disfluencies. Preserve meaningful agreement, answers, emotional interjections, emphasis and technical terminology; do not delete words by a simple word list';
+  return ANCHORED_CORRECTION_SYSTEM_PROMPT.replace(
+    'Remove hesitation filler words (um, uh, 呃, 嗯, 啊) and non-verbal markers',
+    instruction,
+  );
+}
 
 /** anchored 批次 schema：与 makeBatchSchema 同构（{src,tr}），description 换成校正语义。 */
 function makeCorrectionSchema(ids: string[]): Record<string, unknown> {
@@ -212,16 +234,21 @@ export async function runSubtitleCorrection(
   );
   const maxRetries = Math.max(0, params.maxRetries ?? 2);
   const echoEnabled = provider.echoAnchoring !== false;
+  const glossaryLabel = params.glossaryLabel || '字幕校正';
+  const glossaryContext = describeGlossaryContext(
+    glossaryLabel,
+    params.glossaryIds,
+  );
 
   // 术语表：调用方决定是否启用（校对台仅 translation 模式；管线校正恒开）。
   let glossaryEntries: Parameters<typeof matchGlossaryEntries>[0] = [];
   if (params.useGlossary) {
-    const resolution = getActiveGlossaryResolution();
+    const resolution = getTaskGlossaryResolution(
+      params.glossaryIds,
+      params.projectId,
+    );
     if (resolution) {
-      logGlossaryConflicts(
-        resolution.conflicts,
-        params.glossaryLabel || '字幕校正',
-      );
+      logGlossaryConflicts(resolution.conflicts, glossaryContext);
       glossaryEntries = resolution.entries;
     }
   }
@@ -248,7 +275,7 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
     : '';
   if (correctionTerms.length > 0) {
     logMessage(
-      `${params.glossaryLabel || '字幕校正'}: 注入 ${correctionTerms.length} 条术语原文标准写法（不含译文）`,
+      `${glossaryContext}: 注入 ${correctionTerms.length} 条术语原文标准写法（不含译文）`,
       'info',
     );
   }
@@ -264,7 +291,7 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
     status: CorrectionItemOutcome['status'],
     error?: string,
   ) => {
-    results.push({
+    const result: CorrectionItemOutcome = {
       id: item.id,
       index: item.index,
       source: item.source,
@@ -272,7 +299,9 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
       corrected,
       status,
       ...(error ? { error } : {}),
-    });
+    };
+    results.push(result);
+    params.onResult?.(result);
   };
 
   for (let i = 0; i < items.length; i += batchSize) {
@@ -302,17 +331,41 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
       glossaryBlock = buildGlossaryPromptBlock(glossarySelection.included);
       logGlossaryMatches(
         glossarySelection.included,
-        `${params.glossaryLabel || '字幕校正'} ${currentBatch}/${totalBatches}`,
+        describeGlossaryContext(
+          `${glossaryLabel} ${currentBatch}/${totalBatches}`,
+          params.glossaryIds,
+        ),
         glossarySelection.omittedCount,
       );
     }
 
+    const activity = (
+      phase: ActivityUnit['phase'],
+      extra: Partial<ActivityUnit> = {},
+    ) => {
+      if (!signal?.aborted)
+        params.onActivity?.({
+          phase: 'correcting',
+          completed: processedCount,
+          total: items.length,
+          unit: 'cues',
+          units: [{ id: currentBatch, phase, startedAt: Date.now(), ...extra }],
+        });
+    };
     let retryCount = 0;
     let batchDone = false;
     // anchored：大面积错位的整批重试独立于 maxRetries（对齐翻译框架 D7）。
     let alignmentRetryUsed = false;
 
     while (!batchDone && retryCount <= maxRetries) {
+      activity(alignmentRetryUsed && !retryCount ? 'retrying' : 'requesting', {
+        requestStartedAt: Date.now(),
+        ...(retryCount
+          ? { retry: retryCount, maxRetries, reason: 'request' as const }
+          : alignmentRetryUsed
+            ? { retry: 1, maxRetries: 1, reason: 'validation' as const }
+            : {}),
+      });
       if (signal?.aborted) {
         cancelled = true;
         break;
@@ -329,7 +382,11 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
             };
           });
 
-          let optimizePrompt = customPrompt || LEGACY_DEFAULT_BATCH_PROMPT;
+          let optimizePrompt =
+            customPrompt ||
+            (mode === 'transcript'
+              ? 'Correct transcription errors and punctuation in these {{sourceLanguage}} subtitles. Preserve meaning and wording. Do not translate. Return ONLY a JSON object with subtitle IDs as keys and corrected text as values.'
+              : LEGACY_DEFAULT_BATCH_PROMPT);
           optimizePrompt = optimizePrompt
             .replace(/\{\{sourceLanguage\}\}/g, sourceLanguage)
             .replace(/\{\{targetLanguage\}\}/g, targetLanguage);
@@ -366,27 +423,36 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
           );
 
           const parsedResponse = parseOptimizationResponse(responseText ?? '');
-          if (!parsedResponse || typeof parsedResponse !== 'object') {
+          if (
+            !parsedResponse ||
+            typeof parsedResponse !== 'object' ||
+            Array.isArray(parsedResponse)
+          ) {
             throw new Error('无法解析 AI 响应');
           }
           batch.forEach((item) => {
-            const optimized = parsedResponse[item.id];
-            if (optimized !== undefined) {
-              pushOutcome(
-                item,
-                typeof optimized === 'string'
-                  ? optimized
-                  : optimized?.target ||
-                      optimized?.translation ||
-                      String(optimized),
-                'success',
-              );
+            const optimized = Object.prototype.hasOwnProperty.call(
+              parsedResponse,
+              item.id,
+            )
+              ? parsedResponse[item.id]
+              : undefined;
+            const text =
+              typeof optimized === 'string'
+                ? optimized
+                : typeof optimized?.target === 'string'
+                  ? optimized.target
+                  : typeof optimized?.translation === 'string'
+                    ? optimized.translation
+                    : undefined;
+            if (text?.trim()) {
+              pushOutcome(item, text.trim(), 'success');
             } else {
               pushOutcome(
                 item,
                 item.target ?? '',
                 'skipped',
-                '未在响应中找到对应结果',
+                '响应未包含有效的非空字幕文本',
               );
             }
           });
@@ -412,7 +478,7 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
           const anchoredProvider = {
             ...provider,
             systemPrompt: injectGlossaryPromptBlock(
-              ANCHORED_CORRECTION_SYSTEM_PROMPT,
+              anchoredCorrectionPrompt(params.fillerPolicy),
               correctionTermsBlock,
             ),
             useJsonMode: provider.useJsonMode !== false,
@@ -466,6 +532,12 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
             validation.flagged.length > Math.ceil(batch.length / 3) &&
             !alignmentRetryUsed
           ) {
+            activity('retrying', {
+              retry: 1,
+              maxRetries: 1,
+              reason: 'validation',
+              requestStartedAt: Date.now(),
+            });
             alignmentRetryUsed = true;
             logMessage(
               `Correction batch ${currentBatch} misaligned ${validation.flagged.length}/${batch.length}, full-batch retry once`,
@@ -503,6 +575,12 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
             'warning',
           );
           try {
+            activity('interval', {
+              retry: retryCount,
+              maxRetries,
+              reason: 'request',
+              waitUntil: Date.now() + 1000 * retryCount,
+            });
             await waitForTaskDelay(1000 * retryCount, signal);
           } catch (delayError) {
             if (isTaskCancelledError(delayError)) {
@@ -530,6 +608,13 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
       }
     }
     if (cancelled) break;
+    params.onActivity?.({
+      phase: 'correcting',
+      completed: processedCount,
+      total: items.length,
+      unit: 'cues',
+      units: [],
+    });
   }
 
   return { results, cancelled, processedCount };

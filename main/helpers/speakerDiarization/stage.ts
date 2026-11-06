@@ -1,4 +1,6 @@
 import fs from 'fs';
+import path from 'path';
+import { atomicReplaceTextFile } from '../atomicFile';
 import type { IFiles, IFormData } from '../../../types';
 import {
   detectSubtitleFormatFromContent,
@@ -47,18 +49,18 @@ async function prepareSubtitleAnnotation(
 
 async function applySubtitleAnnotations(
   plans: SubtitleAnnotationPlan[],
+  signal?: AbortSignal,
 ): Promise<void> {
   const touched: SubtitleAnnotationPlan[] = [];
   try {
     for (const plan of plans) {
-      // 先记录再写，连当前文件的截断/写入错误也会进入回滚。
+      await atomicReplaceTextFile(plan.filePath, plan.annotated, { signal });
       touched.push(plan);
-      await fs.promises.writeFile(plan.filePath, plan.annotated, 'utf-8');
     }
   } catch (error) {
     for (const plan of touched.reverse()) {
       try {
-        await fs.promises.writeFile(plan.filePath, plan.original, 'utf-8');
+        await atomicReplaceTextFile(plan.filePath, plan.original);
       } catch (rollbackError) {
         logMessage(
           `speaker diarization rollback failed (${plan.filePath}): ${rollbackError}`,
@@ -91,6 +93,7 @@ export async function runSpeakerDiarizationStage(input: {
   signal?: AbortSignal;
 }): Promise<SpeakerDiarizationStageResult> {
   const { file, formData, signal } = input;
+  if (signal?.aborted) throw new TaskCancelledError();
   if (formData?.speakerDiarization !== true) {
     return { applied: false, embedded: false, reason: 'disabled' };
   }
@@ -110,10 +113,11 @@ export async function runSpeakerDiarizationStage(input: {
   }
   if (signal?.aborted) throw new TaskCancelledError();
 
-  const models = getSpeakerDiarizationModelFiles();
-  const runtime = getSpeakerDiarizationRuntime();
+  let runtime: ReturnType<typeof getSpeakerDiarizationRuntime>;
   let request: ReturnType<typeof runtime.diarize>;
   try {
+    const models = getSpeakerDiarizationModelFiles();
+    runtime = getSpeakerDiarizationRuntime();
     request = runtime.diarize({
       audioFile: file.tempAudioFile,
       segmentationModel: models.segmentation,
@@ -124,6 +128,9 @@ export async function runSpeakerDiarizationStage(input: {
       numThreads: 2,
     });
   } catch (error) {
+    if (signal?.aborted || (error as { code?: string })?.code === 'cancelled') {
+      throw new TaskCancelledError();
+    }
     logMessage(
       `speaker diarization could not start; subtitle kept unchanged (${file.fileName}): ${error}`,
       'warning',
@@ -133,6 +140,7 @@ export async function runSpeakerDiarizationStage(input: {
   const { id, result } = request;
   const onAbort = () => runtime.cancel(id);
   signal?.addEventListener('abort', onAbort, { once: true });
+  if (signal?.aborted) onAbort();
 
   let segments: SpeakerDiarizationSegment[];
   try {
@@ -174,7 +182,37 @@ export async function runSpeakerDiarizationStage(input: {
       file.translatedSrtFile,
       file.tempTranslatedSrtFile,
     ].filter((value): value is string => Boolean(value));
-    const uniquePaths = Array.from(new Set(paths));
+    const protectedPaths = [file.filePath, file.providedSubtitlePath].filter(
+      Boolean,
+    ) as string[];
+    const protectedInodes = new Set<string>();
+    for (const protectedPath of protectedPaths) {
+      const stat = await fs.promises.stat(protectedPath);
+      protectedInodes.add(`${stat.dev}:${stat.ino}`);
+    }
+    const uniquePaths: string[] = [];
+    const seen = new Set<string>();
+    let protectedSubtitleFound = false;
+    for (const candidate of paths) {
+      if (!fs.existsSync(candidate)) continue;
+      const stat = await fs.promises.stat(candidate);
+      const identity = `${stat.dev}:${stat.ino}`;
+      if (
+        protectedInodes.has(identity) ||
+        protectedPaths.some(
+          (input) => path.resolve(input) === path.resolve(candidate),
+        )
+      ) {
+        protectedSubtitleFound = true;
+        continue;
+      }
+      // Resolve symlinks, but update each owned hardlink: atomic rename detaches it.
+      const resolved = await fs.promises.realpath(candidate);
+      if (!seen.has(resolved)) {
+        seen.add(resolved);
+        uniquePaths.push(resolved);
+      }
+    }
     const plans: SubtitleAnnotationPlan[] = [];
     for (const subtitlePath of uniquePaths) {
       const plan = await prepareSubtitleAnnotation(subtitlePath, segments);
@@ -190,10 +228,12 @@ export async function runSpeakerDiarizationStage(input: {
         applied: true,
         embedded: false,
         segments,
-        reason: 'subtitle-unavailable',
+        reason: protectedSubtitleFound
+          ? 'imported-subtitle-protected'
+          : 'subtitle-unavailable',
       };
     }
-    await applySubtitleAnnotations(plans);
+    await applySubtitleAnnotations(plans, signal);
     logMessage(
       `speaker diarization embedded labels in ${plans.length} subtitle file(s), ${segments.length} speaker segment(s): ${file.fileName}`,
       'info',

@@ -1,4 +1,5 @@
-import { ipcMain, BrowserWindow, dialog } from 'electron';
+import { ipcMain } from '../automation/handlers';
+import { BrowserWindow, dialog } from 'electron';
 import { logMessage } from './storeManager';
 import {
   getCudaEnvironment,
@@ -31,14 +32,16 @@ import {
 import {
   fetchRemoteVersions,
   checkAllUpdates,
-  getRemoteVersionInfo,
   getPackageDownloadSize,
 } from './addonVersions';
+import { resetSuppressions, snapshotBreaker } from './crash/nativeGuard';
+import { getCpuAdvisory } from './crash/cpuFeaturesService';
 import type {
   AddonVariant,
   DownloadSource,
   DownloadConfig,
 } from '../../types/addon';
+import type { SuppressedBackendInfo } from '../../types/diagnostics';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -93,7 +96,7 @@ export function registerAddonIpcHandlers(): void {
     },
   );
 
-  // 获取当前生效的后端（最近一次加载结果）
+  // 获取当前会话实际加载的后端；重启或切换后未加载时为 null
   ipcMain.handle('get-active-backend', async () => {
     try {
       return getActiveBackend();
@@ -158,13 +161,13 @@ export function registerAddonIpcHandlers(): void {
         // 异步启动下载，不等待完成
         downloader
           .download(config.source, config.variant, config.type)
-          .then(async () => {
+          .then(({ provenance }) => {
             // 下载完成后注册加速包并自动选中
-            const remoteInfo = await getRemoteVersionInfo(config.variant);
             registerInstalledAddon(
               config.variant,
-              remoteInfo?.version ||
-                new Date().toISOString().split('T')[0].replace(/-/g, '.'),
+              provenance.releaseVersion,
+              provenance.packageSha256,
+              provenance,
             );
             // 自动选中刚下载的版本
             selectAddonVersion(config.variant);
@@ -209,6 +212,32 @@ export function registerAddonIpcHandlers(): void {
       logMessage(`Error removing addon: ${error}`, 'error');
       return { success: false, error: String(error) };
     }
+  });
+
+  // CPU 指令集预警：只有探测明确缺失才会有 missing；探测不到一律视为“不知道”
+  ipcMain.handle('get-cpu-advisory', () => getCpuAdvisory());
+
+  // 因崩溃（或连续异常退出）被自动停用的后端：设置页展示，并允许手动重新尝试
+  ipcMain.handle('get-suppressed-backends', (): SuppressedBackendInfo[] =>
+    snapshotBreaker().suppressions.map((s) => ({
+      scope: s.scope,
+      key: s.key,
+      reason: s.reason,
+      evidence: s.evidence,
+      since: s.since,
+      ...(s.detail ? { detail: s.detail } : {}),
+    })),
+  );
+
+  ipcMain.handle('reset-suppressed-backends', () => {
+    const cleared = resetSuppressions();
+    // 下一次转写要重新解析候选，否则缓存里的降级结果会一直生效
+    clearAddonLoadCache();
+    logMessage(
+      `Suppressed whisper backends reset by the user (${cleared} entries cleared)`,
+      'info',
+    );
+    return cleared;
   });
 
   // 检查加速包更新

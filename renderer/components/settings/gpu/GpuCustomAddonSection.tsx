@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import { openUrl } from '@/lib/utils';
+import { LEGACY_CPU_PACK_URL } from '@/lib/legacyCpuPack';
 
 interface GpuCustomAddonSectionProps {
   customAddonPath: string | null;
@@ -33,22 +34,36 @@ const GpuCustomAddonSection: React.FC<GpuCustomAddonSectionProps> = ({
             {t('gpuAcceleration.customAddonPath')}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() =>
-            openUrl('https://github.com/buxuku/whisper.cpp/releases/tag/latest')
-          }
-          className="inline-flex items-center gap-1 text-xs text-primary hover:underline cursor-pointer"
-        >
-          <ExternalLink className="w-3 h-3" />
-          {t('gpuAcceleration.downloadPackageUrl')}
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+          <button
+            type="button"
+            onClick={() =>
+              openUrl(
+                'https://github.com/buxuku/whisper.cpp/releases/tag/latest',
+              )
+            }
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline cursor-pointer"
+          >
+            <ExternalLink className="w-3 h-3" />
+            {t('gpuAcceleration.downloadPackageUrl')}
+          </button>
+          {/* 标准包要求 CPU 支持 AVX2；老 CPU 的兼容包在另一个发布页，两个链接不能混用 */}
+          <button
+            type="button"
+            onClick={() => openUrl(LEGACY_CPU_PACK_URL)}
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline cursor-pointer"
+          >
+            <ExternalLink className="w-3 h-3" />
+            {t('gpuAcceleration.legacyCpuPackUrl')}
+          </button>
+        </div>
       </div>
       <div className="flex items-start gap-2 p-2.5 bg-muted/50 rounded-md">
         <Info className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
         <div className="text-[11px] text-muted-foreground space-y-1">
           <p>{t('gpuAcceleration.customAddonTip')}</p>
           <p>{t('gpuAcceleration.customAddonDllTip')}</p>
+          <p>{t('gpuAcceleration.customAddonLegacyTip')}</p>
         </div>
       </div>
       {customAddonPath ? (

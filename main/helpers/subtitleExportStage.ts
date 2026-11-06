@@ -4,7 +4,10 @@ import type { IFiles, IFormData } from '../../types';
 import { resolveSubtitleOutputFormats } from '../../types/subtitleOutput';
 import { atomicReplaceTextFile } from './atomicFile';
 import { ensureTempDir, getMd5 } from './fileUtils';
-import { updateProofreadDataOutputs } from './proofreadData';
+import {
+  updateProofreadDataOutputs,
+  readProofreadDataFile,
+} from './proofreadData';
 import { logMessage } from './storeManager';
 import {
   writeSubtitleDeliverables,
@@ -36,6 +39,27 @@ export async function runSubtitleExportStage(
     requests.push({ kind: 'source', srtPath: sourceSrtPath, formats });
   if (translationActive && translatedSrtPath)
     requests.push({ kind: 'target', srtPath: translatedSrtPath, formats });
+  if (config.subtitleLayout === 'two-line') {
+    for (const request of requests) {
+      request.layout = {
+        subtitleLayout: config.subtitleLayout,
+        subtitleLineWidth: config.subtitleLineWidth,
+      };
+      if (
+        request.kind === 'target' &&
+        config.translateContent !== 'onlyTranslate'
+      ) {
+        if (!file.proofreadDataFile)
+          throw new Error(
+            'Bilingual layout requires source and target metadata',
+          );
+        request.bilingual = (
+          await readProofreadDataFile(file.proofreadDataFile)
+        ).cues;
+        request.contentType = config.translateContent;
+      }
+    }
+  }
   const outputs = await writeSubtitleDeliverables(
     requests,
     [

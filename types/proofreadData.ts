@@ -43,9 +43,18 @@ export interface ProofreadDataMeta extends SubtitleOutputFiles {
   targetLanguage?: string;
   translateContent?: string;
   outputFormat?: string;
+  subtitleLayout?: 'original' | 'two-line';
+  subtitleLineWidth?: number;
+  /** Apply only to rendered deliveries; editable canonical text retains punctuation. */
+  removeSourceChinesePunctuation?: boolean;
+  removeTargetChinesePunctuation?: boolean;
   sourceFile?: string;
   targetFile?: string;
   finalTargetFile?: string;
+  /** 任务选用词库 id；undefined = 回落全部已启用；[] = 明确不用词库 */
+  glossaryIds?: string[];
+  /** 本集通读摘要；缺省表示未生成 */
+  episodeSummary?: string;
 }
 
 export interface ProofreadDataCue {
@@ -245,6 +254,224 @@ export function normalizeSpeakerRoster(
   return roster;
 }
 
+interface TimedCueLike {
+  id?: unknown;
+  startMs?: unknown;
+  endMs?: unknown;
+}
+
+interface RawCue extends TimedCueLike {
+  source?: unknown;
+  target?: unknown;
+  speakerIds?: unknown;
+  primarySpeakerId?: unknown;
+}
+
+function isCueTime(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value);
+}
+
+/** Longest value copied into an error message, so a garbage field cannot flood the log. */
+const MAX_PREVIEW_LENGTH = 40;
+
+function previewValue(value: unknown): string {
+  let text: string;
+  try {
+    text = JSON.stringify(value) ?? String(value);
+  } catch {
+    text = Object.prototype.toString.call(value);
+  }
+  return text.length > MAX_PREVIEW_LENGTH
+    ? `${text.slice(0, MAX_PREVIEW_LENGTH - 3)}...`
+    : text;
+}
+
+/** "#3 (id=3, startMs=5200, endMs=5200)": enough to find the cue in the file. */
+function describeCue(input: unknown, index: number): string {
+  const position = `#${index + 1}`;
+  if (!input || typeof input !== 'object')
+    return `${position} (${previewValue(input)})`;
+  const cue = input as TimedCueLike;
+  return `${position} (id=${String(cue.id || index + 1)}, startMs=${previewValue(cue.startMs)}, endMs=${previewValue(cue.endMs)})`;
+}
+
+/** The first rule a persisted cue breaks, or undefined when it holds them all. */
+function cueProblem(input: unknown): string | undefined {
+  if (!input || typeof input !== 'object') return 'not an object';
+  const cue = input as RawCue;
+  if (!isCueTime(cue.startMs)) return 'startMs is not an integer';
+  if (!isCueTime(cue.endMs)) return 'endMs is not an integer';
+  if (cue.startMs < 0) return 'startMs is negative';
+  if (cue.endMs <= cue.startMs) return 'endMs is not after startMs';
+  if (typeof cue.source !== 'string') return 'source is not text';
+  if (cue.target !== undefined && typeof cue.target !== 'string')
+    return 'target is not text';
+  if (
+    cue.speakerIds !== undefined &&
+    (!Array.isArray(cue.speakerIds) || !cue.speakerIds.every(isValidSpeakerId))
+  )
+    return 'speakerIds is invalid';
+  if (
+    cue.primarySpeakerId !== undefined &&
+    !isValidSpeakerId(cue.primarySpeakerId)
+  )
+    return 'primarySpeakerId is invalid';
+  return undefined;
+}
+
+/** Editing must reject corrupted persisted values before normalization repairs them. */
+export function assertValidProofreadData(input: unknown): void {
+  if (!input || typeof input !== 'object' || Array.isArray(input))
+    throw new Error('Invalid proofread data');
+  const raw = input as ProofreadDataFileInput;
+  if ((raw.version !== 1 && raw.version !== 2) || !Array.isArray(raw.cues))
+    throw new Error('Unsupported proofread data version');
+  for (let index = 0; index < raw.cues.length; index++) {
+    const problem = cueProblem(raw.cues[index]);
+    if (problem)
+      throw new Error(
+        `Invalid proofread cue ${describeCue(raw.cues[index], index)}: ${problem}`,
+      );
+  }
+  if (raw.version === 2 && raw.speakers !== undefined) {
+    const seen = new Set<number>();
+    if (!Array.isArray(raw.speakers))
+      throw new Error('Invalid proofread speakers');
+    for (const speaker of raw.speakers) {
+      if (
+        !speaker ||
+        !isValidSpeakerId(speaker.id) ||
+        seen.has(speaker.id) ||
+        typeof speaker.displayName !== 'string' ||
+        typeof speaker.color !== 'string'
+      )
+        throw new Error('Invalid proofread speaker');
+      seen.add(speaker.id);
+    }
+  }
+}
+
+/** Display time given to a cue whose end was not after its start (the engines' 0.8 s minimum). */
+export const REPAIRED_CUE_DURATION_MS = 800;
+/** Silence kept before the next cue, like the engines' 0.1 s guard gap. */
+export const REPAIRED_CUE_GUARD_MS = 100;
+
+export interface CueTimingRepair {
+  /** Zero-based position in the cue array. */
+  index: number;
+  id: string;
+  startMs: number;
+  /** End time found in the data (not after `startMs`). */
+  endMs: number;
+  repairedEndMs: number;
+}
+
+/** First start strictly after `startMs` in an ascending list, if any. */
+function nextStartAfter(
+  sortedStarts: readonly number[],
+  startMs: number,
+): number | undefined {
+  let low = 0;
+  let high = sortedStarts.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (sortedStarts[mid] <= startMs) low = mid + 1;
+    else high = mid;
+  }
+  return low < sortedStarts.length ? sortedStarts[low] : undefined;
+}
+
+/**
+ * `assertValidProofreadData` requires `endMs > startMs`, yet ASR and
+ * segmentation can emit zero-length (or inverted) cues. Dropping them would
+ * lose text and refusing the whole file would lock the user out of the very
+ * panel meant to fix them, so such a cue keeps its start and gets a visible
+ * duration: `min(start + 800 ms, next distinct start - 100 ms)`, or exactly the
+ * next start when that leaves no room. It never overlaps a later cue.
+ *
+ * Only plain non-negative integer ranges are touched; any other corruption is
+ * returned as-is for the strict validation to reject. Pure (inputs are never
+ * mutated, unchanged cues are returned as the same objects) and idempotent.
+ */
+export function repairNonPositiveCueDurations<T>(cues: readonly T[]): {
+  cues: T[];
+  repairs: CueTimingRepair[];
+} {
+  const starts: number[] = [];
+  for (let index = 0; index < cues.length; index++) {
+    const cue = cues[index] as TimedCueLike | null | undefined;
+    if (
+      cue &&
+      typeof cue === 'object' &&
+      isCueTime(cue.startMs) &&
+      cue.startMs >= 0
+    ) {
+      starts.push(cue.startMs);
+    }
+  }
+  starts.sort((a, b) => a - b);
+
+  const repaired = cues.slice();
+  const repairs: CueTimingRepair[] = [];
+  for (let index = 0; index < cues.length; index++) {
+    const cue = cues[index] as TimedCueLike | null | undefined;
+    if (!cue || typeof cue !== 'object') continue;
+    const { startMs, endMs } = cue;
+    if (
+      !isCueTime(startMs) ||
+      !isCueTime(endMs) ||
+      startMs < 0 ||
+      endMs > startMs
+    ) {
+      continue;
+    }
+    const nextStart = nextStartAfter(starts, startMs);
+    let repairedEndMs = startMs + REPAIRED_CUE_DURATION_MS;
+    if (nextStart !== undefined) {
+      repairedEndMs =
+        nextStart - REPAIRED_CUE_GUARD_MS > startMs
+          ? Math.min(repairedEndMs, nextStart - REPAIRED_CUE_GUARD_MS)
+          : nextStart;
+    }
+    if (!Number.isSafeInteger(repairedEndMs)) continue;
+    repairs.push({
+      index,
+      id: String(cue.id || index + 1),
+      startMs,
+      endMs,
+      repairedEndMs,
+    });
+    repaired[index] = { ...cue, endMs: repairedEndMs } as unknown as T;
+  }
+  return { cues: repaired, repairs };
+}
+
+/**
+ * 归一化 sidecar meta.glossaryIds。
+ * 非数组 → undefined（旧 sidecar / 回落全部已启用）；
+ * 数组（含 []）只保留字符串成员，顺序不变；[] = 明确不用词库。
+ */
+export function normalizeMetaGlossaryIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((id): id is string => typeof id === 'string');
+}
+
+function normalizeProofreadMeta(rawMeta: unknown): ProofreadDataMeta {
+  const metaInput =
+    rawMeta && typeof rawMeta === 'object'
+      ? (rawMeta as Partial<ProofreadDataMeta>)
+      : {};
+  const now = new Date(0).toISOString();
+  const { glossaryIds: rawGlossaryIds, ...restMeta } = metaInput;
+  const glossaryIds = normalizeMetaGlossaryIds(rawGlossaryIds);
+  return {
+    ...restMeta,
+    createdAt: String(metaInput.createdAt || now),
+    updatedAt: String(metaInput.updatedAt || metaInput.createdAt || now),
+    ...(glossaryIds !== undefined ? { glossaryIds } : {}),
+  };
+}
+
 /** Accept v1/v2 sidecars and return the single canonical v2 shape. */
 export function normalizeProofreadData(input: unknown): ProofreadDataFileV2 {
   if (!input || typeof input !== 'object') {
@@ -292,16 +519,6 @@ export function normalizeProofreadData(input: unknown): ProofreadDataFileV2 {
     });
     return normalized as ProofreadDataCue;
   });
-  const metaInput =
-    raw.meta && typeof raw.meta === 'object'
-      ? (raw.meta as Partial<ProofreadDataMeta>)
-      : {};
-  const now = new Date(0).toISOString();
-  const meta: ProofreadDataMeta = {
-    ...metaInput,
-    createdAt: String(metaInput.createdAt || now),
-    updatedAt: String(metaInput.updatedAt || metaInput.createdAt || now),
-  };
   // Warning ranges are authoritative. Older sidecars may only have stored
   // them on individual cues, so recover those ranges when the file-level
   // collection is absent before rebuilding cue associations from timing.
@@ -324,7 +541,7 @@ export function normalizeProofreadData(input: unknown): ProofreadDataFileV2 {
   }
   return {
     version: PROOFREAD_DATA_VERSION,
-    meta,
+    meta: normalizeProofreadMeta(raw.meta),
     speakers: normalizeSpeakerRoster(
       raw.version === 2 && Array.isArray(raw.speakers) ? raw.speakers : [],
       cues,

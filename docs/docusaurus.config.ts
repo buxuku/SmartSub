@@ -160,13 +160,17 @@ const config: Config = {
               label: '常见问题',
               to: '/faq',
             },
+            {
+              label: '代码签名策略（Code signing policy）',
+              to: '/code-signing-policy',
+            },
           ],
         },
         {
           title: '社区',
           items: [
             {
-              label: '微信交流群',
+              label: 'QQ 交流群',
               href: 'https://github.com/buxuku/SmartSub#社区与支持',
             },
             {
@@ -181,6 +185,10 @@ const config: Config = {
             {
               label: 'GitHub',
               href: 'https://github.com/buxuku/SmartSub',
+            },
+            {
+              label: '赞助合作',
+              to: '/sponsorship',
             },
           ],
         },

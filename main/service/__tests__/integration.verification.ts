@@ -54,13 +54,12 @@ function runIntegrationTests() {
       apiUrl: 'https://dashscope.aliyuncs.com',
       modelName: 'qwen-turbo',
       customParameters: {
-        headerConfigs: {},
-        bodyConfigs: {
+        headerParameters: {},
+        bodyParameters: {
           // 用户显式配置优先于思考开关派生值
           enable_thinking: true,
           temperature: 0.8,
         },
-        templates: [],
         configVersion: '1.0.0',
         lastModified: Date.now(),
       },
@@ -76,6 +75,7 @@ function runIntegrationTests() {
     console.log('✅ Custom parameter precedence test passed');
   } catch (error) {
     console.log('❌ Custom parameter precedence test failed:', error.message);
+    throw error;
   }
 
   // Test 2: Custom headers processing
@@ -90,16 +90,15 @@ function runIntegrationTests() {
       apiUrl: 'https://api.custom.com',
       modelName: 'custom-model-v1',
       customParameters: {
-        headerConfigs: {
+        headerParameters: {
           Authorization: 'Bearer ${API_KEY}',
           'X-Custom-Header': 'custom-value',
           'X-Model-Info': '${MODEL_NAME}-enhanced',
         },
-        bodyConfigs: {
+        bodyParameters: {
           temperature: 0.7,
           max_tokens: 2000,
         },
-        templates: [],
         configVersion: '1.0.0',
         lastModified: Date.now(),
       },
@@ -118,6 +117,7 @@ function runIntegrationTests() {
     console.log('✅ Custom headers processing test passed');
   } catch (error) {
     console.log('❌ Custom headers processing test failed:', error.message);
+    throw error;
   }
 
   // Test 3: Parameter validation
@@ -132,13 +132,12 @@ function runIntegrationTests() {
       apiUrl: 'url',
       modelName: 'model',
       customParameters: {
-        headerConfigs: {},
-        bodyConfigs: {
+        headerParameters: {},
+        bodyParameters: {
           temperature: 5.0, // Invalid range
           max_tokens: 'not-a-number', // Invalid type
           stream: 'true', // Valid conversion
         },
-        templates: [],
         configVersion: '1.0.0',
         lastModified: Date.now(),
       },
@@ -155,6 +154,7 @@ function runIntegrationTests() {
     console.log('✅ Parameter validation test passed');
   } catch (error) {
     console.log('❌ Parameter validation test failed:', error.message);
+    throw error;
   }
 
   // Test 4: Provider without custom parameters
@@ -198,12 +198,11 @@ function runIntegrationTests() {
       apiUrl: 'url',
       modelName: 'model',
       customParameters: {
-        headerConfigs: {},
-        bodyConfigs: {
+        headerParameters: {},
+        bodyParameters: {
           temperature: 0.9,
           custom_param: 'custom-value',
         },
-        templates: [],
         configVersion: '1.0.0',
         lastModified: Date.now(),
       },
@@ -225,6 +224,7 @@ function runIntegrationTests() {
     console.log('✅ Parameter merging test passed');
   } catch (error) {
     console.log('❌ Parameter merging test failed:', error.message);
+    throw error;
   }
 
   console.log('\n🎉 All integration tests completed!');

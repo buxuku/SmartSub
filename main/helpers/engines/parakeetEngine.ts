@@ -111,8 +111,12 @@ async function transcribeParakeet(ctx: TranscribeContext): Promise<string> {
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
 
   const runtime = getSherpaAsrRuntime();
-  const { id, result } = runtime.transcribe(model, tempAudioFile, (percent) =>
-    event.sender.send('taskProgressChange', file, 'extractSubtitle', percent),
+  const { id, result } = runtime.transcribe(
+    model,
+    tempAudioFile,
+    (percent) =>
+      event.sender.send('taskProgressChange', file, 'extractSubtitle', percent),
+    ctx.onActivity,
   );
   activeTranscribeIds.add(id);
 
@@ -137,6 +141,7 @@ async function transcribeParakeet(ctx: TranscribeContext): Promise<string> {
   }
 
   if (signal?.aborted) throw new TaskCancelledError();
+  ctx.onActivity?.({ phase: 'organizing', units: [] });
 
   ctx.onDiagnostics?.({
     vadAvailable: Array.isArray(transcription?.vadSegments),
@@ -153,6 +158,7 @@ async function transcribeParakeet(ctx: TranscribeContext): Promise<string> {
     ),
     tempAudioFile,
   );
+  ctx.onActivity?.({ phase: 'saving' });
   await fs.promises.writeFile(srtFile, formatSrtContent(subtitles));
 
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 100);

@@ -8,13 +8,18 @@ export type MissedSpeechSignal =
   | 'energySpeech'
   | 'engineVad'
   | 'subtitleGap'
-  | 'wordGap';
+  | 'wordGap'
+  | 'timingMismatch'
+  | 'textMismatch'
+  | 'speechReview';
 
 export interface MissedSpeechWarning extends SpeechInterval {
   id: string;
   level: MissedSpeechWarningLevel;
   signals: MissedSpeechSignal[];
   cueIds: string[];
+  suggestedText?: string;
+  originalText?: string;
 }
 
 export interface MissedSpeechSummary {
@@ -70,6 +75,9 @@ export function normalizeMissedSpeechWarnings(
     'engineVad',
     'subtitleGap',
     'wordGap',
+    'timingMismatch',
+    'textMismatch',
+    'speechReview',
   ]);
   const seen = new Set<string>();
   return input
@@ -101,7 +109,11 @@ export function normalizeMissedSpeechWarnings(
           ),
         ),
       );
-      if (!signals.includes('energySpeech') || signals.length < 2) return [];
+      if (
+        !signals.includes('speechReview') &&
+        (!signals.includes('energySpeech') || signals.length < 2)
+      )
+        return [];
       seen.add(id);
       return [
         {
@@ -110,6 +122,10 @@ export function normalizeMissedSpeechWarnings(
           endMs: roundedEndMs,
           level,
           signals,
+          ...(typeof value.suggestedText === 'string' &&
+          value.suggestedText.trim()
+            ? { suggestedText: value.suggestedText.slice(0, 2000) }
+            : {}),
           cueIds: Array.isArray(value.cueIds)
             ? Array.from(
                 new Set(
@@ -119,6 +135,10 @@ export function normalizeMissedSpeechWarnings(
                 ),
               )
             : [],
+          ...(typeof value.originalText === 'string' &&
+          value.originalText.trim()
+            ? { originalText: value.originalText.slice(0, 2000) }
+            : {}),
         } as MissedSpeechWarning,
       ];
     })

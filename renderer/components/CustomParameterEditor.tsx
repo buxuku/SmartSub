@@ -13,8 +13,9 @@ import React, {
   useRef,
 } from 'react';
 import { useTranslation } from 'next-i18next';
-import { ParameterKvTable } from './ParameterKvTable';
+import { ParameterKvTable, ParameterTableDraft } from './ParameterKvTable';
 import { useParameterConfig } from '../hooks/useParameterConfig';
+import { useNavigationGuard } from '../context/NavigationGuardContext';
 import { ParameterValue, CustomParameterConfig } from '../../types';
 import {
   inferTypeFromValue,
@@ -57,6 +58,7 @@ export interface CustomParameterEditorProps {
   onSave?: () => void;
   disabled?: boolean;
   className?: string;
+  closeGuardRef?: React.MutableRefObject<(() => Promise<boolean>) | null>;
 }
 
 type ParameterCategory = 'headers' | 'body';
@@ -74,8 +76,9 @@ function buildTypesFromParams(
 export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
   providerId,
   onConfigChange,
-  disabled = false,
+  disabled: externallyDisabled = false,
   className = '',
+  closeGuardRef,
 }) => {
   const { t } = useTranslation('parameters');
   const {
@@ -90,7 +93,50 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
     exportConfiguration,
     importConfiguration,
     getParameterDefinition,
+    getIsDirty,
+    flush,
+    discardChanges,
   } = useParameterConfig();
+  const headerDraft = useRef<ParameterTableDraft | null>(null);
+  const bodyDraft = useRef<ParameterTableDraft | null>(null);
+  const [headerDirty, setHeaderDirty] = useState(false);
+  const [bodyDirty, setBodyDirty] = useState(false);
+  const getEditorDirty = useCallback(
+    () =>
+      getIsDirty() ||
+      !!headerDraft.current?.getIsDirty() ||
+      !!bodyDraft.current?.getIsDirty(),
+    [getIsDirty],
+  );
+  const flushEditor = useCallback(async () => {
+    if (headerDraft.current && !(await headerDraft.current.flush()))
+      return false;
+    if (bodyDraft.current && !(await bodyDraft.current.flush())) return false;
+    return (await flush()) && !getEditorDirty();
+  }, [flush, getEditorDirty]);
+  const discardEditor = useCallback(() => {
+    headerDraft.current?.discard();
+    bodyDraft.current?.discard();
+    discardChanges();
+  }, [discardChanges]);
+  const disabled =
+    externallyDisabled ||
+    state.isLoading ||
+    !!state.loadError ||
+    state.providerId !== providerId;
+  useNavigationGuard(`custom-parameters:${providerId}`, {
+    isDirty: state.hasUnsavedChanges || headerDirty || bodyDirty,
+    getIsDirty: getEditorDirty,
+    onSave: flushEditor,
+    onDiscard: discardEditor,
+  });
+  useEffect(() => {
+    if (!closeGuardRef) return;
+    closeGuardRef.current = flushEditor;
+    return () => {
+      closeGuardRef.current = null;
+    };
+  }, [closeGuardRef, flushEditor]);
 
   const [activeTab, setActiveTab] = useState<ParameterCategory>('headers');
   const [searchQuery, setSearchQuery] = useState('');
@@ -428,20 +474,45 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
   );
 
   const handleRefresh = useCallback(() => {
-    if (state.hasUnsavedChanges) {
+    if (getEditorDirty()) {
       setShowRefreshDialog(true);
     } else {
       loadConfig(providerId);
     }
-  }, [state.hasUnsavedChanges, loadConfig, providerId]);
+  }, [getEditorDirty, loadConfig, providerId]);
 
   const confirmRefresh = useCallback(() => {
     setShowRefreshDialog(false);
+    discardEditor();
     loadConfig(providerId);
-  }, [loadConfig, providerId]);
+  }, [discardEditor, loadConfig, providerId]);
 
   return (
     <div className={`space-y-6 ${className}`}>
+      {state.saveStatus === 'error' && (
+        <div
+          role="alert"
+          className="space-y-2 border-l-2 border-destructive bg-destructive/10 p-3 text-sm"
+        >
+          <p>
+            {t(state.loadError ? 'status.loadFailed' : 'status.saveFailed')}
+          </p>
+          <details className="break-words">
+            <summary>{t('status.details')}</summary>
+            <p>{state.loadError || state.saveMessage}</p>
+          </details>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              state.loadError ? void loadConfig(providerId) : void flush()
+            }
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            {t('status.retry')}
+          </Button>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-2">
         {state.saveStatus !== 'idle' ? (
           <div className="flex items-center gap-2 text-sm">
@@ -453,7 +524,7 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
                 </span>
               </>
             )}
-            {state.saveStatus === 'saved' && (
+            {state.saveStatus === 'saved' && !headerDirty && !bodyDirty && (
               <>
                 <div className="w-4 h-4 rounded-full bg-success flex items-center justify-center">
                   <div className="w-2 h-2 rounded-full bg-white" />
@@ -484,7 +555,7 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
             >
               <MoreHorizontal className="h-4 w-4" />
               {t('more.label')}
-              {state.hasUnsavedChanges &&
+              {(state.hasUnsavedChanges || headerDirty || bodyDirty) &&
                 state.saveStatus !== 'error' &&
                 state.saveStatus !== 'saving' && (
                   <AlertTriangle className="w-3 h-3 ml-1 text-warning" />
@@ -551,8 +622,15 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="headers" className="space-y-4">
+        <TabsContent
+          value="headers"
+          forceMount
+          hidden={activeTab !== 'headers'}
+          className="space-y-4"
+        >
           <ParameterKvTable
+            draftRef={headerDraft}
+            onDirtyChange={setHeaderDirty}
             entries={filteredHeaderEntries}
             existingKeys={headerKeys}
             disabled={disabled}
@@ -566,8 +644,15 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
           />
         </TabsContent>
 
-        <TabsContent value="body" className="space-y-4">
+        <TabsContent
+          value="body"
+          forceMount
+          hidden={activeTab !== 'body'}
+          className="space-y-4"
+        >
           <ParameterKvTable
+            draftRef={bodyDraft}
+            onDirtyChange={setBodyDirty}
             entries={filteredBodyEntries}
             existingKeys={bodyKeys}
             disabled={disabled}

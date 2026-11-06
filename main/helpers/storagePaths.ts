@@ -88,6 +88,17 @@ export interface StoragePathSettings {
   customTempDir?: string;
 }
 
+export function resolveTaskRunsRoot(
+  settings: Pick<StoragePathSettings, 'storageRoot'> | null | undefined,
+  userData: string,
+): ResolvedStorageLocation {
+  return resolveStorageLocation({
+    storageRoot: settings?.storageRoot,
+    defaultBase: userData,
+    subpath: ['task-runs'],
+  });
+}
+
 const OVERRIDE_KEYS: Record<StorageKind, keyof StoragePathSettings> = {
   ggml: 'modelsPath',
   ct2: 'fasterWhisperModelsPath',

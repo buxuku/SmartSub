@@ -63,11 +63,44 @@ assertEqual(
 // --- 颜色转换 ---
 assertEqual(cssColorToAss('#FF0000', 179), '&HB30000FF', '红色 + alpha 0xB3');
 assertEqual(cssColorToAss('#FFFFFF'), '&H00FFFFFF', '白色不透明');
+assertEqual(
+  cssColorToAss('rgb( 255 , 0 , 20 )'),
+  '&H001400FF',
+  'RGB whitespace',
+);
+assertEqual(
+  cssColorToAss('rgba( 255, 0, 20, 0.5 )'),
+  '&H801400FF',
+  'RGBA opacity',
+);
+assertEqual(
+  cssColorToAss('rgba(255,0,20,0.5)', 128),
+  '&HC01400FF',
+  'RGBA times background opacity',
+);
+assertEqual(
+  cssColorToAss('rgba(255,0,20,0)'),
+  '&HFF1400FF',
+  'Transparent color',
+);
 
 // --- 对齐转换 ---
 assertEqual(convertAlignment(2), 2, 'numpad 2（中下）→ ASS 2');
 assertEqual(convertAlignment(5), 10, 'numpad 5（居中）→ ASS 10');
 assertEqual(convertAlignment(8), 6, 'numpad 8（中上）→ ASS 6');
+for (let alignment = 1; alignment <= 9; alignment++) {
+  const value = buildAssStyleLine({
+    ...baseStyle,
+    alignment: alignment as SubtitleStyle['alignment'],
+  })
+    .slice('Style: '.length)
+    .split(',')[18];
+  assertEqual(
+    Number(value),
+    alignment,
+    `V4+ style keeps numpad alignment ${alignment}`,
+  );
+}
 
 // --- Style 行：背景框模式（核心修复：OutlineColour 取背景色） ---
 const boxStyleLine = buildAssStyleLine(baseStyle);

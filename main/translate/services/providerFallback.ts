@@ -23,7 +23,10 @@ export type ProviderFallbackRunnerOptions = {
   log?: (message: string, type: 'info' | 'warning' | 'error') => void;
 };
 
-function sanitizeFallbackReason(reason: string, providers: Provider[]): string {
+export function sanitizeFallbackReason(
+  reason: string,
+  providers: Provider[],
+): string {
   let sanitized = reason;
   for (const provider of providers) {
     for (const [key, value] of Object.entries(provider)) {
@@ -110,6 +113,7 @@ export class ProviderFallbackRunner {
       provider: Provider,
       translator: TranslatorFunction,
     ) => Promise<T>,
+    onWaiting?: () => void,
   ): Promise<T> {
     if (this.exhaustedError) throw this.exhaustedError;
     let index = this.activeIndex;
@@ -129,6 +133,7 @@ export class ProviderFallbackRunner {
         throw new Error(`Unknown translation provider: ${provider.type}`);
       }
 
+      onWaiting?.();
       const release = await acquireProviderRequestSlot(provider, this.signal);
       try {
         if (this.exhaustedError) throw this.exhaustedError;

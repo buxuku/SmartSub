@@ -5,10 +5,14 @@ import { cn } from "renderer/lib/utils"
 
 const Progress = React.forwardRef<
   React.ElementRef<typeof ProgressPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof ProgressPrimitive.Root>
->(({ className, value, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof ProgressPrimitive.Root> & {
+    /** Tints the filled part (e.g. `bg-success`); the track keeps its colour. */
+    indicatorClassName?: string
+  }
+>(({ className, indicatorClassName, value, ...props }, ref) => (
   <ProgressPrimitive.Root
     ref={ref}
+    value={value}
     className={cn(
       "relative h-4 w-full overflow-hidden rounded-full bg-secondary",
       className
@@ -16,7 +20,10 @@ const Progress = React.forwardRef<
     {...props}
   >
     <ProgressPrimitive.Indicator
-      className="h-full w-full flex-1 bg-primary transition-all"
+      className={cn(
+        "h-full w-full flex-1 bg-primary transition-all",
+        indicatorClassName
+      )}
       style={{ transform: `translateX(-${100 - (value || 0)}%)` }}
     />
   </ProgressPrimitive.Root>

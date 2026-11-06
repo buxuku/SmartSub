@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "commonjs",
+    "moduleResolution": "node"
+  },
+  "include": ["*.ts", "../types/automation.ts"],
+  "exclude": ["../node_modules"]
+}

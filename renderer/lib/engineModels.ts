@@ -45,6 +45,8 @@ export interface EngineModelInfo {
   parakeetModelsInstalled?: string[];
   /** Parakeet 运行库（sherpa-onnx，与其它本地 sherpa ASR 共用）是否已安装 */
   parakeetEngineInstalled?: boolean;
+  speakerDiarizationModelInstalled?: boolean;
+  speakerDiarizationRuntimeInstalled?: boolean;
 }
 
 /** 解析当前转写引擎，兼容旧的 useLocalWhisper 开关 */

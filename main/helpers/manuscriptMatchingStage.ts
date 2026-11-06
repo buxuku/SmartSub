@@ -63,7 +63,7 @@ export function settleSkippedManuscriptMatchStage(
   file: IFiles,
   formData?: Record<string, unknown>,
 ): void {
-  if (!getManuscriptConfig(formData)) return;
+  if (!getManuscriptConfig(formData, file)) return;
   sendProgress(event, file, 100);
   sendStageState(event, file, 'done');
 }
@@ -77,7 +77,7 @@ export async function runManuscriptMatchingStage(
   file: IFiles,
   formData?: Record<string, unknown>,
 ): Promise<void> {
-  const config = getManuscriptConfig(formData);
+  const config = getManuscriptConfig(formData, file);
   if (!config || !file.srtFile || !fs.existsSync(file.srtFile)) return;
   const signal = getTaskContext()?.signal;
 

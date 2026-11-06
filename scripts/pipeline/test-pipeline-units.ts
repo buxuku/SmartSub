@@ -1,3 +1,5 @@
+/// <reference path="../test-globals.d.ts" />
+
 /**
  * 流水线阶段纯函数单元验证（无 electron/ffmpeg 依赖）。
  * 运行：yarn test:pipeline
@@ -28,6 +30,12 @@ import {
   filterReleasableFiles,
   countReviewFiles,
 } from '../../main/helpers/pipeline/gateLogic';
+import { isProofreadReady } from '../../renderer/components/tasks/stageUtils';
+import {
+  TRANSLATION_INCOMPLETE_PIPELINE_PAUSED,
+  TRANSLATION_INCOMPLETE_FOR_DUBBING,
+  TRANSLATION_INCOMPLETE_FOR_COMPOSE,
+} from '../../types';
 import type { SubtitleStyle } from '../../types/subtitleMerge';
 
 let failed = 0;
@@ -250,6 +258,106 @@ eq(
   }
 }
 
+// #521：WebM/Ogg 容器写不下硬烧的 H.264 与配音的 AAC，成品不再沿用这类源扩展名
+for (const [sourceName, expectedFinal] of [
+  ['clip.webm', '/v/clip-final.mp4'],
+  ['CLIP.WEBM', '/v/CLIP-final.mp4'],
+  ['clip.mp4', '/v/clip-final.mp4'],
+  ['clip.mkv', '/v/clip-final.mkv'],
+  ['clip.MOV', '/v/clip-final.MOV'],
+] as const) {
+  const derived = deriveComposeConfig({
+    file: {
+      filePath: `/v/${sourceName}`,
+      fileExtension: sourceName.slice(sourceName.lastIndexOf('.')),
+      translatedSrtFile: '/v/clip.zh.srt',
+    } as any,
+    compose: { subtitle: 'hard' },
+    style: STYLE,
+    videoQuality: 'original',
+    encoderMode: 'cpu',
+    exists: existsIn(['/v/clip.zh.srt']),
+  });
+  eq(derived.ok, true, `硬烧 ${sourceName}: 可行`);
+  if (derived.ok) {
+    eq(
+      derived.config.outputPath,
+      expectedFinal,
+      `硬烧 ${sourceName}: 成品 ${expectedFinal}（WebM/Ogg 回落 mp4，其余沿用源容器）`,
+    );
+  }
+}
+
+{
+  const derived = deriveComposeConfig({
+    file: {
+      filePath: '/v/clip.webm',
+      fileExtension: '.webm',
+      translatedSrtFile: '/v/clip.zh.srt',
+    } as any,
+    compose: { subtitle: 'soft' },
+    style: STYLE,
+    exists: existsIn(['/v/clip.zh.srt']),
+  });
+  eq(derived.ok, true, '软封 clip.webm: 可行');
+  if (derived.ok) {
+    eq(
+      derived.config.outputPath,
+      '/v/clip-final.mkv',
+      '软封 clip.webm: 仍为 mkv',
+    );
+  }
+}
+
+{
+  // 配音（none + replace：视频直拷 + AAC）同样写不进 WebM
+  const derived = deriveComposeConfig({
+    file: {
+      filePath: '/v/clip.webm',
+      fileExtension: '.webm',
+      dubbedTrackPath: '/sess/dub-track.wav',
+    } as any,
+    compose: { subtitle: 'none' },
+    style: STYLE,
+    exists: existsIn(['/sess/dub-track.wav']),
+  });
+  eq(derived.ok, true, '配音成片 clip.webm: 可行');
+  if (derived.ok) {
+    eq(
+      derived.config.outputPath,
+      '/v/clip-final.mp4',
+      '配音成片 clip.webm: 成品 -final.mp4',
+    );
+    eq(
+      derived.config.audio,
+      { mode: 'replace', trackPath: '/sess/dub-track.wav' },
+      '配音成片 clip.webm: 替换音轨',
+    );
+  }
+}
+
+{
+  // 防覆盖递增针对改写后的扩展名判断
+  const derived = deriveComposeConfig({
+    file: {
+      filePath: '/v/clip.webm',
+      fileExtension: '.webm',
+      translatedSrtFile: '/v/clip.zh.srt',
+    } as any,
+    compose: { subtitle: 'hard' },
+    style: STYLE,
+    exists: existsIn(['/v/clip.zh.srt', '/v/clip-final.mp4']),
+  });
+  eq(derived.ok, true, '硬烧 clip.webm（-final.mp4 已存在）: 可行');
+  if (derived.ok) {
+    eq(
+      derived.config.outputPath,
+      '/v/clip-final-2.mp4',
+      '硬烧 clip.webm: -final.mp4 已存在时递增',
+    );
+  }
+}
+
 eq(
   deriveComposeConfig({
     file: { filePath: '/v/ep3.mp4', fileExtension: '.mp4' } as any,
@@ -428,6 +536,187 @@ eq(
     'gate: 配音确认独立过滤',
   );
   eq(countReviewFiles(files), { subtitle: 2, dubbing: 1 }, 'gate: 待校对计数');
+}
+
+{
+  const translateTypeDef: any = {
+    taskType: 'generateAndTranslate',
+    hasTranslate: true,
+  };
+  eq(
+    isProofreadReady(
+      {
+        filePath: 'test.mp4',
+        extractSubtitle: 'done',
+        translateSubtitle: 'done',
+        exportSubtitle: 'done',
+        proofreadDataReady: 'done',
+        translationFailures: [{ subtitleId: '1', error: 'rate limit' }],
+      },
+      translateTypeDef,
+      { translateProvider: 'openai' },
+    ),
+    true,
+    'proofread: 翻译完成带失败行时校对入口解锁',
+  );
+  eq(
+    isProofreadReady(
+      {
+        filePath: 'test.mp4',
+        extractSubtitle: 'done',
+        translateSubtitle: 'error',
+        exportSubtitle: 'done',
+        proofreadDataReady: 'done',
+        proofreadDataFile: 'test.proofread.json',
+        translationFailures: [{ subtitleId: '1', error: 'rate limit' }],
+      },
+      translateTypeDef,
+      { translateProvider: 'openai' },
+    ),
+    true,
+    'proofread: 下游暂停或有错误但 sidecar 就绪时校对入口解锁',
+  );
+  eq(
+    isProofreadReady(
+      {
+        filePath: 'test.mp4',
+        extractSubtitle: 'done',
+        translateSubtitle: 'error',
+        exportSubtitle: 'done',
+        proofreadDataReady: 'done',
+        translationFailures: [{ subtitleId: '1', error: 'rate limit' }],
+      },
+      translateTypeDef,
+      { translateProvider: 'openai' },
+    ),
+    false,
+    'proofread: translateSubtitle 未完成且缺少 proofreadDataFile 时保持锁定',
+  );
+  eq(
+    isProofreadReady(
+      {
+        filePath: 'test.mp4',
+        extractSubtitle: 'done',
+        translateSubtitle: 'loading',
+        exportSubtitle: 'done',
+        proofreadDataReady: 'done',
+      },
+      translateTypeDef,
+      { translateProvider: 'openai' },
+    ),
+    false,
+    'proofread: 翻译仍在 loading 时校对入口保持锁定',
+  );
+
+  // 验证带有 translationFailures 时，resume 判定及 translateOk 计算
+  const computeResumeTranslateDone = (file: any) =>
+    (file as any).translateSubtitle === 'done' &&
+    !file.translationFailures?.length &&
+    Boolean(
+      file.tempTranslatedSrtFile ||
+        file.proofreadDataFile ||
+        file.translatedSrtFile,
+    );
+
+  eq(
+    computeResumeTranslateDone({
+      translateSubtitle: 'done',
+      translatedSrtFile: 'test.srt',
+      translationFailures: [{ subtitleId: '1' }],
+    }),
+    false,
+    'resume: 存在未翻译行时 translateDone 必须为 false（避免跳过翻译导致下游跑残缺内容）',
+  );
+  eq(
+    computeResumeTranslateDone({
+      translateSubtitle: 'done',
+      translatedSrtFile: 'test.srt',
+      translationFailures: [],
+    }),
+    true,
+    'resume: 翻译行全部成功时 translateDone 为 true',
+  );
+
+  const computeSkipTranslateOk = (file: any, translationActive: boolean) =>
+    !translationActive ||
+    Boolean(
+      (file as any).translateSubtitle === 'done' &&
+        !file.translationFailures?.length,
+    );
+
+  eq(
+    computeSkipTranslateOk(
+      {
+        translateSubtitle: 'done',
+        translationFailures: [{ subtitleId: '1' }],
+      },
+      true,
+    ),
+    false,
+    'skipSubtitleSegment: 带有失败行时 translateOk 必须为 false，避免直接穿透进配音/合成',
+  );
+  eq(
+    computeSkipTranslateOk(
+      {
+        translateSubtitle: 'done',
+        translationFailures: [],
+      },
+      true,
+    ),
+    true,
+    'skipSubtitleSegment: 无失败行时 translateOk 为 true',
+  );
+
+  // 验证 export retry 路径下，checkpoint.translateOk 能够根据最新的 translationFailures 刷新
+  const refreshCheckpointTranslateOk = (
+    checkpoint: { translateOk: boolean },
+    file: any,
+    translationActive: boolean,
+  ) => {
+    checkpoint.translateOk =
+      !translationActive ||
+      Boolean(
+        (file as any).translateSubtitle === 'done' &&
+          !file.translationFailures?.length,
+      );
+    return checkpoint.translateOk;
+  };
+
+  const checkpoint = { translateOk: false };
+  eq(
+    refreshCheckpointTranslateOk(
+      checkpoint,
+      {
+        translateSubtitle: 'done',
+        translationFailures: [],
+      },
+      true,
+    ),
+    true,
+    'checkpoint: 校对补全后重试导出，translateOk 成功刷新为 true',
+  );
+  eq(
+    refreshCheckpointTranslateOk(
+      checkpoint,
+      {
+        translateSubtitle: 'done',
+        translationFailures: [{ subtitleId: '2' }],
+      },
+      true,
+    ),
+    false,
+    'checkpoint: 仍有未翻译行时重试导出，translateOk 维持 false',
+  );
+
+  eq(
+    Boolean(
+      TRANSLATION_INCOMPLETE_PIPELINE_PAUSED &&
+        TRANSLATION_INCOMPLETE_FOR_DUBBING &&
+        TRANSLATION_INCOMPLETE_FOR_COMPOSE,
+    ),
+    true,
+    'error codes: 翻译失败暂停错误码已定义',
+  );
 }
 
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项断言失败 ❌`);

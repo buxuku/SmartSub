@@ -6,6 +6,7 @@ import type {
   AddonConfig,
   InstalledAddon,
   AddonVariant,
+  AddonInstallProvenance,
 } from '../../types/addon';
 import { ALL_ADDON_VARIANTS } from '../../types/addon';
 import { getEffectivePlatform } from './cudaUtils';
@@ -120,11 +121,48 @@ export function getInstalledAddons(): Array<{
         hasDlls: hasDependentLibs(getAddonVersionDir(version)),
         size: getAddonSize(version),
       };
-      result.push({ version, info });
+      // The record is committed with the binary, so it remains available even
+      // if the app exits before IPC updates addon-config.json.
+      const provenance = readAddonInstallProvenance(version);
+      result.push({
+        version,
+        info: provenance
+          ? {
+              ...info,
+              installedAt: provenance.verifiedAt,
+              remoteVersion: provenance.releaseVersion,
+              hasDlls: hasDependentLibs(getAddonVersionDir(version)),
+              size: getAddonSize(version),
+              checksum: provenance.packageSha256,
+              provenance,
+            }
+          : info,
+      });
     }
   }
 
   return result;
+}
+
+function readAddonInstallProvenance(
+  version: AddonVariant,
+): AddonInstallProvenance | null {
+  try {
+    const record = JSON.parse(
+      fs.readFileSync(
+        path.join(getAddonVersionDir(version), 'addon-install.json'),
+        'utf8',
+      ),
+    );
+    return record?.formatVersion === 1 &&
+      typeof record.releaseVersion === 'string' &&
+      /^[a-f0-9]{64}$/.test(record.packageSha256) &&
+      /^[a-f0-9]{64}$/.test(record.addonSha256)
+      ? record
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -157,6 +195,7 @@ export function registerInstalledAddon(
   version: AddonVariant,
   remoteVersion: string,
   checksum?: string,
+  provenance?: AddonInstallProvenance,
 ): void {
   const config = getAddonConfig();
   const versionDir = getAddonVersionDir(version);
@@ -167,6 +206,7 @@ export function registerInstalledAddon(
     hasDlls: hasDependentLibs(versionDir),
     size: getAddonSize(version),
     checksum,
+    ...(provenance ? { provenance } : {}),
   };
 
   // 如果没有选中版本，自动选中新安装的

@@ -98,7 +98,7 @@ export default function EngineOverviewPanel({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3">
+      <div className="rounded-lg bg-primary/5 p-3">
         <p className="text-xs leading-relaxed text-muted-foreground">
           {t('engines.overview.intro')}
         </p>
@@ -109,7 +109,7 @@ export default function EngineOverviewPanel({
         {cards.map((card) => (
           <div
             key={card.key}
-            className="flex flex-col gap-2 rounded-lg border bg-panel-2 p-4"
+            className="flex flex-col gap-2 rounded-lg bg-card p-4"
           >
             <div className="flex items-center gap-2">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -145,7 +145,7 @@ export default function EngineOverviewPanel({
         <p className="text-xs font-medium text-muted-foreground">
           {t('engines.overview.quickStart')}
         </p>
-        <div className="divide-y rounded-lg border">
+        <div className="divide-y rounded-lg bg-card">
           {paths.map((path, i) => (
             <div key={path.key} className="flex items-center gap-3 px-3 py-2.5">
               <span className="tnum flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">

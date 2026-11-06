@@ -1,3 +1,4 @@
+import type { ActivityDetail } from '../../types/taskActivity';
 /**
  * AI 字幕精修阶段编排（openspec: add-ai-subtitle-refine D1/D9/D10）。
  *
@@ -10,6 +11,7 @@
  */
 
 import fs from 'fs';
+import { atomicReplaceTextFile } from './atomicFile';
 import { logMessage, store } from './storeManager';
 import { formatSrtContent } from './fileUtils';
 import { parseSubtitleCues } from './subtitleFormats';
@@ -23,6 +25,7 @@ import { readWordTimelineSidecar } from './wordTimelineSidecar';
 import { collectSuspectWords } from './subtitleRefine/wordSources';
 import { runAiSegmentation } from './subtitleRefine/segmentationRunner';
 import { runAiCorrection } from './subtitleRefine/correctionRunner';
+import { isProviderConfigured } from '../../types/provider';
 import type { Provider } from '../translate/types';
 import type { IFiles } from '../../types';
 
@@ -85,6 +88,13 @@ export function resolveRefineProvider(
         reason: `翻译服务商 ${provider.name} 非 AI 类型，「跟随翻译服务」无法解析`,
       };
     }
+    if (!isProviderConfigured(provider as any)) {
+      return {
+        provider: null,
+        source: 'follow',
+        reason: `翻译服务商 ${provider.name} 未完成配置，「跟随翻译服务」无法解析`,
+      };
+    }
     return { provider, source: 'follow' };
   }
   const provider = providers.find((p) => p.id === setting);
@@ -100,6 +110,13 @@ export function resolveRefineProvider(
       provider: null,
       source: 'explicit',
       reason: `精修服务商 ${provider.name} 非 AI 类型`,
+    };
+  }
+  if (!isProviderConfigured(provider as any)) {
+    return {
+      provider: null,
+      source: 'explicit',
+      reason: `精修服务商 ${provider.name} 未完成配置`,
     };
   }
   return { provider, source: 'explicit' };
@@ -131,22 +148,33 @@ export async function runSubtitleRefineStage(
   if (!cfg.segmentation && !cfg.correction) return;
   if (!file.srtFile || !fs.existsSync(file.srtFile)) return;
   const signal = getTaskContext()?.signal;
+  const activity = getTaskContext()?.activity?.start(
+    'refineSubtitle',
+    'preparing',
+  );
+  const summary: NonNullable<ActivityDetail['summary']> = {};
+  let acceptingProgress = true;
+  let saving = false;
 
   const sendState = (state: string) => {
     (file as any).refineSubtitle = state;
     event.sender.send('taskFileChange', { ...file, refineSubtitle: state });
   };
-  const sendProgress = (pct: number) => {
+  const sendProgress = (pct: number, settled = false) => {
+    if (!acceptingProgress || signal?.aborted) return;
     event.sender.send(
       'taskProgressChange',
       file,
       'refineSubtitle',
-      Math.max(0, Math.min(100, Math.round(pct))),
+      Math.max(0, Math.min(settled ? 100 : 99, Math.round(pct))),
     );
   };
   const sendDegradedDone = (reason: string) => {
     (file as any).refineSubtitleError = reason;
-    sendProgress(100);
+    sendProgress(100, true);
+    activity?.update({ phase: 'organizing', units: [], summary });
+    activity?.finish();
+    acceptingProgress = false;
     // 非致命降级：任务继续；用 done + error 文案让 UI 可见，不阻断 isFileDone。
     sendState('done');
   };
@@ -183,10 +211,13 @@ export async function runSubtitleRefineStage(
       ],
     );
     if (cues.length === 0) {
-      sendProgress(100);
+      sendProgress(100, true);
+      activity?.finish();
+      acceptingProgress = false;
       sendState('done');
       return;
     }
+    activity?.update({ phase: 'preparing', sourceSaved: true });
     const inputCount = cues.length;
 
     const sidecar = readWordTimelineSidecar(file.wordTimelineFile);
@@ -200,10 +231,24 @@ export async function runSubtitleRefineStage(
         formData: formData ?? {},
         provider,
         signal,
+        onActivity: (detail) => activity?.update(detail),
         onProgress: (done, total) =>
           sendProgress((done / Math.max(1, total)) * segShare),
       });
       cues = outcome.cues;
+      summary.segmentation = {
+        total: outcome.totalWindows,
+        accepted: outcome.degraded
+          ? 0
+          : outcome.totalWindows - outcome.degradedWindows,
+        fallback: outcome.degraded
+          ? outcome.totalWindows
+          : outcome.degradedWindows,
+      };
+      if (outcome.degraded || outcome.degradedWindows) {
+        file.refineSubtitleError = 'AI_SEGMENTATION_FALLBACK';
+      }
+      activity?.update({ phase: 'aligning', summary, units: [] });
       sendProgress(segShare);
     }
 
@@ -216,9 +261,14 @@ export async function runSubtitleRefineStage(
         provider,
         signal,
         suspectWords: collectSuspectWords(words ?? undefined),
+        onActivity: (detail) => activity?.update(detail),
         onProgress: (done, total) =>
           sendProgress(base + (done / Math.max(1, total)) * (100 - base)),
       });
+      if (outcome.degraded || outcome.failedCount) {
+        summary.correctionFailed = outcome.failedCount || beforeCount;
+        file.refineSubtitleError = `AI_CORRECTION_VALIDATION_FAILED:${outcome.failedCount || beforeCount}`;
+      }
       // 不变性断言（spec: ai-subtitle-correction）：校正不得改变条数与时间轴。
       const timesOk = outcome.cues.every(
         (cue, i) => cue?.[0] === cues[i]?.[0] && cue?.[1] === cues[i]?.[1],
@@ -233,15 +283,23 @@ export async function runSubtitleRefineStage(
       }
     }
 
-    await fs.promises.writeFile(file.srtFile, formatSrtContent(cues), 'utf-8');
-    sendProgress(100);
+    saving = true;
+    activity?.update({ phase: 'saving', summary, units: [] });
+    await atomicReplaceTextFile(file.srtFile, formatSrtContent(cues), {
+      signal,
+    });
+    sendProgress(100, true);
     sendState('done');
+    activity?.finish();
+    acceptingProgress = false;
     logMessage(
       `refine stage done: ${inputCount} -> ${cues.length} cues (${file.fileName})`,
       'info',
     );
   } catch (error) {
     if (isTaskCancelledError(error) || signal?.aborted) {
+      acceptingProgress = false;
+      activity?.finish('cancelled');
       sendState('');
       throw error instanceof TaskCancelledError
         ? error
@@ -254,6 +312,12 @@ export async function runSubtitleRefineStage(
       `refine stage failed (degraded, non-fatal): ${message}`,
       'warning',
     );
+    if (saving) summary.saveFailed = true;
+    else {
+      // The atomic replacement was never reached; accepted intermediate work was discarded.
+      delete summary.segmentation;
+      delete summary.correctionFailed;
+    }
     sendDegradedDone(message);
   }
 }

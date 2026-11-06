@@ -110,8 +110,12 @@ async function transcribeFireRed(ctx: TranscribeContext): Promise<string> {
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
 
   const runtime = getSherpaAsrRuntime();
-  const { id, result } = runtime.transcribe(model, tempAudioFile, (percent) =>
-    event.sender.send('taskProgressChange', file, 'extractSubtitle', percent),
+  const { id, result } = runtime.transcribe(
+    model,
+    tempAudioFile,
+    (percent) =>
+      event.sender.send('taskProgressChange', file, 'extractSubtitle', percent),
+    ctx.onActivity,
   );
   activeTranscribeIds.add(id);
 
@@ -136,6 +140,7 @@ async function transcribeFireRed(ctx: TranscribeContext): Promise<string> {
   }
 
   if (signal?.aborted) throw new TaskCancelledError();
+  ctx.onActivity?.({ phase: 'organizing', units: [] });
 
   ctx.onDiagnostics?.({
     vadAvailable: Array.isArray(transcription?.vadSegments),
@@ -153,6 +158,7 @@ async function transcribeFireRed(ctx: TranscribeContext): Promise<string> {
     tempAudioFile,
   );
   const formattedSrt = formatSrtContent(subtitles);
+  ctx.onActivity?.({ phase: 'saving' });
   await fs.promises.writeFile(srtFile, formattedSrt);
 
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 100);

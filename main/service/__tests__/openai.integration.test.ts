@@ -45,13 +45,12 @@ describe('OpenAI Service Integration with Parameter Processor', () => {
         apiUrl: 'https://dashscope.aliyuncs.com',
         modelName: 'qwen-turbo',
         customParameters: {
-          headerConfigs: {},
-          bodyConfigs: {
+          headerParameters: {},
+          bodyParameters: {
             // 用户显式配置优先于思考开关派生值（openspec: ai-thinking-mode-control D3）
             enable_thinking: true,
             temperature: 0.8,
           },
-          templates: [],
           configVersion: '1.0.0',
           lastModified: Date.now(),
         },
@@ -77,15 +76,14 @@ describe('OpenAI Service Integration with Parameter Processor', () => {
         apiUrl: 'https://api.custom.com',
         modelName: 'custom-model',
         customParameters: {
-          headerConfigs: {
+          headerParameters: {
             'X-Custom-Auth': 'Bearer ${API_KEY}',
             'X-Model-Version': '${MODEL_NAME}-v1',
           },
-          bodyConfigs: {
+          bodyParameters: {
             temperature: 0.7,
             max_tokens: 1500,
           },
-          templates: [],
           configVersion: '1.0.0',
           lastModified: Date.now(),
         },
@@ -136,13 +134,12 @@ describe('OpenAI Service Integration with Parameter Processor', () => {
         apiUrl: 'url',
         modelName: 'model',
         customParameters: {
-          headerConfigs: {},
-          bodyConfigs: {
+          headerParameters: {},
+          bodyParameters: {
             temperature: 5.0, // Invalid range (should be 0.0-2.0)
             max_tokens: 'invalid', // Invalid type (should be number)
             stream: 'true', // Valid (string to boolean conversion)
           },
-          templates: [],
           configVersion: '1.0.0',
           lastModified: Date.now(),
         },
@@ -173,15 +170,14 @@ describe('OpenAI Service Integration with Parameter Processor', () => {
         apiUrl: 'https://api.example.com',
         modelName: 'gpt-4',
         customParameters: {
-          headerConfigs: {
+          headerParameters: {
             Authorization: 'Bearer ${API_KEY}',
             'X-Base-URL': '${BASE_URL}/v1',
             'X-Model': '${MODEL_NAME}',
           },
-          bodyConfigs: {
+          bodyParameters: {
             custom_field: 'Using ${MODEL_NAME} model',
           },
-          templates: [],
           configVersion: '1.0.0',
           lastModified: Date.now(),
         },
@@ -197,8 +193,8 @@ describe('OpenAI Service Integration with Parameter Processor', () => {
       expect(result.headers['X-Base-URL']).toBe('https://api.example.com/v1');
       expect(result.headers['X-Model']).toBe('gpt-4');
 
-      // Template substitution doesn't apply to body parameters (they're not strings)
-      expect(result.body.custom_field).toBe('Using gpt-4 model');
+      // Body parameters remain literal; header templates supply credentials.
+      expect(result.body.custom_field).toBe('Using ${MODEL_NAME} model');
     });
 
     it('should merge base parameters with custom parameters', () => {
@@ -211,12 +207,11 @@ describe('OpenAI Service Integration with Parameter Processor', () => {
         apiUrl: 'url',
         modelName: 'model',
         customParameters: {
-          headerConfigs: {},
-          bodyConfigs: {
+          headerParameters: {},
+          bodyParameters: {
             temperature: 0.9,
             custom_param: 'custom-value',
           },
-          templates: [],
           configVersion: '1.0.0',
           lastModified: Date.now(),
         },
@@ -271,36 +266,3 @@ describe('OpenAI Service Integration with Parameter Processor', () => {
     });
   });
 });
-
-// Simple test assertion functions (since we're not using a full test framework)
-function expect(actual: any) {
-  return {
-    toBe: (expected: any) => {
-      if (actual !== expected) {
-        throw new Error(`Expected ${expected}, but got ${actual}`);
-      }
-    },
-    toContain: (expected: any) => {
-      if (!actual.includes(expected)) {
-        throw new Error(
-          `Expected array to contain ${expected}, but got ${JSON.stringify(actual)}`,
-        );
-      }
-    },
-    toHaveLength: (expected: number) => {
-      if (actual.length !== expected) {
-        throw new Error(
-          `Expected length ${expected}, but got ${actual.length}`,
-        );
-      }
-    },
-    toBeGreaterThan: (expected: number) => {
-      if (actual <= expected) {
-        throw new Error(`Expected ${actual} to be greater than ${expected}`);
-      }
-    },
-  };
-}
-
-// Export for potential use
-export { expect };

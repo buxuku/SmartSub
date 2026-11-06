@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain } from '../automation/handlers';
 import { testProxyConnectivity } from './network/proxyManager';
 
 export function setupNetworkHandlers(): void {

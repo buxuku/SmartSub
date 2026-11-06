@@ -1,7 +1,18 @@
 import fs from 'fs';
 import type { SubtitleOutputFormat } from '../../types/subtitleOutput';
-import { convertSubtitleContent, getFormatExtension } from './subtitleFormats';
+import {
+  convertSubtitleContent,
+  getFormatExtension,
+  parseSubtitleCues,
+  serializeSubtitleCues,
+} from './subtitleFormats';
+import {
+  layoutSubtitleText,
+  layoutSubtitleColumns,
+  type SubtitleLayoutOptions,
+} from './subtitleLayout';
 import { atomicReplaceTextFile } from './atomicFile';
+import { stripSpeakerLabelPrefix } from './speakerDiarization/alignment';
 import {
   createSubtitlePathIdentity,
   type SubtitlePathOperations,
@@ -11,6 +22,9 @@ export interface SubtitleDeliverableRequest {
   kind: 'source' | 'target';
   srtPath: string;
   formats: SubtitleOutputFormat[];
+  layout?: SubtitleLayoutOptions;
+  bilingual?: { source: string; target: string }[];
+  contentType?: string;
 }
 
 export interface SubtitleDeliverableResult {
@@ -45,6 +59,13 @@ export async function writeSubtitleDeliverables(
   for (let index = 0; index < requests.length; index++) {
     canonicalKeys[index] = await keys(requests[index].srtPath);
     for (const key of canonicalKeys[index]) {
+      if (
+        requests[index].layout?.subtitleLayout === 'two-line' &&
+        protectedKeys.has(key)
+      )
+        throw new Error(
+          `Subtitle layout would overwrite an input: ${requests[index].srtPath}`,
+        );
       if (owners.has(key))
         throw new Error('Source and translated subtitle paths overlap');
       owners.set(key, index);
@@ -88,7 +109,33 @@ export async function writeSubtitleDeliverables(
   for (let index = 0; index < requests.length; index++) {
     signal?.throwIfAborted();
     const request = requests[index];
-    const content = await fs.promises.readFile(request.srtPath, 'utf-8');
+    let content = await fs.promises.readFile(request.srtPath, 'utf-8');
+    if (request.layout?.subtitleLayout === 'two-line') {
+      const cues = parseSubtitleCues(content, 'srt');
+      if (!cues.length && content.trim())
+        throw new Error('Cannot lay out a subtitle without valid cues');
+      if (request.bilingual && request.bilingual.length !== cues.length)
+        throw new Error('Bilingual layout does not match subtitle cue count');
+      content = serializeSubtitleCues(
+        cues.map((cue, i) => ({
+          ...cue,
+          text: request.bilingual
+            ? layoutSubtitleColumns(
+                request.bilingual[i].source,
+                request.bilingual[i].target,
+                request.contentType || 'sourceAndTranslate',
+                request.layout,
+                cue.text.slice(
+                  0,
+                  cue.text.length - stripSpeakerLabelPrefix(cue.text).length,
+                ),
+              )
+            : layoutSubtitleText(cue.text, request.layout),
+        })),
+        'srt',
+      );
+      await atomicReplaceTextFile(request.srtPath, content, { signal });
+    }
     for (let i = 0; i < request.formats.length; i++) {
       signal?.throwIfAborted();
       const outputPath = results[index].files[i];

@@ -5,6 +5,7 @@
 
 import React from 'react';
 import type { SubtitleStyle } from '../../../types/subtitleMerge';
+import { subtitleTextRuns } from '../../../types/subtitleAppearance';
 import {
   subtitleStyleToCSS,
   getSubtitleContainerStyle,
@@ -28,7 +29,13 @@ export default function SubtitlePreviewOverlay({
   return (
     <div className="absolute inset-0 pointer-events-none">
       <div style={containerStyle}>
-        <span style={textStyle}>{text}</span>
+        <span style={textStyle}>
+          {subtitleTextRuns(text, style).map((run, index) => (
+            <span key={index} style={{ color: run.color }}>
+              {run.text}
+            </span>
+          ))}
+        </span>
       </div>
     </div>
   );

@@ -1,3 +1,5 @@
+import { TranslationActivity } from '../utils/translationActivity';
+import type { ActivityUnit } from '../../../types/taskActivity';
 import {
   TranslationConfig,
   TranslationResult,
@@ -43,8 +45,9 @@ import {
 } from '../utils/batchConcurrency';
 import {
   buildGlossaryPromptBlock,
+  buildSummaryPromptBlock,
   matchGlossaryEntries,
-  renderGlossarySystemPrompt,
+  renderTranslationSystemPrompt,
   selectGlossaryPromptEntries,
 } from '../../glossary/core';
 import { logGlossaryMatches } from '../../helpers/glossaryManager';
@@ -87,6 +90,7 @@ interface RepairEntryParams {
   targetLanguage: string;
   targetLanguageName: string;
   rejectExactSourceCopy?: boolean;
+  onAttempt?: (attempt: number) => void;
   signal?: AbortSignal;
 }
 
@@ -113,6 +117,7 @@ async function repairSubtitleEntry(
         attempt === 0
           ? repairPrompt
           : `${repairPrompt}\n\n上一次结果仍为空、无效或直接重复了原文。请实际翻译目标句后再返回。`;
+      params.onAttempt?.(attempt);
       const responseOrigin = await params.translator(
         attemptPrompt,
         params.translationConfig,
@@ -172,35 +177,22 @@ export async function handleAIBatchTranslation(
   maxRetries: number = 0,
 ): Promise<TranslationResult[]> {
   const { provider, sourceLanguage, targetLanguage, translator } = config;
-  const fallbackTranslator: TranslatorFunction = async (
-    text,
-    requestConfig,
-    from,
-    to,
-    options,
-  ) => {
-    if (!config.fallbackRunner?.hasFallbacks) {
-      return translator(text, requestConfig, from, to, options);
-    }
-    return config.fallbackRunner.run((activeProvider, activeTranslator) =>
-      activeTranslator(
-        text,
-        {
-          ...requestConfig,
-          ...activeProvider,
-          // 保留当前批次生成的 glossary/system prompt，凭据和模型取备用实例。
-          ...(requestConfig?.systemPrompt && {
-            systemPrompt: requestConfig.systemPrompt,
-          }),
-        },
-        from,
-        to,
-        options,
-      ),
-    );
-  };
+
   const sourceLanguageName = getLanguageName(sourceLanguage);
   const targetLanguageName = getLanguageName(targetLanguage);
+  const summaryText = String(config.episodeSummary || '').trim();
+  const summaryBlock = buildSummaryPromptBlock(summaryText);
+  if (summaryText) {
+    logMessage(
+      `本集摘要已注入翻译提示词（${summaryText.length} 字）`,
+      'info',
+    );
+  } else if (config.summarySkipReason) {
+    logMessage(
+      `本文件无摘要（原因：${config.summarySkipReason}），翻译提示词不附加摘要`,
+      'info',
+    );
+  }
   // 回显锚定默认开启（design D4）：模型逐条回显原文，用于检测合并/滑移错位。
   const echoEnabled = provider.echoAnchoring !== false;
   const requestedBatchSize = normalizeBatchSize(
@@ -220,6 +212,11 @@ export async function handleAIBatchTranslation(
   }
   const batches = createTranslationBatches(subtitles, normalizedBatchSize);
   const totalBatches = batches.length;
+  const activity = new TranslationActivity(
+    totalBatches,
+    config.onActivity,
+    config.signal,
+  );
   const batchConcurrency = resolveBatchConcurrency(
     provider.batchConcurrency,
     totalBatches,
@@ -241,6 +238,46 @@ export async function handleAIBatchTranslation(
     let retryCount = 0;
     let batchSuccess = false;
     let batchResults: TranslationResult[] = [];
+    let requestDetail: Omit<ActivityUnit, 'id' | 'startedAt'> = {
+      phase: 'requesting',
+    };
+    const fallbackTranslator: TranslatorFunction = async (
+      text,
+      requestConfig,
+      from,
+      to,
+      options,
+    ) => {
+      const requesting = () =>
+        activity.update(currentBatchIndex, {
+          ...requestDetail,
+          requestStartedAt: Date.now(),
+        });
+      if (!config.fallbackRunner?.hasFallbacks) {
+        requesting();
+        return translator(text, requestConfig, from, to, options);
+      }
+      return config.fallbackRunner.run(
+        (activeProvider, activeTranslator) => {
+          requesting();
+          return activeTranslator(
+            text,
+            {
+              ...requestConfig,
+              ...activeProvider,
+              // 保留当前批次生成的 glossary/system prompt，凭据和模型取备用实例。
+              ...(requestConfig?.systemPrompt && {
+                systemPrompt: requestConfig.systemPrompt,
+              }),
+            },
+            from,
+            to,
+            options,
+          );
+        },
+        () => activity.update(currentBatchIndex, { phase: 'queued' }),
+      );
+    };
 
     logMessage(
       `处理批次 ${currentBatchIndex}/${totalBatches}，包含 ${batch.length} 条字幕`,
@@ -255,7 +292,9 @@ export async function handleAIBatchTranslation(
     const glossaryBlock = buildGlossaryPromptBlock(glossarySelection.included);
     logGlossaryMatches(
       glossarySelection.included,
-      `AI 翻译批次 ${currentBatchIndex}/${totalBatches}`,
+      `AI 翻译批次 ${currentBatchIndex}/${totalBatches}${
+        config.glossarySourceLabel ? `，${config.glossarySourceLabel}` : ''
+      }`,
       glossarySelection.omittedCount,
     );
 
@@ -285,15 +324,19 @@ export async function handleAIBatchTranslation(
             : '\n\n上一次响应存在未翻译或无法解析。请只返回一个 JSON 对象，键必须是输入字幕 ID，值必须是目标语言翻译结果且不能直接复制原文；不要返回 markdown、解释、注释或思考过程。';
         }
 
-        const systemPrompt = renderGlossarySystemPrompt(
+        let systemPrompt = renderTranslationSystemPrompt(
           provider.systemPrompt || defaultSystemPrompt,
           {
             sourceLanguage: sourceLanguageName,
             targetLanguage: targetLanguageName,
             content: fullContent,
           },
-          glossaryBlock,
+          { glossary: glossaryBlock, summary: summaryBlock },
         );
+        if (config.subtitleTranslationStyle === 'conversational') {
+          systemPrompt +=
+            "\n\n<subtitle-style>Use natural, concise spoken dialogue in the target language. Preserve emotional interjections, hesitation, emphasis, humor and each character's tone. Do not flatten emotional speech into formal prose or invent meaning. Required glossary spellings and the output JSON schema take precedence; keep every subtitle ID and its source echo unchanged.</subtitle-style>";
+        }
 
         // 更新配置，保持原有的结构化输出设置
         const translationConfig = {
@@ -314,6 +357,19 @@ export async function handleAIBatchTranslation(
           `AI translate batch ${currentBatchIndex}/${totalBatches} (尝试 ${retryCount + 1}/${maxRetries + 1}): \n ${translationContent}`,
           'info',
         );
+        if (currentBatchIndex === 1 && retryCount === 0) {
+          logMessage(`翻译 system 全文（仅首批）：\n${systemPrompt}`, 'info');
+        }
+        requestDetail = {
+          phase: 'requesting',
+          retry: retryCount || (alignmentRetryUsed ? 1 : undefined),
+          maxRetries: retryCount ? maxRetries : 1,
+          reason: retryCount
+            ? 'request'
+            : alignmentRetryUsed
+              ? 'validation'
+              : undefined,
+        };
         const responseOrigin = await fallbackTranslator(
           translationContent,
           translationConfig,
@@ -326,6 +382,7 @@ export async function handleAIBatchTranslation(
           },
         );
         throwIfSignalCancelled(config.signal);
+        activity.update(currentBatchIndex, { phase: 'validating' });
         const responseText = Array.isArray(responseOrigin)
           ? responseOrigin.join('\n')
           : responseOrigin;
@@ -391,7 +448,16 @@ export async function handleAIBatchTranslation(
               rejectExactSourceCopy:
                 validation.untranslated.includes(flaggedId),
               signal: config.signal,
+              onAttempt: (attempt) => {
+                requestDetail = {
+                  phase: 'repairing',
+                  retry: attempt || undefined,
+                  maxRetries: REPAIR_MAX_ATTEMPTS - 1,
+                  reason: 'validation',
+                };
+              },
             });
+            activity.update(currentBatchIndex, { phase: 'validating' });
             if (repaired !== undefined) {
               validation.accepted[flaggedId] = repaired;
             } else if (validation.promotedExactCopies.includes(flaggedId)) {
@@ -457,6 +523,13 @@ export async function handleAIBatchTranslation(
             'warning',
           );
           // 添加短暂延迟，避免频繁重试
+          activity.update(currentBatchIndex, {
+            phase: 'retrying',
+            retry: retryCount,
+            maxRetries,
+            reason: 'request',
+            waitUntil: Date.now() + 1000 * retryCount,
+          });
           await waitForTaskDelay(1000 * retryCount, config.signal);
         } else {
           logMessage(
@@ -488,6 +561,7 @@ export async function handleAIBatchTranslation(
   };
 
   const results = await runTranslationBatchesInOrder({
+    activity,
     batches,
     concurrency: batchConcurrency,
     requestIntervalMs: config.fallbackRunner?.hasFallbacks
@@ -497,10 +571,10 @@ export async function handleAIBatchTranslation(
     processBatch,
     onProgress,
     onTranslationResult,
-  });
+  }).finally(() => activity.close());
 
   logMessage(
-    `AI批量翻译完成：共处理 ${results.length} 条字幕，成功 ${results.filter((r) => !r.targetContent.startsWith('[翻译失败:')).length} 条`,
+    `AI批量翻译完成：共处理 ${results.length} 条字幕，成功 ${results.filter((r) => r.translationStatus !== 'failed' && !r.targetContent.startsWith('[翻译失败:')).length} 条`,
     'info',
   );
 

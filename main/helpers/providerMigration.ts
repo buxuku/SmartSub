@@ -9,7 +9,16 @@ import {
   isProviderConfigured,
 } from '../../types/provider';
 
-const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree', 'deeplx'];
+const FREE_PROVIDER_IDS = [
+  'autoFree',
+  'youdaoFree',
+  'bingFree',
+  'googleFree',
+  'deeplx',
+];
+// autoFree 回退链：只迁移仍等于旧默认值的链，用户自定义的链原样保留
+const LEGACY_FREE_FALLBACK_CHAIN = 'bingFree,googleFree,deeplx';
+const YOUDAO_FREE_FALLBACK_CHAIN = 'youdaoFree,bingFree,googleFree,deeplx';
 const LEGACY_AI_BATCH_SIZE = 1;
 const LEGACY_AI_BATCH_CONCURRENCY = 1;
 const LEGACY_AI_BATCH_DEFAULTS: Record<string, number> = {
@@ -37,6 +46,18 @@ function withTencentRateLimitDefaults(provider: any): any {
     ...provider,
     requestInterval: TENCENT_DEFAULT_REQUEST_INTERVAL_SECONDS,
   };
+}
+
+/** 未自定义的旧默认链（忽略空白）改为有道在前的新默认链，其余取值不动。 */
+function withYoudaoFreeFallbackChain(provider: any): any {
+  if (provider.type !== 'autoFree') return provider;
+  if (typeof provider.fallbackChain !== 'string') return provider;
+  if (
+    provider.fallbackChain.replace(/\s+/g, '') !== LEGACY_FREE_FALLBACK_CHAIN
+  ) {
+    return provider;
+  }
+  return { ...provider, fallbackChain: YOUDAO_FREE_FALLBACK_CHAIN };
 }
 
 function withFreeRateLimitDefaults(provider: any): any {
@@ -143,7 +164,9 @@ export function migrateProviders(oldProviders: any[]): Provider[] {
       };
       return withTencentRateLimitDefaults(
         withFreeRateLimitDefaults(
-          withAiPerformanceDefaults(migrated, template),
+          withYoudaoFreeFallbackChain(
+            withAiPerformanceDefaults(migrated, template),
+          ),
         ),
       );
     });

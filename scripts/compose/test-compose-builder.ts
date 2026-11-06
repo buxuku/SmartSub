@@ -3,11 +3,12 @@
  * 运行：yarn test:compose
  *
  * 等价性契约（与收敛前实现逐参数一致）：
- * - hard+keep / soft+keep ≡ 旧 subtitleMerger 的 hardcode / softmux 分支
+ * - hard+keep 显式保留视频/全部音轨；soft 保留原字幕并注入新的默认轨
  * - none+replace/mix/addTrack ≡ 旧 audioPipeline 的
  *   replaceAudioTrack / duckMixIntoVideo / addAudioTrack
  */
 
+import path from 'node:path';
 import {
   buildComposePlan,
   composePlanRequiresMkv,
@@ -44,9 +45,30 @@ function assertThrows(fn: () => unknown, label: string) {
   }
 }
 
+/** 抛错且消息匹配：区分「新防护抛出的错」与「别处的无关错误」。 */
+function assertThrowsMatching(
+  fn: () => unknown,
+  pattern: RegExp,
+  label: string,
+) {
+  try {
+    fn();
+    failed++;
+    console.log(`❌ ${label} | expected to throw`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const ok = pattern.test(message);
+    if (!ok) failed++;
+    console.log(
+      `${ok ? '✅' : '❌'} ${label}${ok ? '' : ` | message=${message}`}`,
+    );
+  }
+}
+
 const VIDEO = '/media/movie.mp4';
 const TRACK = '/media/dub.wav';
 const SUB = '/media/movie.srt';
+const TEMP_TRACK = path.join('/media', '.dub-track-T.m4a');
 
 const HARD = {
   mode: 'hard' as const,
@@ -61,13 +83,40 @@ const HW_HARD = {
   needsNv12: true,
 };
 
+/** buildComposePlan 在字幕滤镜之后追加的偶数宽高裁剪（libx264 拒绝奇数宽/高）。 */
+const EVEN = 'crop=trunc(iw/2)*2:trunc(ih/2)*2:0:0';
+
 const DUCK_FILTERS = [
   '[1:a]asplit=2[sc][dub]',
   '[0:a][sc]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=300[bg]',
   '[bg][dub]amix=inputs=2:duration=first:normalize=0[mix]',
 ];
 
-// ── 等价性：hard+keep ≡ 旧 subtitleMerger hardcode 分支 ─────────────────────
+for (const subtitle of [
+  HARD,
+  { mode: 'none' as const },
+  { mode: 'soft' as const, subtitlePath: SUB },
+]) {
+  const plan = buildComposePlan({
+    videoPath: VIDEO,
+    outputPath: '/media/silent.mkv',
+    subtitle,
+    audio: { mode: 'mix', trackPath: TRACK },
+    hasOriginalAudio: false,
+  });
+  assertEqual(
+    plan.complexFilter,
+    undefined,
+    `${subtitle.mode}+mix silent source: no missing audio filter input`,
+  );
+  assertEqual(
+    plan.outputOptions.includes('1:a'),
+    true,
+    `${subtitle.mode}+mix silent source: selected voice track mapped`,
+  );
+}
+
+// ── hard+keep：显式音视频映射，防止额外选择原软字幕 ──────────────────────
 
 {
   const plan = buildComposePlan({
@@ -77,10 +126,18 @@ const DUCK_FILTERS = [
     audio: { mode: 'keep' },
   });
   assertDeepEqual(plan.inputs, [VIDEO], 'hard+keep: 单视频输入');
-  assertEqual(plan.videoFilter, "ass='/tmp/burn.ass'", 'hard+keep: 字幕滤镜');
+  assertEqual(
+    plan.videoFilter,
+    `ass='/tmp/burn.ass',${EVEN}`,
+    'hard+keep: 字幕滤镜 + 偶数宽高裁剪',
+  );
   assertDeepEqual(
     plan.outputOptions,
     [
+      '-map',
+      '0:V',
+      '-map',
+      '0:a?',
       '-c:v',
       'libx264',
       '-preset',
@@ -93,7 +150,7 @@ const DUCK_FILTERS = [
       '+faststart',
       '-y',
     ],
-    'hard+keep(mp4): 与旧 hardcode 分支逐参数一致（含 faststart）',
+    'hard+keep(mp4): 保留全部音轨，不额外封装软字幕（含 faststart）',
   );
   assertEqual(plan.prep, undefined, 'hard+keep: 无准备步骤');
 }
@@ -108,6 +165,10 @@ const DUCK_FILTERS = [
   assertDeepEqual(
     plan.outputOptions,
     [
+      '-map',
+      '0:V',
+      '-map',
+      '0:a?',
       '-c:v',
       'libx264',
       '-preset',
@@ -131,12 +192,12 @@ const DUCK_FILTERS = [
   });
   assertEqual(
     plan.videoFilter,
-    "ass='/tmp/burn.ass',format=nv12",
-    'hard(硬件)+keep: 滤镜链追加 format=nv12',
+    `ass='/tmp/burn.ass',${EVEN},format=nv12`,
+    'hard(硬件)+keep: 偶数裁剪之后追加 format=nv12',
   );
 }
 
-// ── 等价性：soft+keep ≡ 旧 subtitleMerger softmux 分支 ──────────────────────
+// ── 软字幕显式映射 ──────────────────────────────────────────────────────
 
 {
   const plan = buildComposePlan({
@@ -150,18 +211,24 @@ const DUCK_FILTERS = [
     plan.outputOptions,
     [
       '-map',
-      '0',
+      '0:v',
       '-map',
-      '1',
+      '0:a?',
+      '-map',
+      '1:s:0',
+      '-map',
+      '0:s?',
+      '-map',
+      '0:t?',
       '-c',
       'copy',
-      '-c:s',
+      '-c:s:0',
       'srt',
       '-disposition:s:0',
       'default',
       '-y',
     ],
-    'soft+keep: 与旧 softmux 分支逐参数一致',
+    'soft+keep: 新默认字幕 + 原字幕/附件保留，排除数据流',
   );
   assertEqual(plan.videoFilter, undefined, 'soft+keep: 无视频滤镜');
 }
@@ -246,12 +313,12 @@ const DUCK_FILTERS = [
   );
   assertDeepEqual(
     plan.prep,
-    { kind: 'encodeAac', src: TRACK, dst: '/media/.dub-track-T.m4a' },
+    { kind: 'encodeAac', src: TRACK, dst: TEMP_TRACK },
     'none+addTrack: 先预编 aac 临时文件（两步形制保留）',
   );
   assertDeepEqual(
     plan.inputs,
-    [VIDEO, '/media/.dub-track-T.m4a'],
+    [VIDEO, TEMP_TRACK],
     'none+addTrack: 主命令输入为视频+预编 aac',
   );
   assertDeepEqual(
@@ -273,14 +340,14 @@ const DUCK_FILTERS = [
   assertDeepEqual(plan.inputs, [VIDEO, TRACK], 'hard+replace: 两输入');
   assertEqual(
     plan.videoFilter,
-    "ass='/tmp/burn.ass'",
+    `ass='/tmp/burn.ass',${EVEN}`,
     'hard+replace: -vf 滤镜',
   );
   assertDeepEqual(
     plan.outputOptions,
     [
       '-map',
-      '0:v',
+      '0:V',
       '-map',
       '1:a',
       '-c:v',
@@ -312,7 +379,7 @@ const DUCK_FILTERS = [
   assertDeepEqual(
     plan.complexFilter,
     [
-      "[0:v]ass='/tmp/burn.ass',format=nv12[vout]",
+      `[0:v]ass='/tmp/burn.ass',${EVEN},format=nv12[vout]`,
       '[1:a]asplit=2[sc][dub]',
       '[0:a][sc]sidechaincompress=threshold=0.03:ratio=12:attack=20:release=300[bg]',
       '[bg][dub]amix=inputs=2:duration=first:normalize=0[mix]',
@@ -360,7 +427,7 @@ const DUCK_FILTERS = [
     plan.outputOptions,
     [
       '-map',
-      '0:v',
+      '0:V',
       '-map',
       '0:a?',
       '-map',
@@ -399,20 +466,24 @@ const DUCK_FILTERS = [
       '-map',
       '1:a',
       '-map',
-      '2',
-      '-c:v',
+      '2:s:0',
+      '-map',
+      '0:s?',
+      '-map',
+      '0:t?',
+      '-c',
       'copy',
       '-c:a',
       'aac',
       '-b:a',
       '192k',
-      '-c:s',
+      '-c:s:0',
       'srt',
       '-disposition:s:0',
       'default',
       '-y',
     ],
-    'soft+replace: 视频流复制 + 换轨 + 字幕轨',
+    'soft+replace: 视频流复制 + 换轨 + 新旧字幕轨',
   );
 }
 
@@ -428,27 +499,33 @@ const DUCK_FILTERS = [
   );
   assertDeepEqual(
     plan.inputs,
-    [VIDEO, '/media/.dub-track-T.m4a', SUB],
+    [VIDEO, TEMP_TRACK, SUB],
     'soft+addTrack: 预编轨 + 字幕输入顺序',
   );
   assertDeepEqual(
     plan.outputOptions,
     [
       '-map',
-      '0',
+      '0:v',
+      '-map',
+      '0:a?',
       '-map',
       '1:a',
       '-map',
-      '2',
+      '2:s:0',
+      '-map',
+      '0:s?',
+      '-map',
+      '0:t?',
       '-c',
       'copy',
-      '-c:s',
+      '-c:s:0',
       'srt',
       '-disposition:s:0',
       'default',
       '-y',
     ],
-    'soft+addTrack: 全流拷贝 + 附加轨 + 字幕轨',
+    'soft+addTrack: 保留原音轨/字幕/附件 + 附加轨 + 新字幕轨',
   );
 }
 
@@ -470,9 +547,80 @@ assertEqual(
     subtitle: { mode: 'soft' },
     audio: { mode: 'keep' },
   }),
-  true,
-  'soft 需要 mkv',
+  false,
+  'soft 支持 MKV 或 MP4',
 );
+for (const mode of ['keep', 'replace', 'mix'] as const) {
+  const plan = buildComposePlan({
+    videoPath: VIDEO,
+    outputPath: '/media/out.mp4',
+    subtitle: { mode: 'soft', subtitlePath: SUB },
+    audio: mode === 'keep' ? { mode } : { mode, trackPath: TRACK },
+  });
+  assertEqual(
+    plan.outputOptions[plan.outputOptions.indexOf('-c:s') + 1],
+    'mov_text',
+    `MP4 soft+${mode}: mov_text subtitle codec`,
+  );
+  assertEqual(
+    plan.outputOptions.includes('libx264'),
+    false,
+    `MP4 soft+${mode}: no video encoding`,
+  );
+  assertEqual(
+    plan.outputOptions.includes('+faststart'),
+    true,
+    `MP4 soft+${mode}: faststart`,
+  );
+}
+assertThrows(
+  () =>
+    buildComposePlan({
+      videoPath: VIDEO,
+      outputPath: '/media/out.avi',
+      subtitle: { mode: 'soft', subtitlePath: SUB },
+      audio: { mode: 'keep' },
+    }),
+  'soft rejects unsupported containers',
+);
+{
+  const streams = [
+    {
+      subIndex: 0,
+      codec: 'hdmv_pgs_subtitle',
+      isText: false,
+      isDefault: true,
+      isForced: true,
+    },
+  ];
+  const input: ComposePlanInput = {
+    videoPath: VIDEO,
+    outputPath: '/media/out.mp4',
+    subtitle: { mode: 'soft', subtitlePath: SUB },
+    audio: { mode: 'keep' },
+    embeddedSubtitles: streams,
+  };
+  assertThrows(
+    () => buildComposePlan(input),
+    'MP4 rejects bitmap subtitles with MKV guidance',
+  );
+  const plan = buildComposePlan({ ...input, outputPath: '/media/out.mkv' });
+  assertEqual(
+    plan.outputOptions[plan.outputOptions.indexOf('-c:s:0') + 1],
+    'srt',
+    'MKV encodes only the injected track',
+  );
+  assertEqual(
+    plan.outputOptions.includes('-c:s'),
+    false,
+    'MKV existing bitmap/text tracks are copied',
+  );
+  assertEqual(
+    plan.outputOptions[plan.outputOptions.indexOf('-disposition:s:1') + 1],
+    '-default',
+    'original default flag removed without removing forced',
+  );
+}
 assertEqual(
   composePlanRequiresMkv({
     subtitle: { mode: 'hard' },
@@ -489,6 +637,230 @@ assertEqual(
   false,
   'hard+replace 不强制 mkv',
 );
+
+// ── #521：WebM/Ogg 容器写不下合成引擎产出的 H.264/AAC，构建期即拒绝 ─────────
+
+for (const outputPath of [
+  '/media/out.webm',
+  '/media/OUT.WEBM',
+  '/media/out.ogv',
+  '/media/out.ogg',
+]) {
+  for (const [label, subtitle, audio] of [
+    ['hard+keep', HARD, { mode: 'keep' }],
+    ['hard+replace', HARD, { mode: 'replace', trackPath: TRACK }],
+    ['hard+mix', HARD, { mode: 'mix', trackPath: TRACK }],
+    ['hard+addTrack', HARD, { mode: 'addTrack', trackPath: TRACK }],
+    ['none+replace', { mode: 'none' }, { mode: 'replace', trackPath: TRACK }],
+    ['none+mix', { mode: 'none' }, { mode: 'mix', trackPath: TRACK }],
+    ['none+addTrack', { mode: 'none' }, { mode: 'addTrack', trackPath: TRACK }],
+  ] as const) {
+    assertThrowsMatching(
+      () => buildComposePlan({ videoPath: VIDEO, outputPath, subtitle, audio }),
+      /WebM\/Ogg/,
+      `${label}: ${outputPath} 被拒绝（WebM/Ogg 写不下 H.264/AAC）`,
+    );
+  }
+}
+assertThrows(
+  () =>
+    buildComposePlan({
+      videoPath: VIDEO,
+      outputPath: '/media/out.webm',
+      subtitle: { mode: 'soft', subtitlePath: SUB },
+      audio: { mode: 'keep' },
+    }),
+  'soft: .webm 仍被软字幕容器规则拒绝',
+);
+
+// ── #521：hard+keep 的音频规则——WebM/Ogg 源写 MP4 系输出才转 AAC ───────────
+
+function hardKeepAudioArgs(
+  videoPath: string,
+  outputPath: string,
+  subtitle: typeof HARD = HARD,
+): string[] {
+  const { outputOptions } = buildComposePlan({
+    videoPath,
+    outputPath,
+    subtitle,
+    audio: { mode: 'keep' },
+  });
+  const index = outputOptions.indexOf('-c:a');
+  return outputOptions.slice(
+    index,
+    outputOptions[index + 1] === 'aac' ? index + 4 : index + 2,
+  );
+}
+
+for (const [source, output] of [
+  ['/media/clip.webm', '/media/clip_subtitled.mp4'],
+  ['/media/clip.WEBM', '/media/clip_subtitled.MP4'],
+  ['/media/clip.webm', '/media/clip_subtitled.mov'],
+  ['/media/clip.webm', '/media/clip_subtitled.m4v'],
+  ['/media/clip.ogv', '/media/clip_subtitled.mp4'],
+  ['/media/clip.ogg', '/media/clip_subtitled.mp4'],
+]) {
+  assertDeepEqual(
+    hardKeepAudioArgs(source, output),
+    ['-c:a', 'aac', '-b:a', '192k'],
+    `hard+keep ${source.split('.').pop()}→${output.split('.').pop()}: Opus/Vorbis 转 AAC 192k`,
+  );
+}
+assertDeepEqual(
+  hardKeepAudioArgs('/media/clip.webm', '/media/clip_subtitled.mp4', HW_HARD),
+  ['-c:a', 'aac', '-b:a', '192k'],
+  'hard(硬件)+keep webm→mp4: AAC 规则与编码器无关',
+);
+for (const [source, output] of [
+  // 用户手动选 .mkv：Matroska 接受 Opus/Vorbis，保持直拷
+  ['/media/clip.webm', '/media/clip_subtitled.mkv'],
+  ['/media/clip.mp4', '/media/clip_subtitled.mp4'],
+  ['/media/clip.mkv', '/media/clip_subtitled.mp4'],
+  ['/media/clip.mov', '/media/clip_subtitled.mp4'],
+  ['/media/clip.avi', '/media/clip_subtitled.avi'],
+]) {
+  assertDeepEqual(
+    hardKeepAudioArgs(source, output),
+    ['-c:a', 'copy'],
+    `hard+keep ${source.split('.').pop()}→${output.split('.').pop()}: 保持 -c:a copy（既有行为）`,
+  );
+}
+assertDeepEqual(
+  buildComposePlan({
+    videoPath: '/media/clip.webm',
+    outputPath: '/media/clip_subtitled.mp4',
+    subtitle: HARD,
+    audio: { mode: 'keep' },
+  }).outputOptions,
+  [
+    '-map',
+    '0:V',
+    '-map',
+    '0:a?',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'medium',
+    '-crf',
+    '18',
+    '-c:a',
+    'aac',
+    '-b:a',
+    '192k',
+    '-movflags',
+    '+faststart',
+    '-y',
+  ],
+  'hard+keep webm→mp4: 完整参数（libx264 + AAC + faststart）',
+);
+assertEqual(
+  buildComposePlan({
+    videoPath: '/media/clip.webm',
+    outputPath: '/media/clip_subtitled.mkv',
+    subtitle: HARD,
+    audio: { mode: 'keep' },
+  }).outputOptions.includes('-movflags'),
+  false,
+  'hard+keep webm→mkv: 非 MP4 系无 faststart',
+);
+
+// ── 带封面图的 MP4（attached pic）：硬烧只重编码真正的视频流 ────────────────
+
+/** 取出所有 `-map` 的目标，如 ['0:V', '0:a?', '1:a']。 */
+function mapTargets(outputOptions: string[]): string[] {
+  return outputOptions.flatMap((option, index) =>
+    option === '-map' ? [outputOptions[index + 1]] : [],
+  );
+}
+
+// yt-dlp --embed-thumbnail、YoutubeDownloader 等会给 MP4 嵌一路 `Video: mjpeg … (attached pic)` 封面。
+// 硬烧要把被映射的每一路视频都过字幕滤镜并交给 libx264：`-map 0:v` 会连封面一起映射，
+// MP4 写头失败（`Could not find tag for codec h264 in stream #1`），旧版界面只剩 "Conversion failed!"。
+// `0:V`（大写）只匹配真正的视频流。软封装/无字幕是 -c copy，封面原样保留，仍用 0:v（见上方各用例）。
+for (const [label, audio] of [
+  ['keep', { mode: 'keep' }],
+  ['replace', { mode: 'replace', trackPath: TRACK }],
+  ['addTrack', { mode: 'addTrack', trackPath: TRACK }],
+] as const) {
+  const { outputOptions } = buildComposePlan(
+    { videoPath: VIDEO, outputPath: '/media/out.mp4', subtitle: HARD, audio },
+    { tempTag: 'T' },
+  );
+  const targets = mapTargets(outputOptions);
+  assertEqual(
+    targets.includes('0:V'),
+    true,
+    `hard+${label}: 只映射真正的视频流（-map 0:V），封面图不进 libx264`,
+  );
+  assertEqual(
+    targets.includes('0:v'),
+    false,
+    `hard+${label}: 不映射 0:v（会把 attached pic 一并重编码）`,
+  );
+}
+
+// ── 硬烧输出宽高必须是偶数 ──────────────────────────────────────────────────
+
+// libx264 在 yuv420p 下拒绝奇数宽/高：`[libx264] width not divisible by 2 (853x480)`。
+// VP9/AV1/MPEG-4 等源可以是奇数分辨率，旧版界面只剩 "Conversion failed!"。
+// 字幕滤镜之后接 crop 把宽高向下取偶（丢掉右/下多出的 1 像素，不缩放、不加黑边；
+// 本来就是偶数时是空操作）；字幕仍按原始画面渲染，位置不变。
+// 硬件编码器的 format=nv12 仍在链末，所以它们同样拿到偶数宽高。
+// 软封装/无字幕是 -c copy，没有滤镜链。
+
+/** 取出 plan 里作用于视频的滤镜链（-vf，或 hard+mix 并入 complex 图的第一行）。 */
+function videoChain(plan: ReturnType<typeof buildComposePlan>): string {
+  if (plan.videoFilter !== undefined) return plan.videoFilter;
+  const line = plan.complexFilter?.[0] ?? '';
+  return line.replace(/^\[0:v\]/, '').replace(/\[vout\]$/, '');
+}
+
+for (const [encoder, subtitle] of [
+  ['cpu', HARD],
+  ['hw', HW_HARD],
+] as const) {
+  for (const audio of [
+    { mode: 'keep' },
+    { mode: 'replace', trackPath: TRACK },
+    { mode: 'addTrack', trackPath: TRACK },
+    { mode: 'mix', trackPath: TRACK },
+  ] as const) {
+    const plan = buildComposePlan(
+      { videoPath: VIDEO, outputPath: '/media/out.mp4', subtitle, audio },
+      { tempTag: 'T' },
+    );
+    assertEqual(
+      videoChain(plan),
+      `ass='/tmp/burn.ass',${EVEN}${subtitle.needsNv12 ? ',format=nv12' : ''}`,
+      `hard(${encoder})+${audio.mode}: 字幕滤镜 → 偶数宽高裁剪${subtitle.needsNv12 ? ' → format=nv12' : ''}`,
+    );
+  }
+}
+
+for (const subtitle of [
+  { mode: 'none' },
+  { mode: 'soft', subtitlePath: SUB },
+] as const) {
+  for (const audio of [
+    { mode: 'keep' },
+    { mode: 'replace', trackPath: TRACK },
+    { mode: 'addTrack', trackPath: TRACK },
+    { mode: 'mix', trackPath: TRACK },
+  ] as const) {
+    // none+keep 无事可做，构建器直接拒绝（见上方用例）。
+    if (subtitle.mode === 'none' && audio.mode === 'keep') continue;
+    const plan = buildComposePlan(
+      { videoPath: VIDEO, outputPath: '/media/out.mkv', subtitle, audio },
+      { tempTag: 'T' },
+    );
+    assertEqual(
+      /crop=/.test(JSON.stringify(plan)),
+      false,
+      `${subtitle.mode}+${audio.mode}: 流拷贝路径不插入偶数裁剪（不重编码视频）`,
+    );
+  }
+}
 
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项断言失败 ❌`);
 process.exit(failed === 0 ? 0 : 1);

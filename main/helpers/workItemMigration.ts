@@ -1,23 +1,15 @@
+import {
+  TASK_STAGE_KEYS as STAGE_KEYS,
+  hasStageEvidence,
+} from '../../types/taskStages';
 import type { IFiles, TaskProject } from '../../types';
 import type { ProofreadTask } from '../../types/proofread';
+import { deriveProofreadTaskStatus } from '../../types/proofread';
 import type { WorkItem, WorkItemStatus } from '../../types/workItem';
 import {
   PIPELINE_WORK_ITEM_TYPES,
   type PipelineWorkItemType,
 } from '../../types/workItem';
-
-const STAGE_KEYS = [
-  'extractAudio',
-  'extractSubtitle',
-  'refineSubtitle',
-  'manuscriptMatch',
-  'translateSubtitle',
-  'prepareSubtitle',
-  'speakerDiarization',
-  'exportSubtitle',
-  'dubbing',
-  'composeVideo',
-] as const;
 
 type StageKey = (typeof STAGE_KEYS)[number];
 
@@ -51,9 +43,17 @@ export function derivePipelineWorkItemStatus(files: IFiles[]): WorkItemStatus {
     if (file.subtitleGate === 'review' || file.dubbingGate === 'review') {
       anyReview = true;
     }
+    let fileHasStage = false;
     for (const key of STAGE_KEYS) {
       const value = file[key as keyof IFiles];
-      if (value === undefined || value === false) continue;
+      // An empty export field reserves a required delivery stage. Unlike empty
+      // optional stages left by cancellation, it still blocks completion.
+      if (
+        !hasStageEvidence(value) &&
+        !(key === 'exportSubtitle' && value === '')
+      )
+        continue;
+      fileHasStage = true;
 
       hasAnyStage = true;
       if (value === 'loading') anyLoading = true;
@@ -65,6 +65,7 @@ export function derivePipelineWorkItemStatus(files: IFiles[]): WorkItemStatus {
       }
       if (value !== 'done') allStagesDone = false;
     }
+    if (!fileHasStage) allStagesDone = false;
   }
 
   if (anyLoading) return 'running';
@@ -92,7 +93,7 @@ export function taskProjectToWorkItem(project: TaskProject): WorkItem {
 
 export function proofreadTaskToWorkItem(task: ProofreadTask): WorkItem {
   const status: WorkItemStatus =
-    task.status === 'completed' ? 'done' : 'running';
+    deriveProofreadTaskStatus(task.items) === 'completed' ? 'done' : 'running';
 
   return {
     id: task.id,
@@ -152,6 +153,9 @@ export function workItemToTaskProject(item: WorkItem): TaskProject | null {
     name: item.name,
     taskType: item.type as PipelineWorkItemType,
     files: item.pipelineFiles || [],
+    currentRunId: item.currentRunId,
+    runStatus: item.runStatus,
+    runRevision: item.runRevision,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
   };
@@ -165,8 +169,8 @@ export function workItemToProofreadTask(item: WorkItem): ProofreadTask | null {
     name: item.name,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
-    items: item.proofreadEntries || [],
+    items: structuredClone(item.proofreadEntries || []),
     currentItemIndex: item.currentProofreadIndex ?? 0,
-    status: item.status === 'done' ? 'completed' : 'in_progress',
+    status: deriveProofreadTaskStatus(item.proofreadEntries || []),
   };
 }

@@ -1,0 +1,72 @@
+name: Proofread platform E2E
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/lxd/ui]
+    paths:
+      - '.github/workflows/proofread-platforms.yml'
+      - 'scripts/e2e/proofread-keyboard-performance.mjs'
+      - 'renderer/components/proofread/**'
+      - 'renderer/components/subtitle/**'
+      - 'renderer/hooks/useHotkeys.ts'
+      - 'renderer/hooks/useStandaloneSubtitles.ts'
+      - 'renderer/lib/proofreadDraft.ts'
+      - 'renderer/lib/subtitleVirtualRange.ts'
+      - 'main/preload.ts'
+      - 'main/helpers/*Proofread*'
+      - 'main/helpers/proofreadDraftStore.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proofread-platforms-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  proofread:
+    name: Production keyboard and recovery (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      CI: 'true'
+      SMARTSUB_E2E_OUTPUT_DIR: artifacts/proofread
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Linux display and audio dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2 pulseaudio fonts-noto-cjk
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=smartsub
+      - name: Build production application
+        run: npm run build
+      - name: Run Windows keyboard, geometry and crash recovery
+        if: runner.os == 'Windows'
+        run: node scripts/e2e/proofread-keyboard-performance.mjs --production --complex
+      - name: Run Linux keyboard, geometry and crash recovery
+        if: runner.os == 'Linux'
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" npm run test:e2e:proofread-keyboard -- --production --complex
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proofread-${{ matrix.os }}-${{ github.sha }}
+          path: |
+            artifacts/proofread/*.json
+            artifacts/proofread/*.png
+            artifacts/proofread/*.log
+          if-no-files-found: warn
+          retention-days: 14

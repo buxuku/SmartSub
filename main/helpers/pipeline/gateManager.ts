@@ -4,7 +4,7 @@
 
 import { BrowserWindow, Notification } from 'electron';
 import { logMessage, store } from '../storeManager';
-import { getWorkItemById, saveWorkItem } from '../workItemStore';
+import { getWorkItemById } from '../workItemStore';
 import { enqueueProjectFiles } from '../taskProcessor';
 import {
   GATE_FIELD,
@@ -13,6 +13,10 @@ import {
   type GateKind,
 } from './gateLogic';
 import type { IFiles } from '../../../types';
+import { taskRunService, assertTaskResultsSaved } from '../taskRuns/access';
+import fs from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readSessionMeta } from '../dubbing/sessionStore';
 
 /** 到闸通知聚合窗口（同任务同闸门在窗口内合并为一条） */
 const NOTIFY_DEBOUNCE_MS = 5000;
@@ -103,17 +107,59 @@ export function releaseGate(
     fileUuids,
   );
   if (!targets.length) return { released: 0, dispatched: false };
+  assertTaskResultsSaved(targets.map((file) => file.proofreadDataFile));
 
   const targetUuids = new Set(targets.map((f) => f.uuid));
   const updatedFiles = (item.pipelineFiles as IFiles[]).map((file) =>
     targetUuids.has(file.uuid) ? { ...file, [field]: 'passed' as const } : file,
   );
-  saveWorkItem({ ...item, pipelineFiles: updatedFiles });
-
   const releasedFiles = updatedFiles.filter((file) =>
     targetUuids.has(file.uuid),
   );
+  const service = taskRunService();
+  const run = service?.get(projectId);
+  if (run) {
+    for (const file of releasedFiles) {
+      const stageId = gate === 'subtitle' ? 'subtitleReview' : 'dubbingReview';
+      const stage = run.files.find((entry) => entry.fileId === file.uuid)
+        ?.stages[stageId];
+      if (!stage?.approvalRevision) return { error: 'TASK_REVIEW_NOT_READY' };
+      if (gate === 'dubbing' && file.dubbingSessionId)
+        (file as any).manualDubbingRevision = createHash('sha256')
+          .update(JSON.stringify(readSessionMeta(file.dubbingSessionId)))
+          .digest('hex');
+      if (file.proofreadDataFile) {
+        const raw = fs.readFileSync(file.proofreadDataFile, 'utf8');
+        const data = JSON.parse(raw);
+        file.translationFailures = (data.cues || [])
+          .filter(
+            (cue) =>
+              cue.translationStatus === 'failed' ||
+              /^\[翻译失败:/.test(cue.target || ''),
+          )
+          .map((cue) => ({ subtitleId: cue.id, error: cue.translationError }));
+        (file as any).approvedProofreadDigest = createHash('sha256')
+          .update(raw)
+          .digest('hex');
+      }
+      try {
+        service!.releaseReview({
+          projectId,
+          runId: run.runId,
+          fileId: file.uuid,
+          stageId,
+          revision: stage.approvalRevision,
+          projection: file,
+        });
+      } catch (error) {
+        return {
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+  }
   const dispatched = enqueueProjectFiles(projectId, releasedFiles, snapshot);
+  if (!dispatched) return { error: 'TASK_GATE_SUBMISSION_FAILED' };
   logMessage(
     `gate released: ${gate} × ${releasedFiles.length} file(s) in ${projectId} (dispatched=${dispatched})`,
     'info',

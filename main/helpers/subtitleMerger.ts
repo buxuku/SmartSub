@@ -13,6 +13,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { logMessage } from './storeManager';
 import type { SubtitleStyle, VideoInfo } from '../../types/subtitleMerge';
+import { buildStyledAssDocument } from './assCanvas';
+import { resolveAssFonts } from './assFonts';
+import { normalizeAssFontSections } from './assEmbeddedFonts';
 import {
   detectSubtitleFormatFromContent,
   parseSubtitleCues,
@@ -23,7 +26,17 @@ import {
   convertAlignment,
   backOpacityToAssAlpha,
 } from './assStyleBuilder';
-import { containsCJK, resolveBurnFontName } from './fontResolver';
+import {
+  containsCJK,
+  resolveBurnFontName,
+  isFontAvailable,
+  newFontFallbackReport,
+  summarizeFontFallbackReport,
+  embeddedFontContext,
+} from './fontResolver';
+import { probeVideoInfo } from './toolbox/videoTrimmer';
+import { assertValidSubtitleStyle } from '../../types/subtitleStyleValidation';
+import { writableComposeExtension } from '../../types/composeContainer';
 
 // 设置 ffmpeg 路径
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
@@ -82,20 +95,19 @@ export function buildForceStyle(style: SubtitleStyle): string {
 }
 
 /**
- * 转义字幕文件路径以用于 FFmpeg 滤镜
- * Windows 路径需要特殊处理
+ * 转义字幕路径，供调用方放入滤镜的单引号中（`ass='…'`）。
+ * FFmpeg 先解析滤镜图，再解析滤镜选项；两层都需要保护路径中的单引号。
  */
 export function escapeSubtitlePath(subtitlePath: string): string {
-  // 将反斜杠转换为正斜杠
-  let escaped = subtitlePath.replace(/\\/g, '/');
-  // 转义特殊字符: : ' [
-  // 注意: 先转义 : 和 [，再转义 '（避免引入的 \ 被重复转义）
-  // 此时路径中不应有反斜杠（已全部转为正斜杠），所以不需要转义 \
-  escaped = escaped
-    .replace(/:/g, '\\:')
-    .replace(/\[/g, '\\[')
-    .replace(/'/g, "\\'");
-  return escaped;
+  return (
+    subtitlePath
+      .replace(/\\/g, '/')
+      // 选项层：保护 Windows 盘符的冒号和路径中的单引号。
+      .replace(/[:']/g, '\\$&')
+      // 滤镜图层：单引号内的反斜杠不能转义单引号，须先闭合、转义、再重新打开。
+      // 外层单引号已保护逗号、分号、方括号和空格，避免吞入后续 crop 等滤镜。
+      .replace(/'/g, "'\\''")
+  );
 }
 
 /**
@@ -132,64 +144,126 @@ export function cleanupTempSubtitle(tmpPath: string): void {
   }
 }
 
-// 备注：CJK 字体兜底逻辑已抽至 fontResolver.ts（烧录与 JASSUB 预览共用）。
-// 曾尝试给 libass 传 fontsdir 兜底，但实测打包版 ffmpeg 的默认 fontconfig
-// 已能按 family 名解析系统 CJK 字体（含 Supplemental 目录），fontsdir 反而会触发
-// 扫描整目录的无害告警（如 Apple Color Emoji 元数据读取失败），故移除。
-
 /**
  * 按当前样式为字幕文件生成 ASS 文档（烧录与预览共用，保证所见即所得）。
- * 内含 CJK 字体兜底：字幕含中文而所选字体无 CJK 字形/本机不可用时替换 Fontname。
+ * 规范化系统字体别名，仅为缺失字形写入显式后备字体。
  */
 export function buildAssForSubtitle(
   subtitleContent: string,
   subtitlePath: string,
   style: SubtitleStyle,
-): { assContent: string; effectiveStyle: SubtitleStyle } {
+) {
+  assertValidSubtitleStyle(style);
   const format = detectSubtitleFormatFromContent(subtitlePath, subtitleContent);
   const cues = parseSubtitleCues(subtitleContent, format);
+  const fontContext =
+    format === 'ass' ? embeddedFontContext(subtitleContent) : [];
 
   let effectiveStyle = style;
   const hasCJK = containsCJK(subtitleContent);
-  const burnFont = resolveBurnFontName(style.fontName, hasCJK);
+  const burnFont = resolveBurnFontName(style.fontName, hasCJK, fontContext);
   if (burnFont !== style.fontName) {
     effectiveStyle = { ...style, fontName: burnFont };
     logMessage(
-      `字幕含中文，但所选字体「${style.fontName}」在本机不可用/无 CJK 字形，已改用「${burnFont}」`,
-      'warning',
+      `字幕字体「${style.fontName}」解析为「${burnFont}」`,
+      isFontAvailable(style.fontName, fontContext) ? 'info' : 'warning',
     );
   }
 
-  return { assContent: buildAssDocument(cues, effectiveStyle), effectiveStyle };
+  const styled =
+    format === 'ass'
+      ? buildStyledAssDocument(subtitleContent, effectiveStyle)
+      : { content: buildAssDocument(cues, effectiveStyle), translateY: 0 };
+  const fallbackReport = newFontFallbackReport();
+  const resolved = resolveAssFonts(
+    styled.content,
+    effectiveStyle.fontName,
+    fontContext,
+    fallbackReport,
+  );
+  const fontReport = summarizeFontFallbackReport(fallbackReport);
+  for (const fallback of fontReport.fallbacks)
+    logMessage(
+      `字体「${fallback.from}」缺少部分字形（如「${fallback.sample}」），已使用「${fallback.to}」渲染`,
+      'warning',
+    );
+  if (fontReport.missingGlyphs.length)
+    logMessage(
+      `没有已安装字体包含这些字符，将显示为方块：${fontReport.missingGlyphs.join('')}。建议安装思源黑体（Noto Sans CJK）`,
+      'warning',
+    );
+  const embeddedFonts = new Map<
+    string,
+    { fontNames: string[]; id: string; data: Uint8Array }
+  >();
+  for (const font of fontContext) {
+    const existing = embeddedFonts.get(font.id!);
+    if (existing) {
+      if (!existing.fontNames.includes(font.fontName))
+        existing.fontNames.push(font.fontName);
+    } else
+      embeddedFonts.set(font.id!, {
+        fontNames: [font.fontName],
+        id: font.id!,
+        data: new Uint8Array(font.data!),
+      });
+  }
+  return {
+    assContent: normalizeAssFontSections(resolved.content),
+    translateY: styled.translateY,
+    fontNames: resolved.fontNames,
+    effectiveStyle,
+    fontSubstituted: !isFontAvailable(style.fontName, fontContext),
+    fontReport,
+    embeddedFonts: Array.from(embeddedFonts.values()),
+  };
 }
 
 /**
  * 获取视频信息
  */
-export function getVideoInfo(videoPath: string): Promise<VideoInfo> {
-  return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(videoPath, (err, metadata) => {
-      if (err) {
-        logMessage(`获取视频信息失败: ${err.message}`, 'error');
-        reject(err);
-        return;
-      }
+export async function getVideoInfo(videoPath: string): Promise<VideoInfo> {
+  try {
+    return await new Promise<VideoInfo>((resolve, reject) => {
+      ffmpeg.ffprobe(videoPath, (err, metadata) => {
+        if (err) {
+          logMessage(`获取视频信息失败: ${err.message}`, 'error');
+          reject(err);
+          return;
+        }
 
-      const videoStream = metadata.streams.find(
-        (s) => s.codec_type === 'video',
-      );
-      const stats = fs.statSync(videoPath);
-
-      resolve({
-        path: videoPath,
-        fileName: path.basename(videoPath),
-        duration: metadata.format.duration || 0,
-        width: videoStream?.width || 0,
-        height: videoStream?.height || 0,
-        size: stats.size,
+        const videoStream = metadata.streams.find(
+          (s) => s.codec_type === 'video',
+        );
+        if (!videoStream?.width || !videoStream.height) {
+          reject(new Error('No video dimensions in media metadata'));
+          return;
+        }
+        try {
+          const stats = fs.statSync(videoPath);
+          resolve({
+            path: videoPath,
+            fileName: path.basename(videoPath),
+            duration: metadata.format.duration || 0,
+            width: videoStream.width,
+            height: videoStream.height,
+            size: stats.size,
+            hasAudio: metadata.streams.some(
+              (stream) => stream.codec_type === 'audio',
+            ),
+          });
+        } catch (error) {
+          reject(error);
+        }
       });
     });
-  });
+  } catch {
+    // Packaged installations include FFmpeg, not a system ffprobe binary.
+    const info = await probeVideoInfo(videoPath);
+    if (!info.width || !info.height)
+      throw new Error('No video stream in selected media');
+    return { path: videoPath, fileName: path.basename(videoPath), ...info };
+  }
 }
 
 /**
@@ -202,7 +276,8 @@ export function generateOutputPath(
   const dir = path.dirname(videoPath);
   const ext = path.extname(videoPath);
   const baseName = path.basename(videoPath, ext);
-  return path.join(dir, `${baseName}${suffix}${ext}`);
+  // 沿用源容器；WebM/Ogg 写不下硬烧的 H.264 与配音的 AAC，回落 MP4（#521）
+  return path.join(dir, `${baseName}${suffix}${writableComposeExtension(ext)}`);
 }
 
 /**

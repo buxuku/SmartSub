@@ -130,6 +130,59 @@ export async function clearLogs(projectId?: string): Promise<void> {
   }
 }
 
+/** 等待已排队的日志写入落盘（导出诊断包前调用，避免最近几条日志还没写进文件）。 */
+export function flushLogWrites(): Promise<void> {
+  return writeChain;
+}
+
+/** 日志文件的日期与大小（日期降序），供诊断包预览。 */
+export async function listLogFiles(): Promise<
+  Array<{ date: string; size: number }>
+> {
+  const out: Array<{ date: string; size: number }> = [];
+  for (const date of await listLogDates()) {
+    try {
+      const stat = await fsp.stat(getLogFilePath(date));
+      out.push({ date, size: stat.size });
+    } catch {
+      // 枚举与读取之间被删除，跳过
+    }
+  }
+  return out;
+}
+
+/**
+ * 读某天日志的原文（诊断包用）。超过 maxBytes 时只取尾部并从整行开始，
+ * 因为最近的内容对排查最有用；返回 truncated 让调用方在清单里标注。
+ */
+export async function readLogFileText(
+  date: string,
+  maxBytes: number,
+): Promise<{ text: string; truncated: boolean } | null> {
+  let handle: fsp.FileHandle;
+  try {
+    handle = await fsp.open(getLogFilePath(date), 'r');
+  } catch {
+    return null;
+  }
+  try {
+    const { size } = await handle.stat();
+    const length = Math.min(size, maxBytes);
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, size - length);
+    let text = buffer.subarray(0, bytesRead).toString('utf-8');
+    const truncated = size > maxBytes;
+    if (truncated) {
+      // 起点大概率落在某一行中间，丢掉这半行
+      const firstBreak = text.indexOf('\n');
+      text = firstBreak >= 0 ? text.slice(firstBreak + 1) : '';
+    }
+    return { text, truncated };
+  } finally {
+    await handle.close().catch(() => {});
+  }
+}
+
 /** 删除超过保留期的日志文件，应用启动时调用（失败静默） */
 export async function cleanupOldLogs(): Promise<void> {
   try {

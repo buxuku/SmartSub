@@ -1,3 +1,5 @@
+import { TranslationActivity } from '../utils/translationActivity';
+import type { ActivityUnit } from '../../../types/taskActivity';
 import {
   TranslationConfig,
   TranslationResult,
@@ -31,32 +33,18 @@ export async function handleAPIBatchTranslation(
   maxRetries: number = 0,
 ): Promise<TranslationResult[]> {
   const { provider, sourceLanguage, targetLanguage, translator } = config;
-  const fallbackTranslator: TranslatorFunction = async (
-    text,
-    requestConfig,
-    from,
-    to,
-    options,
-  ) => {
-    if (!config.fallbackRunner?.hasFallbacks) {
-      return translator(text, requestConfig, from, to, options);
-    }
-    return config.fallbackRunner.run((activeProvider, activeTranslator) =>
-      activeTranslator(
-        text,
-        { ...requestConfig, ...activeProvider },
-        from,
-        to,
-        options,
-      ),
-    );
-  };
+
   const normalizedBatchSize = normalizeBatchSize(
     batchSize,
     DEFAULT_BATCH_SIZE.API,
   );
   const batches = createTranslationBatches(subtitles, normalizedBatchSize);
   const totalBatches = batches.length;
+  const activity = new TranslationActivity(
+    totalBatches,
+    config.onActivity,
+    config.signal,
+  );
   const batchConcurrency = resolveBatchConcurrency(
     provider.batchConcurrency,
     totalBatches,
@@ -79,6 +67,39 @@ export async function handleAPIBatchTranslation(
     let retryCount = 0;
     let batchSuccess = false;
     let batchResults: TranslationResult[] = [];
+    let requestDetail: Omit<ActivityUnit, 'id' | 'startedAt'> = {
+      phase: 'requesting',
+    };
+    const fallbackTranslator: TranslatorFunction = async (
+      text,
+      requestConfig,
+      from,
+      to,
+      options,
+    ) => {
+      const requesting = () =>
+        activity.update(currentBatchIndex, {
+          ...requestDetail,
+          requestStartedAt: Date.now(),
+        });
+      if (!config.fallbackRunner?.hasFallbacks) {
+        requesting();
+        return translator(text, requestConfig, from, to, options);
+      }
+      return config.fallbackRunner.run(
+        (activeProvider, activeTranslator) => {
+          requesting();
+          return activeTranslator(
+            text,
+            { ...requestConfig, ...activeProvider },
+            from,
+            to,
+            options,
+          );
+        },
+        () => activity.update(currentBatchIndex, { phase: 'queued' }),
+      );
+    };
 
     while (!batchSuccess && retryCount <= maxRetries) {
       throwIfTaskCancelled();
@@ -86,6 +107,12 @@ export async function handleAPIBatchTranslation(
         logMessage(
           `API翻译批次 ${currentBatchIndex}/${totalBatches} (尝试 ${retryCount + 1}/${maxRetries + 1})`,
         );
+        requestDetail = {
+          phase: 'requesting',
+          retry: retryCount || undefined,
+          maxRetries: maxRetries,
+          reason: retryCount ? 'request' : undefined,
+        };
         const translatedContent = await fallbackTranslator(
           batchContents,
           provider,
@@ -98,6 +125,7 @@ export async function handleAPIBatchTranslation(
         );
         throwIfSignalCancelled(config.signal);
 
+        activity.update(currentBatchIndex, { phase: 'validating' });
         const translatedLines = Array.isArray(translatedContent)
           ? translatedContent
           : translatedContent.split('\n');
@@ -134,6 +162,13 @@ export async function handleAPIBatchTranslation(
             'warning',
           );
           // 添加短暂延迟，避免频繁重试
+          activity.update(currentBatchIndex, {
+            phase: 'retrying',
+            retry: retryCount,
+            maxRetries,
+            reason: 'request',
+            waitUntil: Date.now() + 1000 * retryCount,
+          });
           await waitForTaskDelay(1000 * retryCount, config.signal);
         } else {
           logMessage(
@@ -160,6 +195,7 @@ export async function handleAPIBatchTranslation(
   };
 
   const results = await runTranslationBatchesInOrder({
+    activity,
     batches,
     concurrency: batchConcurrency,
     requestIntervalMs: config.fallbackRunner?.hasFallbacks
@@ -169,7 +205,7 @@ export async function handleAPIBatchTranslation(
     processBatch,
     onProgress,
     onTranslationResult,
-  });
+  }).finally(() => activity.close());
 
   return results;
 }

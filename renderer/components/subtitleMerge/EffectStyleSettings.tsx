@@ -17,6 +17,7 @@ import { HelpHint } from '@/components/HelpHint';
 import { PenLine, RectangleHorizontal } from 'lucide-react';
 import type { SubtitleStyle, BorderStyle } from '../../../types/subtitleMerge';
 import { OUTLINE_RANGE, SHADOW_RANGE, BACK_OPACITY_RANGE } from './constants';
+import { subtitleColorSwatch } from '../../../types/subtitleColor';
 
 interface EffectStyleSettingsProps {
   style: SubtitleStyle;
@@ -49,13 +50,15 @@ function ColorField({
       <div className="flex items-center gap-2">
         <Input
           type="color"
-          value={value}
+          aria-label={label}
+          value={subtitleColorSwatch(value)}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           className="w-10 h-9 p-1 cursor-pointer shrink-0"
         />
         <Input
           type="text"
+          aria-label={label}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}

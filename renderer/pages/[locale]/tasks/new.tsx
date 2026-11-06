@@ -3,23 +3,30 @@
  * `?recipe=<id>` 按配方预填目标/配置/把关（启动台配方卡入口）；
  * `?preset=full` 为旧入口兼容，预勾全部目标产物。
  */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { getStaticPaths, makeStaticProperties } from '../../../lib/get-static';
 import TaskWizard from '@/components/tasks/wizard/TaskWizard';
 
 export default function NewTaskPage() {
   const router = useRouter();
-  if (!router.isReady) return null;
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  if (!mounted || !router.isReady) return null;
   return <TaskWizard />;
 }
 
 // home 命名空间为 InlineConfigBar 的历史文案（输出内容/格式下拉等）所需；
-// subtitleMerge 为合成配置的样式预设名/画质/编码文案所需
+// subtitleMerge 为合成配置的样式预设名/画质/编码文案所需；
+// translateControl 为「生成摘要」弹层里的摘要提示词编辑弹窗所需
 export const getStaticProps = makeStaticProperties([
   'common',
   'home',
   'tasks',
+  'dubbing',
   'subtitleMerge',
+  'translateControl',
 ]);
 export { getStaticPaths };

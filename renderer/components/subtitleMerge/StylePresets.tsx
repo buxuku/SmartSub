@@ -9,7 +9,7 @@
  * 与系统预设同卡片形态展示，可删除；任务向导的合成样式选择共用这批预设。
  */
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import { BookmarkPlus, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -29,6 +29,7 @@ import type {
 } from '../../../types/subtitleMerge';
 import { STYLE_PRESETS } from './constants';
 import { subtitleStyleToCSS } from './utils/styleUtils';
+import { subtitleTextRuns } from '../../../types/subtitleAppearance';
 
 interface StylePresetsProps {
   activePresetId: string | null;
@@ -44,7 +45,7 @@ interface StylePresetsProps {
 /** 卡片内样例字相对完整样式的缩放系数（把 22-28px 字号缩到卡片可容纳的大小） */
 const CHIP_SCALE = 0.55;
 
-const SAMPLE_TEXT = '字幕 Aa';
+const SAMPLE_TEXT = 'SmartSub\n字幕 Aa';
 
 /** 所见即所得预设卡片（系统/用户共用视觉）；额外角标/删除钮经 overlay 注入 */
 function PresetCard({
@@ -72,7 +73,7 @@ function PresetCard({
       aria-disabled={disabled}
       onClick={() => !disabled && onSelect()}
       onKeyDown={(e) => {
-        if (disabled) return;
+        if (disabled || e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onSelect();
@@ -85,8 +86,14 @@ function PresetCard({
       } ${disabled ? 'pointer-events-none opacity-50' : ''}`}
     >
       {/* 效果缩略图：深色渐变模拟视频画面，样例字用预设真实样式渲染 */}
-      <div className="relative flex h-12 items-center justify-center bg-gradient-to-br from-zinc-600 to-zinc-900">
-        <span style={chipStyle}>{SAMPLE_TEXT}</span>
+      <div className="relative flex h-20 items-center justify-center bg-zinc-800 pt-3">
+        <span style={chipStyle}>
+          {subtitleTextRuns(SAMPLE_TEXT, style).map((run, index) => (
+            <span key={index} style={{ color: run.color }}>
+              {run.text}
+            </span>
+          ))}
+        </span>
         <span className="absolute right-1 top-1 rounded bg-black/50 px-1 text-[10px] leading-4 text-white/80">
           {modeLabel}
         </span>
@@ -116,13 +123,21 @@ export default function StylePresets({
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [presetName, setPresetName] = useState('');
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const setDialogOpen = (open: boolean) => {
+    if (savingRef.current) return;
+    if (open) setSaveError(null);
+    setSaveDialogOpen(open);
+  };
 
   const modeLabel = (style: SubtitleStyle) =>
     style.borderStyle === 3 ? t('presetModeBox') : t('presetModeOutline');
 
   const handleSave = async () => {
     const name = presetName.trim();
-    if (!name || saving || !onSaveStylePreset) return;
+    if (!name || savingRef.current || !onSaveStylePreset) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       const saved = await onSaveStylePreset(name);
@@ -130,10 +145,14 @@ export default function StylePresets({
         toast.success(t('presetSaved', { name }));
         setSaveDialogOpen(false);
         setPresetName('');
+        setSaveError(null);
       } else {
-        toast.error(t('presetSaveFailed'));
+        setSaveError(t('presetSaveFailed'));
       }
+    } catch {
+      setSaveError(t('presetSaveFailed'));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -172,7 +191,7 @@ export default function StylePresets({
                 size="sm"
                 className="h-6 gap-1 px-1.5 text-[11px]"
                 disabled={disabled}
-                onClick={() => setSaveDialogOpen(true)}
+                onClick={() => setDialogOpen(true)}
               >
                 <BookmarkPlus className="h-3 w-3" />
                 {t('saveStyleAsPreset')}
@@ -195,6 +214,7 @@ export default function StylePresets({
                       <button
                         type="button"
                         aria-label={t('deletePreset')}
+                        disabled={disabled}
                         title={t('deletePreset')}
                         className="absolute left-1 top-1 rounded bg-black/50 p-0.5 text-white/80 opacity-0 transition-opacity hover:bg-black/70 hover:text-white group-hover/preset:opacity-100"
                         onClick={(e) => {
@@ -218,7 +238,7 @@ export default function StylePresets({
       )}
 
       {/* 保存我的样式：命名对话框 */}
-      <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
+      <Dialog open={saveDialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t('savePresetDialogTitle')}</DialogTitle>
@@ -226,15 +246,28 @@ export default function StylePresets({
           </DialogHeader>
           <Input
             value={presetName}
+            disabled={saving}
             onChange={(e) => setPresetName(e.target.value)}
             placeholder={t('savePresetNamePlaceholder')}
             autoFocus
             onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleSave();
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                void handleSave();
+              }
             }}
           />
+          {saveError && (
+            <p role="alert" className="text-sm text-destructive">
+              {saveError}
+            </p>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>
+            <Button
+              variant="outline"
+              disabled={saving}
+              onClick={() => setDialogOpen(false)}
+            >
               {t('cancel')}
             </Button>
             <Button

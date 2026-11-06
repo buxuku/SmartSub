@@ -1,8 +1,12 @@
+import { ipcMain } from '../automation/handlers';
 /**
  * 字幕校对相关的 IPC 处理器
  */
 
-import { ipcMain } from 'electron';
+import { app } from 'electron';
+import path from 'path';
+import { createProofreadDraftStore } from './proofreadDraftStore';
+import { createQualityReviewStore } from './qualityReviewStore';
 import {
   detectSubtitlesForVideo,
   matchSubtitlesByRules,
@@ -31,6 +35,10 @@ import {
   detectLanguagePair,
 } from './languageDetector';
 import { logMessage, store } from './storeManager';
+import {
+  loadProofreadWaveform,
+  cancelProofreadWaveforms,
+} from './proofreadWaveform';
 import { ProofreadItem } from '../../types/proofread';
 import {
   TRANSLATOR_MAP,
@@ -46,30 +54,128 @@ import { resolveProviderFallbacks } from './providerMigration';
 import { runSubtitleCorrection } from './subtitleCorrectionService';
 import {
   buildGlossaryPromptBlock,
+  describeGlossaryContext,
   glossaryConflictFingerprint,
   injectGlossaryPromptBlock,
   matchGlossaryEntries,
   selectGlossaryPromptEntries,
 } from '../glossary/core';
 import {
-  getActiveGlossaryResolution,
+  getTaskGlossaryResolution,
   logGlossaryConflicts,
   logGlossaryMatches,
 } from './glossaryManager';
+import { readProofreadDataFile } from './proofreadData';
+import { setProofreadDataRoot } from './proofreadDataStorage';
+import { loadSidecarGlossaryIds } from './sidecarGlossaryIds';
 
 // 校对批量操作（批量 AI 优化 / 重翻失败）取消注册表
 const batchAbortControllers = new Map<string, AbortController>();
 const singleOptimizeConflictFingerprints = new WeakMap<object, string>();
 
 /**
+ * 从 sidecar 读任务词库；仅缺路径 / 缺键回落，读失败交给 IPC 错误边界。
+ * 调用方在没有路径时不要 await 本函数，否则会多一次事件循环让出，
+ * 取消/销毁无法在 handler 返回前看到已经开始的请求。
+ */
+async function readSidecarGlossaryIds(
+  proofreadDataFile?: string,
+): Promise<string[] | undefined> {
+  try {
+    return await loadSidecarGlossaryIds(
+      proofreadDataFile,
+      readProofreadDataFile,
+    );
+  } catch (error) {
+    logMessage(
+      `Failed to read sidecar glossaryIds from ${proofreadDataFile}: ${error}`,
+      'warning',
+    );
+    throw error;
+  }
+}
+
+/**
  * 设置字幕校对相关的 IPC 处理器
  */
 export function setupProofreadHandlers(): void {
+  // 新生成的校对 sidecar 放在应用数据目录，不再写进用户视频旁；
+  // 位置固定，不跟随 storageRoot（见 openspec manage-proofread-data-storage）。
+  setProofreadDataRoot(path.join(app.getPath('userData'), 'proofread-data'));
+  const reviews = createQualityReviewStore(
+    path.join(app.getPath('userData'), 'quality-reviews'),
+  );
+  ipcMain.handle('qualityReview:read', (_event, key: string) => {
+    try {
+      return { success: true, data: reviews.read(key) };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+  ipcMain.handle('qualityReview:save', (_event, { key, state }) => {
+    try {
+      reviews.save(key, state);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+  const drafts = createProofreadDraftStore(
+    path.join(app.getPath('userData'), 'proofread-drafts'),
+  );
+  ipcMain.on('proofread:draft-read', (event, key: string) => {
+    try {
+      event.returnValue = { success: true, raw: drafts.read(key) };
+    } catch (error) {
+      event.returnValue = { success: false, error: String(error) };
+    }
+  });
+  ipcMain.on(
+    'proofread:draft-write',
+    (event, key: string, raw: string | null) => {
+      try {
+        drafts.write(key, raw);
+        event.returnValue = { success: true, raw: null };
+      } catch (error) {
+        event.returnValue = { success: false, error: String(error) };
+      }
+    },
+  );
+  const waveformOwners = new Set<number>();
+  ipcMain.handle(
+    'proofread:waveform',
+    async (event, { requestId, filePath }) => {
+      const owner = event.sender.id;
+      if (!waveformOwners.has(owner)) {
+        waveformOwners.add(owner);
+        event.sender.once('destroyed', () => {
+          cancelProofreadWaveforms(owner);
+          waveformOwners.delete(owner);
+        });
+      }
+      try {
+        return {
+          success: true,
+          data: await loadProofreadWaveform(owner, requestId, filePath),
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  );
+  ipcMain.handle('proofread:cancel-waveform', (event, requestId: string) => {
+    cancelProofreadWaveforms(event.sender.id, requestId);
+  });
   // 取消进行中的校对批量操作
   ipcMain.handle(
     'cancelProofreadBatch',
-    async (_event, { batchId }: { batchId: string }) => {
-      const controller = batchAbortControllers.get(batchId);
+    async (event, { batchId }: { batchId: string }) => {
+      const controller = batchAbortControllers.get(
+        `${event.sender.id}:${batchId}`,
+      );
       if (controller) {
         controller.abort();
         logMessage(`Proofread batch cancelled: ${batchId}`, 'info');
@@ -84,11 +190,16 @@ export function setupProofreadHandlers(): void {
   // 检测视频对应的字幕文件（不再需要语言参数）
   ipcMain.handle(
     'detectSubtitles',
-    async (_event, { videoPath }: { videoPath: string }) => {
+    async (
+      _event,
+      { videoPath, strict }: { videoPath: string; strict?: boolean },
+    ) => {
       try {
         logMessage(`Detecting subtitles for video: ${videoPath}`, 'info');
         // 使用空字符串让检测器自动从文件名推断
-        const result = await detectSubtitlesForVideo(videoPath, '', '');
+        const result = await detectSubtitlesForVideo(videoPath, '', '', {
+          strict,
+        });
         logMessage(
           `Found ${result.detectedSubtitles.length} subtitle files`,
           'info',
@@ -120,13 +231,18 @@ export function setupProofreadHandlers(): void {
   // 扫描目录获取字幕文件
   ipcMain.handle(
     'scanDirectorySubtitles',
-    async (_event, { directoryPath }: { directoryPath: string }) => {
+    async (
+      _event,
+      { directoryPath, strict }: { directoryPath: string; strict?: boolean },
+    ) => {
       try {
         logMessage(
           `Scanning directory for subtitles: ${directoryPath}`,
           'info',
         );
-        const files = await scanDirectoryForSubtitles(directoryPath);
+        const files = await scanDirectoryForSubtitles(directoryPath, {
+          strict,
+        });
         logMessage(`Found ${files.length} subtitle files in directory`, 'info');
         return { success: true, data: files };
       } catch (error) {
@@ -139,10 +255,13 @@ export function setupProofreadHandlers(): void {
   // 智能扫描目录（同时获取视频和字幕）
   ipcMain.handle(
     'smartScanDirectory',
-    async (_event, { directoryPath }: { directoryPath: string }) => {
+    async (
+      _event,
+      { directoryPath, strict }: { directoryPath: string; strict?: boolean },
+    ) => {
       try {
         logMessage(`Smart scanning directory: ${directoryPath}`, 'info');
-        const result = await smartScanDirectory(directoryPath);
+        const result = await smartScanDirectory(directoryPath, { strict });
         logMessage(
           `Found ${result.videos.length} videos and ${result.subtitles.length} subtitles`,
           'info',
@@ -285,6 +404,8 @@ export function setupProofreadHandlers(): void {
     ) => {
       try {
         const task = updateProofreadTask(taskId, updates);
+        if (!task)
+          return { success: false, error: 'Proofread task no longer exists' };
         return { success: true, data: task };
       } catch (error) {
         logMessage(`Error updating proofread task: ${error}`, 'error');
@@ -489,14 +610,34 @@ export function setupProofreadHandlers(): void {
         providerId,
         customPrompt,
         mode = 'translation',
+        sourceLanguage: requestedSourceLanguage,
+        targetLanguage: requestedTargetLanguage,
+        batchId,
+        projectId,
+        intent = 'polish',
+        proofreadDataFile,
       }: {
         sourceText: string;
         targetText: string;
         providerId?: string;
         customPrompt?: string;
         mode?: 'translation' | 'transcript';
+        sourceLanguage?: string;
+        targetLanguage?: string;
+        batchId?: string;
+        projectId?: string;
+        intent?: 'polish' | 'shorten';
+        proofreadDataFile?: string;
       },
     ) => {
+      const abortController = new AbortController();
+      const key = batchId ? `${event.sender.id}:${batchId}` : undefined;
+      if (key) {
+        batchAbortControllers.get(key)?.abort();
+        batchAbortControllers.set(key, abortController);
+      }
+      const onDestroyed = () => abortController.abort();
+      event.sender.once('destroyed', onDestroyed);
       try {
         logMessage(`Optimizing subtitle translation`, 'info');
 
@@ -545,10 +686,21 @@ export function setupProofreadHandlers(): void {
         }
 
         // 获取源语言和目标语言
-        const sourceLanguage = userConfig.sourceLanguage || 'en';
-        const targetLanguage = userConfig.targetLanguage || 'zh';
+        const sourceLanguage =
+          requestedSourceLanguage || userConfig.sourceLanguage || 'en';
+        const targetLanguage =
+          requestedTargetLanguage || userConfig.targetLanguage || 'zh';
+        const ids = proofreadDataFile
+          ? await readSidecarGlossaryIds(proofreadDataFile)
+          : undefined;
+        const glossaryContext = describeGlossaryContext(
+          '校对页单条 AI 优化',
+          ids,
+        );
         const glossaryResolution =
-          mode === 'translation' ? getActiveGlossaryResolution() : undefined;
+          mode === 'translation'
+            ? getTaskGlossaryResolution(ids, projectId)
+            : undefined;
         if (glossaryResolution) {
           const fingerprint = glossaryConflictFingerprint(
             glossaryResolution.conflicts,
@@ -556,10 +708,7 @@ export function setupProofreadHandlers(): void {
           if (
             singleOptimizeConflictFingerprints.get(event.sender) !== fingerprint
           ) {
-            logGlossaryConflicts(
-              glossaryResolution.conflicts,
-              '校对页单条 AI 优化',
-            );
+            logGlossaryConflicts(glossaryResolution.conflicts, glossaryContext);
             singleOptimizeConflictFingerprints.set(event.sender, fingerprint);
           }
         }
@@ -572,14 +721,17 @@ export function setupProofreadHandlers(): void {
         );
         logGlossaryMatches(
           glossarySelection.included,
-          '校对页单条 AI 优化',
+          glossaryContext,
           glossarySelection.omittedCount,
         );
 
         // 根据是否有翻译内容选择不同的默认提示词
         const hasTranslation = targetText && targetText.trim();
-        const defaultPrompt = hasTranslation
-          ? `You are a professional subtitle translator and proofreader. Your task is to improve the translation of the following subtitle.
+        const defaultPrompt =
+          mode === 'transcript'
+            ? `Correct transcription errors and punctuation in this ${sourceLanguage} subtitle. Preserve meaning. Do not translate. Return only the corrected subtitle:\n${sourceText}`
+            : hasTranslation
+              ? `You are a professional subtitle translator and proofreader. Your task is to improve the translation of the following subtitle.
 
 Original text (${sourceLanguage}):
 ${sourceText}
@@ -594,7 +746,7 @@ Please provide an improved translation that:
 4. Maintains the tone and style of the original
 
 Only respond with the improved translation, nothing else.`
-          : `You are a professional subtitle translator. Your task is to translate the following subtitle.
+              : `You are a professional subtitle translator. Your task is to translate the following subtitle.
 
 Original text (${sourceLanguage}):
 ${sourceText}
@@ -626,18 +778,27 @@ Only respond with the translation, nothing else.`;
             );
           }
 
-          optimizePrompt = processedPrompt
-            .replace(/\{\{sourceLanguage\}\}/g, sourceLanguage)
-            .replace(/\{\{targetLanguage\}\}/g, targetLanguage)
-            .replace(/\{\{sourceText\}\}/g, sourceText)
-            .replace(/\{\{targetText\}\}/g, targetText || '');
+          optimizePrompt = processedPrompt.replace(
+            /\{\{(sourceLanguage|targetLanguage|sourceText|targetText)\}\}/g,
+            (_, key: string) =>
+              ({
+                sourceLanguage,
+                targetLanguage,
+                sourceText,
+                targetText: targetText || '',
+              })[key],
+          );
         }
 
         // 调用翻译服务
         const optimizedProvider = {
           ...provider,
           systemPrompt: injectGlossaryPromptBlock(
-            'You are a professional subtitle translation optimizer. Provide improved translations only, no explanations.',
+            intent === 'shorten'
+              ? 'Shorten subtitle text in its original language. Preserve names, facts, meaning, and tone. Do not translate or add information. Return only shorter text, without explanations.'
+              : mode === 'transcript'
+                ? 'You are a subtitle proofreader. Correct transcription in the original language. Do not translate. No explanations.'
+                : 'You are a professional subtitle translation optimizer. Provide improved translations only, no explanations.',
             glossaryBlock,
           ),
           useJsonMode: false,
@@ -649,7 +810,11 @@ Only respond with the translation, nothing else.`;
           optimizedProvider,
           sourceLanguage,
           targetLanguage,
+          { signal: abortController.signal },
         );
+
+        if (abortController.signal.aborted)
+          return { success: false, cancelled: true };
 
         if (result) {
           // 清理结果，移除可能的引号或多余空白
@@ -658,6 +823,8 @@ Only respond with the translation, nothing else.`;
             .trim()
             .replace(/^["']|["']$/g, '')
             .trim();
+          if (!cleanedResult)
+            return { success: false, error: 'AI 优化返回空结果' };
           logMessage(`Subtitle optimization successful`, 'info');
           return { success: true, data: cleanedResult };
         } else {
@@ -672,6 +839,10 @@ Only respond with the translation, nothing else.`;
           success: false,
           error: error instanceof Error ? error.message : String(error),
         };
+      } finally {
+        event.sender.removeListener('destroyed', onDestroyed);
+        if (key && batchAbortControllers.get(key) === abortController)
+          batchAbortControllers.delete(key);
       }
     },
   );
@@ -689,6 +860,10 @@ Only respond with the translation, nothing else.`;
         maxRetries = 2,
         batchId,
         mode = 'translation',
+        sourceLanguage: requestedSourceLanguage,
+        targetLanguage: requestedTargetLanguage,
+        projectId,
+        proofreadDataFile,
       }: {
         subtitles: Array<{
           id: string;
@@ -702,11 +877,23 @@ Only respond with the translation, nothing else.`;
         maxRetries?: number;
         batchId?: string;
         mode?: 'translation' | 'transcript';
+        sourceLanguage?: string;
+        targetLanguage?: string;
+        projectId?: string;
+        proofreadDataFile?: string;
       },
     ) => {
       const abortController = new AbortController();
-      if (batchId) batchAbortControllers.set(batchId, abortController);
+      const key = batchId ? `${event.sender.id}:${batchId}` : undefined;
+      if (key) {
+        batchAbortControllers.get(key)?.abort();
+        batchAbortControllers.set(key, abortController);
+      }
+      const onDestroyed = () => abortController.abort();
+      event.sender.once('destroyed', onDestroyed);
       try {
+        if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 50)
+          return { success: false, error: 'Invalid batch size' };
         logMessage(
           `Starting batch optimization: ${subtitles.length} subtitles in batches of ${batchSize}`,
           'info',
@@ -752,8 +939,13 @@ Only respond with the translation, nothing else.`;
           };
         }
 
-        const sourceLanguage = userConfig.sourceLanguage || 'en';
-        const targetLanguage = userConfig.targetLanguage || 'zh';
+        const sourceLanguage =
+          requestedSourceLanguage || userConfig.sourceLanguage || 'en';
+        const targetLanguage =
+          requestedTargetLanguage || userConfig.targetLanguage || 'zh';
+        const ids = proofreadDataFile
+          ? await readSidecarGlossaryIds(proofreadDataFile)
+          : undefined;
 
         // 批处理循环已抽取到共享校正服务（openspec: add-ai-subtitle-refine D7）：
         // legacyMap 协议保持既有请求/响应格式、默认提示词与逐项提取规则，
@@ -761,6 +953,7 @@ Only respond with the translation, nothing else.`;
         // anchored 协议，消除两套批处理逻辑漂移。
         const totalBatches = Math.ceil(subtitles.length / batchSize);
         const run = await runSubtitleCorrection({
+          projectId,
           items: subtitles.map((sub) => ({
             id: sub.id,
             index: sub.index,
@@ -778,9 +971,22 @@ Only respond with the translation, nothing else.`;
           maxRetries,
           signal: abortController.signal,
           useGlossary: mode === 'translation',
+          glossaryIds: ids,
           glossaryLabel: '校对页批量 AI 优化',
+          onResult: (result) => {
+            if (!event.sender.isDestroyed())
+              event.sender.send('batchOptimizeResult', {
+                batchId,
+                index: result.index,
+                status: result.status,
+                optimizedTarget: result.corrected,
+                error: result.error,
+              });
+          },
           onBatchProgress: (info) => {
+            if (event.sender.isDestroyed()) return;
             event.sender.send('batchOptimizeProgress', {
+              batchId,
               progress: Math.round(
                 (info.processedCount / info.totalCount) * 100,
               ),
@@ -804,16 +1010,18 @@ Only respond with the translation, nothing else.`;
         }));
 
         // 发送完成进度
-        event.sender.send('batchOptimizeProgress', {
-          progress: cancelled
-            ? Math.round((processedCount / subtitles.length) * 100)
-            : 100,
-          currentBatch: totalBatches,
-          totalBatches,
-          processedCount: cancelled ? processedCount : subtitles.length,
-          totalCount: subtitles.length,
-          completed: true,
-        });
+        if (!event.sender.isDestroyed())
+          event.sender.send('batchOptimizeProgress', {
+            batchId,
+            progress: cancelled
+              ? Math.round((processedCount / subtitles.length) * 100)
+              : 100,
+            currentBatch: totalBatches,
+            totalBatches,
+            processedCount: cancelled ? processedCount : subtitles.length,
+            totalCount: subtitles.length,
+            completed: true,
+          });
 
         logMessage(
           `Batch optimization ${cancelled ? 'cancelled' : 'completed'}: ${results.filter((r) => r.status === 'success').length}/${subtitles.length} successful`,
@@ -840,7 +1048,9 @@ Only respond with the translation, nothing else.`;
           error: error instanceof Error ? error.message : String(error),
         };
       } finally {
-        if (batchId) batchAbortControllers.delete(batchId);
+        event.sender.removeListener('destroyed', onDestroyed);
+        if (key && batchAbortControllers.get(key) === abortController)
+          batchAbortControllers.delete(key);
       }
     },
   );
@@ -856,6 +1066,8 @@ Only respond with the translation, nothing else.`;
         sourceLanguage,
         targetLanguage,
         batchId,
+        projectId,
+        proofreadDataFile,
       }: {
         subtitles: Array<{
           id: string;
@@ -866,10 +1078,18 @@ Only respond with the translation, nothing else.`;
         sourceLanguage?: string;
         targetLanguage?: string;
         batchId?: string;
+        projectId?: string;
+        proofreadDataFile?: string;
       },
     ) => {
       const abortController = new AbortController();
-      if (batchId) batchAbortControllers.set(batchId, abortController);
+      const key = batchId ? `${event.sender.id}:${batchId}` : undefined;
+      if (key) {
+        batchAbortControllers.get(key)?.abort();
+        batchAbortControllers.set(key, abortController);
+      }
+      const onDestroyed = () => abortController.abort();
+      event.sender.once('destroyed', onDestroyed);
       const collected: TranslationResult[] = [];
       try {
         const userConfig: any = store.get('userConfig') || {};
@@ -899,6 +1119,9 @@ Only respond with the translation, nothing else.`;
 
         const from = sourceLanguage || userConfig.sourceLanguage || 'en';
         const to = targetLanguage || userConfig.targetLanguage || 'zh';
+        const ids = proofreadDataFile
+          ? await readSidecarGlossaryIds(proofreadDataFile)
+          : undefined;
 
         logMessage(
           `Retranslating ${subtitles.length} subtitles with ${provider.name} (${from} -> ${to})`,
@@ -907,7 +1130,7 @@ Only respond with the translation, nothing else.`;
 
         // 跑在任务上下文中：翻译链路批次边界的取消检查可感知 signal
         await runWithTaskContext(
-          { signal: abortController.signal },
+          { signal: abortController.signal, projectId },
           async () => {
             await translateWithProvider(
               provider,
@@ -918,25 +1141,30 @@ Only respond with the translation, nothing else.`;
               undefined,
               async (batchResults) => {
                 collected.push(...batchResults);
-                event.sender.send('retranslateProgress', {
-                  batchId,
-                  done: collected.length,
-                  total: subtitles.length,
-                });
+                if (!event.sender.isDestroyed())
+                  event.sender.send('retranslateProgress', {
+                    batchId,
+                    done: collected.length,
+                    total: subtitles.length,
+                  });
               },
               1,
               true,
               undefined,
               fallbackProviders,
               (fallback) => {
-                event.sender.send('retranslateProgress', {
-                  batchId,
-                  fallback: {
-                    fromName: fallback.from.name,
-                    toName: fallback.to.name,
-                  },
-                });
+                if (!event.sender.isDestroyed())
+                  event.sender.send('retranslateProgress', {
+                    batchId,
+                    fallback: {
+                      fromName: fallback.from.name,
+                      toName: fallback.to.name,
+                    },
+                  });
               },
+              undefined,
+              undefined,
+              { glossaryIds: ids },
             );
           },
         );
@@ -961,7 +1189,9 @@ Only respond with the translation, nothing else.`;
           data: collected,
         };
       } finally {
-        if (batchId) batchAbortControllers.delete(batchId);
+        event.sender.removeListener('destroyed', onDestroyed);
+        if (key && batchAbortControllers.get(key) === abortController)
+          batchAbortControllers.delete(key);
       }
     },
   );

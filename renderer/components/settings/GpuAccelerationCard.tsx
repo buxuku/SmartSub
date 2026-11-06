@@ -32,6 +32,7 @@ import GpuDownloadProgress from './gpu/GpuDownloadProgress';
 import GpuInstalledList from './gpu/GpuInstalledList';
 import GpuCustomAddonSection from './gpu/GpuCustomAddonSection';
 import GpuDiagnosticsPanel from './gpu/GpuDiagnosticsPanel';
+import SuppressedBackends from './gpu/SuppressedBackends';
 import {
   persistDownloadSource,
   readPersistedDownloadSource,
@@ -230,7 +231,7 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
   useEffect(() => {
     const cleanup = window?.ipc?.on(
       'active-backend-changed',
-      (info: AddonLoadResultInfo) => {
+      (info: AddonLoadResultInfo | null) => {
         setActiveBackend(info);
       },
     );
@@ -293,15 +294,20 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
       variant === 'vulkan'
         ? 'node.gz'
         : (forceType ??
-          (gpuEnv?.nvidia?.recommendation.needsDlls ? 'tar.gz' : 'node.gz'));
+          (gpuEnv
+            ? editionToDownloadType(getDefaultPackageEdition(gpuEnv, variant))
+            : 'tar.gz'));
     setDownloadingVariant(variant);
     downloadingVariantRef.current = variant;
     try {
-      await window?.ipc?.invoke('start-addon-download', {
+      const result = await window?.ipc?.invoke('start-addon-download', {
         source: downloadSource,
         variant,
         type: downloadType,
       });
+      if (!result?.success) {
+        throw new Error(result?.error || 'Addon download did not start');
+      }
       toast.info(t('gpuAcceleration.downloadStarted'));
     } catch {
       toast.error(t('gpuAcceleration.downloadFailed'));
@@ -603,6 +609,7 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
 
         {heroEl}
         {progressEl}
+        <SuppressedBackends />
 
         {isDesktopGpuPlatform ? (
           <>
@@ -651,6 +658,7 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
 
       {heroEl}
       {progressEl}
+      <SuppressedBackends />
 
       {isDesktopGpuPlatform && (
         <>

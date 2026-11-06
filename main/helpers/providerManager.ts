@@ -1,6 +1,7 @@
 import { Provider, PROVIDER_TYPES } from '../../types/provider';
 import { store } from './store';
 import { logMessage } from './logger';
+import { assertProviderList } from '../../types/providerPersistence';
 import {
   migrateProviders,
   normalizeFallbackProviderIds,
@@ -11,14 +12,15 @@ import {
 // v23：新增独立的 Qwen-MT 机器翻译服务商
 // v24：同 type 服务实例与任务内回退链
 // v25：AI 翻译默认批次与并发调优；AI 断句复用服务商并发配置
-// v26：新增 Atlas Cloud（OpenAI 兼容）AI 翻译服务商
-const CURRENT_PROVIDER_VERSION = 26;
-
-const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree'];
+// v26：新增有道免费翻译 youdaoFree；autoFree 未自定义的旧默认回退链改为有道在前
+// v27：新增 Atlas Cloud（OpenAI 兼容）AI 翻译服务商
+const CURRENT_PROVIDER_VERSION = 27;
 
 export async function getAndInitializeProviders(): Promise<Provider[]> {
   try {
-    const savedProviders = store.get('translationProviders') || [];
+    const stored = store.get('translationProviders');
+    const savedProviders = stored === undefined ? [] : stored;
+    assertProviderList(savedProviders);
     const savedVersion = store.get('providerVersion');
     // 如果是新安装或已经是最新版本，直接初始化
     if (savedProviders.length === 0) {
@@ -43,7 +45,7 @@ export async function getAndInitializeProviders(): Promise<Provider[]> {
     return migratedProviders;
   } catch (error) {
     logMessage(`Error initializing providers: ${error.message}`, 'error');
-    return [] as Provider[];
+    throw error;
   }
 }
 

@@ -3,18 +3,24 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as zlib from 'zlib';
 import * as tar from 'tar';
+import { pipeline } from 'stream/promises';
 import { logMessage } from './storeManager';
 import type {
   DownloadProgress,
   DownloadState,
   DownloadSource,
   AddonVariant,
+  AddonDownloadResult,
+  AddonInstallProvenance,
+  RemoteAddonVersions,
 } from '../../types/addon';
 import { getEffectivePlatform } from './cudaUtils';
 import { getAddonVersionDir } from './addonManager';
 import { createHash } from 'crypto';
 import { resolveReleaseBaseUrl } from './download/sources';
 import { MirrorDownloader } from './download/mirrorDownloader';
+import { fetchJson } from './download/fetchJson';
+import { commitStagedDirectory } from './download/atomicDirectoryInstall';
 
 /**
  * 加速包发布仓库（注意：GitCode 镜像用的是 whisper.node 仓库，与 GitHub 不同）。
@@ -27,6 +33,16 @@ const ADDON_REPO_SLUGS = {
 /** addon release 基础 URL（保留末尾斜杠，兼容旧的拼接方式）。 */
 function addonBaseUrl(source: DownloadSource): string {
   return `${resolveReleaseBaseUrl(source, ADDON_REPO_SLUGS, 'latest')}/`;
+}
+
+/** Provenance is also exported in diagnostics; endpoint credentials stay local. */
+function provenanceUrl(value: string): string {
+  const url = new URL(value);
+  url.username = '';
+  url.password = '';
+  url.search = '';
+  url.hash = '';
+  return url.href;
 }
 
 /** addon-versions.json 的下载地址（按源） */
@@ -127,6 +143,7 @@ export function getDownloadUrl(
 export class AddonDownloader {
   private mainWindow: BrowserWindow | null = null;
   private core: MirrorDownloader;
+  private operation: AbortController | null = null;
 
   constructor(mainWindow?: BrowserWindow) {
     this.mainWindow = mainWindow || null;
@@ -149,6 +166,7 @@ export class AddonDownloader {
   }
 
   cancel(): void {
+    this.operation?.abort();
     this.core.cancel();
   }
 
@@ -156,20 +174,39 @@ export class AddonDownloader {
    * 执行下载：按所选源 + 回退顺序依次尝试，任一源成功即返回。
    * 用户取消（Download cancelled）不回退，直接抛出。
    */
-  async download(
+  download(
     source: DownloadSource,
     variant: AddonVariant,
     downloadType: 'node.gz' | 'tar.gz',
-  ): Promise<string> {
-    return this.core.runWithFallback(
-      source,
-      (s) => this.downloadFromSource(s, variant, downloadType),
-      (error) =>
-        (error instanceof Error ? error.message : String(error)) ===
-        'Download cancelled',
-      'Addon download',
-      logMessage,
-    );
+  ): Promise<AddonDownloadResult> {
+    if (this.operation) throw new Error('An addon download is already running');
+    const operation = new AbortController();
+    this.operation = operation;
+    // Reject a busy start synchronously so IPC can report that it never started.
+    return this.core
+      .runWithFallback(
+        source,
+        (s) =>
+          this.downloadFromSource(s, variant, downloadType, operation.signal),
+        () => operation.signal.aborted,
+        'Addon download',
+        logMessage,
+      )
+      .catch((error: unknown) => {
+        const message = operation.signal.aborted
+          ? 'Download cancelled'
+          : error instanceof Error
+            ? error.message
+            : String(error);
+        this.core.updateProgress({
+          status: operation.signal.aborted ? 'idle' : 'error',
+          error: message,
+        });
+        throw new Error(message);
+      })
+      .finally(() => {
+        this.operation = null;
+      });
   }
 
   /**
@@ -179,12 +216,14 @@ export class AddonDownloader {
     source: DownloadSource,
     variant: AddonVariant,
     downloadType: 'node.gz' | 'tar.gz',
-  ): Promise<string> {
+    signal: AbortSignal,
+  ): Promise<AddonDownloadResult> {
     const url = getDownloadUrl(source, variant, downloadType);
+    const manifestUrl = getAddonVersionsUrl(source);
     const addonsDir = path.join(app.getPath('userData'), 'addons');
     const versionDir = getAddonVersionDir(variant);
 
-    fs.mkdirSync(versionDir, { recursive: true });
+    fs.mkdirSync(addonsDir, { recursive: true });
 
     this.core.resetForDownload();
     this.core.updateProgress({
@@ -197,7 +236,43 @@ export class AddonDownloader {
       error: undefined,
     });
 
+    let stagedDir: string | undefined;
     try {
+      // Do not use the update-check cache or metadata from a different mirror.
+      const manifest = await fetchJson<RemoteAddonVersions>(manifestUrl, {
+        signal,
+        timeoutMs: 10_000,
+        headers: {
+          'User-Agent': 'SmartSub-Electron',
+          Accept: 'application/json',
+        },
+      });
+      const entry = manifest?.[variant];
+      const osName = getEffectivePlatform() === 'win32' ? 'windows' : 'linux';
+      const checksumKey =
+        `${osName}-${downloadType === 'tar.gz' ? 'tar' : 'node'}` as
+          | 'windows-tar'
+          | 'windows-node'
+          | 'linux-tar'
+          | 'linux-node';
+      const checksum = entry?.checksum?.[checksumKey];
+      if (typeof checksum !== 'string' || !/^[a-f0-9]{64}$/i.test(checksum)) {
+        throw new Error(
+          `Missing or invalid SHA-256 checksum for ${variant}/${checksumKey} from ${source}`,
+        );
+      }
+      if (typeof entry.version !== 'string' || !entry.version.trim()) {
+        throw new Error(
+          `Missing addon release version for ${variant} from ${source}`,
+        );
+      }
+      const expectedChecksum = checksum.toLowerCase();
+      // Snapshot only fields belonging to this verified artifact. A separate
+      // latest/build-info.json is not sufficient to identify legacy variants.
+      const releaseVersion = entry.version;
+      const updateNotes =
+        typeof entry.updateNotes === 'string' ? entry.updateNotes : '';
+      signal.throwIfAborted();
       const existingState = readDownloadState();
       let startByte = 0;
       let tempPath: string;
@@ -205,30 +280,12 @@ export class AddonDownloader {
       if (
         existingState &&
         existingState.url === url &&
+        existingState.expectedChecksum === expectedChecksum &&
         fs.existsSync(existingState.tempPath)
       ) {
         tempPath = existingState.tempPath;
         const stat = fs.statSync(tempPath);
         startByte = stat.size;
-
-        if (existingState.total > 0 && stat.size >= existingState.total) {
-          logMessage(
-            'Download already complete, skipping to extraction',
-            'info',
-          );
-          this.core.updateProgress({
-            downloaded: stat.size,
-            total: existingState.total,
-            progress: 100,
-            status: 'extracting',
-          });
-          await this.extractFile(tempPath, versionDir, downloadType);
-          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-          saveDownloadState(null);
-          this.core.updateProgress({ status: 'completed', progress: 100 });
-          logMessage(`Addon extracted to ${versionDir}`, 'info');
-          return versionDir;
-        }
 
         this.core.updateProgress({
           downloaded: startByte,
@@ -244,68 +301,95 @@ export class AddonDownloader {
       }
 
       const startedAt = new Date().toISOString();
-      const downloadedPath = await this.core.downloadFile(
-        url,
-        tempPath,
-        startByte,
-        {
-          onBytes: (downloaded, total) =>
-            saveDownloadState({
-              url,
-              destPath: tempPath,
-              tempPath,
-              downloaded,
-              total,
-              variant,
-              downloadType,
-              startedAt,
-              lastUpdatedAt: new Date().toISOString(),
-            }),
-        },
-      );
+      const alreadyComplete =
+        existingState?.url === url &&
+        existingState.expectedChecksum === expectedChecksum &&
+        existingState.total > 0 &&
+        startByte >= existingState.total;
+      const downloadedPath = alreadyComplete
+        ? tempPath
+        : await this.core.downloadFile(url, tempPath, startByte, {
+            onBytes: (downloaded, total) =>
+              saveDownloadState({
+                url,
+                expectedChecksum,
+                destPath: tempPath,
+                tempPath,
+                downloaded,
+                total,
+                variant,
+                downloadType,
+                startedAt,
+                lastUpdatedAt: new Date().toISOString(),
+              }),
+          });
 
+      this.core.updateProgress({ status: 'verifying' });
+      const packageSha256 = await calculateFileChecksum(downloadedPath, signal);
+      if (packageSha256 !== expectedChecksum) {
+        fs.rmSync(downloadedPath, { force: true });
+        saveDownloadState(null);
+        throw new Error(
+          `Addon SHA-256 checksum mismatch from ${source}: expected ${expectedChecksum}, got ${packageSha256}`,
+        );
+      }
+      signal.throwIfAborted();
+      stagedDir = fs.mkdtempSync(path.join(addonsDir, `.${variant}-staging-`));
       this.core.updateProgress({ status: 'extracting' });
-      await this.extractFile(downloadedPath, versionDir, downloadType);
-      if (fs.existsSync(downloadedPath)) fs.unlinkSync(downloadedPath);
+      await this.extractFile(downloadedPath, stagedDir, downloadType);
+      const provenance: AddonInstallProvenance = {
+        formatVersion: 1,
+        source,
+        packageType: downloadType,
+        packageUrl: provenanceUrl(url),
+        manifestUrl: provenanceUrl(manifestUrl),
+        releaseVersion,
+        updateNotes,
+        expectedSha256: expectedChecksum,
+        packageSha256,
+        addonSha256: await calculateFileChecksum(
+          path.join(stagedDir, 'addon.node'),
+          signal,
+        ),
+        verifiedAt: new Date().toISOString(),
+      };
+      fs.writeFileSync(
+        path.join(stagedDir, 'addon-install.json'),
+        JSON.stringify(provenance, null, 2),
+      );
+      signal.throwIfAborted();
+      await commitStagedDirectory({
+        stagedDir,
+        destDir: versionDir,
+        backupDir: `${stagedDir}-backup`,
+        onCleanupWarning: (message) => logMessage(message, 'warning'),
+      });
+      // Once committed, failure to remove the download must not misreport the
+      // installation as failed or trigger replacement from another mirror.
+      try {
+        fs.rmSync(downloadedPath, { force: true });
+      } catch (error) {
+        logMessage(`Failed to clean addon download: ${error}`, 'warning');
+      }
       saveDownloadState(null);
 
       this.core.updateProgress({ status: 'completed', progress: 100 });
-      logMessage(`Addon downloaded and extracted to ${versionDir}`, 'info');
-      return versionDir;
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      if (errorMessage === 'Download cancelled') {
-        this.core.updateProgress({
-          status: 'idle',
-          error: 'Download cancelled',
-        });
-        throw error;
-      }
-      this.core.updateProgress({ status: 'error', error: errorMessage });
-      logMessage(`Download error: ${errorMessage}`, 'error');
-      throw error;
-    }
-  }
-
-  /**
-   * 清理版本目录中的旧文件，保留目录本身
-   */
-  private cleanVersionDir(destDir: string): void {
-    try {
-      const files = fs.readdirSync(destDir);
-      for (const file of files) {
-        const filePath = path.join(destDir, file);
-        const stat = fs.statSync(filePath);
-        if (stat.isDirectory()) {
-          fs.rmSync(filePath, { recursive: true, force: true });
-        } else {
-          fs.unlinkSync(filePath);
+      logMessage(
+        `Addon ${variant} verified and installed: ${JSON.stringify(provenance)}`,
+        'info',
+      );
+      return { directory: versionDir, provenance };
+    } finally {
+      if (stagedDir) {
+        try {
+          fs.rmSync(stagedDir, { recursive: true, force: true });
+        } catch (error) {
+          logMessage(
+            `Failed to clean addon staging directory: ${error}`,
+            'warning',
+          );
         }
       }
-      logMessage(`Cleaned version directory: ${destDir}`, 'info');
-    } catch (error) {
-      logMessage(`Error cleaning version directory: ${error}`, 'warning');
     }
   }
 
@@ -317,8 +401,6 @@ export class AddonDownloader {
     destDir: string,
     downloadType: 'node.gz' | 'tar.gz',
   ): Promise<void> {
-    this.cleanVersionDir(destDir);
-
     if (downloadType === 'tar.gz') {
       await tar.extract({
         file: filePath,
@@ -411,39 +493,32 @@ export class AddonDownloader {
       return;
     }
 
-    logMessage('No .node file found in extracted contents', 'warning');
+    throw new Error('No .node file found in extracted addon package');
   }
 
   /**
    * 解压 gzip 文件
    */
   private gunzipFile(srcPath: string, destPath: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const readStream = fs.createReadStream(srcPath);
-      const writeStream = fs.createWriteStream(destPath);
-      const gunzip = zlib.createGunzip();
-
-      readStream
-        .pipe(gunzip)
-        .pipe(writeStream)
-        .on('finish', resolve)
-        .on('error', reject);
-    });
+    return pipeline(
+      fs.createReadStream(srcPath),
+      zlib.createGunzip(),
+      fs.createWriteStream(destPath),
+    );
   }
 }
 
 /**
  * 计算文件的 SHA256 校验和
  */
-export async function calculateFileChecksum(filePath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const hash = createHash('sha256');
-    const stream = fs.createReadStream(filePath);
-
-    stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('end', () => resolve(hash.digest('hex')));
-    stream.on('error', reject);
-  });
+export async function calculateFileChecksum(
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const hash = createHash('sha256');
+  for await (const chunk of fs.createReadStream(filePath, { signal }))
+    hash.update(chunk);
+  return hash.digest('hex');
 }
 
 /**

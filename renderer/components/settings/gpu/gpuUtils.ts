@@ -12,6 +12,13 @@ export const BACKEND_LABELS: Record<string, string> = {
   custom: 'Custom',
 };
 
+/** 熔断候选键是「来源:后端[:变体]」，例如 builtin:vulkan、userData:cuda:12.4.0。 */
+export function suppressedBackendLabel(key: string): string {
+  const [, backend = '', variant] = key.split(':');
+  if (backend === 'cuda' && variant) return `CUDA ${variant}`;
+  return BACKEND_LABELS[backend] || backend || key;
+}
+
 export function backendDisplay(info: AddonLoadResultInfo | null): string {
   if (!info) return '';
   if (info.backend === 'cuda' && info.variant && info.variant !== 'vulkan') {

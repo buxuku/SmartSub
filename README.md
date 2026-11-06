@@ -4,7 +4,7 @@
 
 # 妙幕 / SmartSub
 
-**视频转字幕、字幕翻译、AI 配音与声音克隆、字幕烧录——一站式开源桌面工具**
+**视频转字幕、字幕翻译、AI 创作助手、AI 配音与声音克隆、字幕烧录、MCP/CLI 自动化——一站式开源桌面工具**
 
 让每一帧画面都能美妙地表达
 
@@ -18,32 +18,74 @@
 
 [中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md)
 
-[下载安装](#下载安装) · [功能特性](#功能特性) · [免费方案](#全流程免费方案) · [常见问题](#常见问题) · [更新日志](https://github.com/buxuku/SmartSub/releases)
+[下载安装](#下载安装) · [功能特性](#功能特性) · [AI 助手与自动化](#-ai-创作助手智能副驾) · [免费方案](#全流程免费方案) · [常见问题](#常见问题) · [更新日志](https://github.com/buxuku/SmartSub/releases)
 
 </div>
 
 ![SmartSub 主界面](./resources/preview/home.png)
 
+## 特别赞助
+
+🤝 想成为赞助商或洽谈合作？请查看 [**赞助合作说明**](https://smartsub.linxiaodong.com/sponsorship)。
+
+<a href="https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM" target="_blank" rel="noopener noreferrer"><img src="./resources/sponsors/crazytoken-zh.png" alt="SmartSub × CrazyToken：全模型服务，最高省 99%，低至 0.05x，新用户注册即领 $20 体验额度" /></a>
+
+❤️ 感谢 [**CrazyToken**](https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM) 对 SmartSub 的赞助支持！
+
+#### CrazyToken | 多模型助力字幕翻译，让跨语言表达更自然，倍率低至0.05x，最高省99%
+
+CrazyToken 提供 Claude、GPT、Gemini、Kimi、GLM、DeepSeek、Qwen、Grok 等主流模型 API，为字幕翻译、语境理解、术语统一与校对润色提供模型支持。无论是课程视频、访谈播客，还是多语言内容制作，都能按语言和任务需求选择合适的模型。
+
+- 💰 **最低 0.05×，字幕翻译更省成本**：模型价格低至官方价格的 5%，Token 级账单透明可查，降低长视频字幕翻译与批量处理的模型调用成本。
+- ✨ **官方原生通道**：不掺水、不混模、不压缩长上下文，为理解前后文、统一术语和打磨译文提供模型支持。
+- ⚡ **稳定高速，高并发不限流**：为批量字幕翻译与多任务处理提供稳定的 API 服务，减少调用等待。
+- 🎁 **新用户注册赠送 $20**：通过[专属链接](https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM)注册即送 **$20 体验额度**，充值额外加赠；提供 **1 对 1 远程配置服务**，真人协助完成模型 API 配置。
+
 ## 妙幕是什么
 
-妙幕（SmartSub）是一款开源的字幕与配音工具，把「语音转文字 → 字幕翻译 → 校对润色 → TTS 配音 → 烧录合成」整条流水线装进一个桌面应用，还内置在线视频下载，粘贴 B 站 / YouTube 等平台链接即可直接取材。转写基于 whisper.cpp、sherpa-onnx 等本地模型完成，文件不出本机；支持批量处理，支持 NVIDIA / AMD / Intel / Apple Silicon 硬件加速，可在 Windows、macOS、Linux 上运行。
+妙幕（SmartSub）是一款开源的音视频字幕与配音工具，把「语音转文字 → 字幕翻译 → 校对润色 → TTS 配音 → 烧录合成」整条流水线装进一个桌面应用，还内置在线视频下载，粘贴 B 站 / YouTube 等平台链接即可直接取材。转写基于 whisper.cpp、sherpa-onnx 等本地模型完成，文件不出本机；支持批量处理，支持 NVIDIA / AMD / Intel / Apple Silicon 硬件加速，可在 Windows、macOS、Linux 上运行。
+
+妙幕深度融合了现代 AI 协同与 Agentic 自动化能力：
+
+- **内置 AI 创作助手（智能副驾）**：随时按快捷键呼出，具备全工作台上下文感知、多模态视觉截图诊断、实时字幕润色与自主工具调用（Agentic Tool-Calling）能力，用自然语言即可驱动复杂操作；
+- **MCP 与 CLI 命令行自动化**：深度支持 Model Context Protocol（提供 111 个标准工具与对应 CLI 命令），内置 Electron/Node 运行时免配环境，不仅可让 Cursor、Claude Code、Codex 等外部 AI 智能体直接调度，还能在终端脚本与 CI 中全自动化执行流水线。
 
 **整条流水线可以完全免费跑通**：本地模型转写、内置免费翻译源、本地 TTS 配音（含声音克隆）、本地 ffmpeg 烧录——不需要 API Key，本地环节也没有用量限制。同时可按需接入 20 个翻译服务、9 家云端听写、6 类云端配音服务作为增强。
 
 ## 它能帮你做什么
 
-| 你想做的事                       | 妙幕的做法                                                   |
-| -------------------------------- | ------------------------------------------------------------ |
-| 看无字幕的外语视频、公开课       | 拖入视频，本地转写并翻译，得到双语字幕，播放器直接挂载       |
-| 给 B 站 / YouTube 在线视频配字幕 | 粘贴链接应用内直接下载，官方字幕自动配对，无需第三方下载工具 |
-| 做视频出海 / 多语言内容          | 字幕翻译成目标语言，再用 TTS 配成外语音轨，导出成品视频      |
-| 用自己的声音给视频配音           | 录一段参考音频，零样本克隆音色，整条视频用你的声音朗读       |
-| 整理播客、网课、会议录音         | 批量转写成 SRT 字幕文件，供剪辑、检索或存档                  |
-| 给成片压制字幕                   | 校对台逐句核对后硬烧或软封装，样式所见即所得                 |
+| 你想做的事                                | 妙幕的做法                                                                                    |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 用自然语言搞定字幕编辑与排障              | 随时呼出内置 AI 助手，上下文感知与多模态截图诊断，一句话润色、改口语化或自动下发任务          |
+| 让 Cursor / Claude / 脚本接管音视频流水线 | 借助 111 个 MCP 工具与 CLI 命令，外部 AI Agent 或终端脚本直接全自动批量转写、翻译、配音与合成 |
+| 看无字幕的外语视频、公开课                | 拖入视频，本地转写并翻译，得到双语字幕，播放器直接挂载                                        |
+| 给 B 站 / YouTube 在线视频配字幕          | 粘贴链接应用内直接下载，官方字幕自动配对，无需第三方下载工具                                  |
+| 做视频出海 / 多语言内容                   | 字幕翻译成目标语言，再用 TTS 配成外语音轨，导出成品视频                                       |
+| 用自己的声音给视频配音                    | 录一段参考音频，零样本克隆音色，整条视频用你的声音朗读                                        |
+| 整理播客、网课、会议录音                  | 批量转写成 SRT 字幕文件，供剪辑、检索或存档                                                   |
+| 给成片压制字幕                            | 校对台逐句核对后硬烧或软封装，样式所见即所得                                                  |
 
 ## 功能特性
 
-在线视频**下载** / 本地音视频 → **转写** → **翻译** → **校对** → **配音** → **合成导出**。每一步都可以独立使用，也可以串成流水线批量执行。
+在线视频**下载** / 本地音视频 → **转写** → **翻译** → **校对** → **配音** → **合成导出**。每一步都可以独立使用，也可以串成流水线批量执行；更能通过**内置 AI 创作助手**实时对话协作，或通过 **MCP / CLI** 交由外部 AI 智能体全自动化调度。
+
+### 🌟 AI 创作助手（智能副驾）
+
+- **随时唤起与多轮交互**：顶部工具栏一键开启或按快捷键 `⌘J`（macOS）/ `Ctrl+J`（Windows、Linux）随时呼出右侧抽屉面板，支持调整宽度，会话记录自动持久化保存在本地
+- **工作台深度上下文感知**：智能感知当前界面状态，自动关联当前视频播放进度、选中的字幕单行、邻近上下文、任务列表运行状态与近期报错日志，无需反复手动交代背景
+- **Agentic 自主工具调用**：全面打通底层 111 个自动化工具！不仅能答疑解惑，更可根据自然语言指令直接代劳——如「把当前视频转成中英双语字幕并合成」、「查看我安装了哪些模型」、「排查刚才任务失败的原因」
+- **字幕精修与安全编辑**：校对时直接说「把当前这句改得更口语化」、「解释这一段的专业术语」、「修正同音错字」，修改实时渲染在编辑器中并自动进入撤销/重做栈（支持快捷键随时撤回）；严格版本保护，说「保存」才写入物理文件
+- **多模态视觉截图诊断**：任务失败或参数不知如何配置？助手内置截屏工具，点击相机图标即可一键捕获当前工作区，结合视觉多模态大模型分析报错弹窗、Toast 提示与控件状态，秒级给出排查与修复方案
+- **多类型文件与媒体对话（File Chat）**：支持将音视频（MP4、MKV、MOV、MP3、WAV、FLAC 等）、字幕（SRT、VTT、ASS、LRC）、参考文稿（TXT、MD）及图片直接拖入对话框。音视频文件不上传云端，仅传递本地绝对路径给底层工具处理，兼具大模型智能与隐私安全
+- **主流大模型自由接入**：支持 DeepSeek、通义千问 (Qwen)、Gemini、SiliconFlow、DeerAPI 及任意 OpenAI 兼容端点，支持流式回复与独立系统提示词。详见 [AI 助手使用文档](docs/docs/features/ai-assistant.md)
+
+### ⚡ MCP 协议与 CLI 命令行自动化（Agentic Automation）
+
+- **111 个标准 MCP 工具与对应 CLI 命令**：无死角覆盖音视频下载、转写、翻译、校对、配音、音视频封装、格式转换、音频抽取以及模型与服务商配置等全链路能力，详见 [操作参考文档](docs/docs/guides/automation-reference.md)
+- **免配置 Node.js 运行时（Zero-Config）**：直接复用应用自带的 Electron/Node 运行时，客户端用户和外部 AI **完全不需要额外安装 Node.js**，开箱即用
+- **主流 AI 客户端一键打通**：应用内「设置 → 连接 AI 工具（MCP）」提供一键导入 **Cursor**（支持官方 MCP 协议一键拉起）、一键复制 **Codex** 配置（TOML 格式）、**Claude Code**（一键注册）及通用客户端 JSON 配置，让各种 AI Agent 秒变音视频流水线总指挥
+- **无窗口后台守护（Headless Daemon）**：AI 工具或 CLI 首次调用时自动启动无界面后台常驻守护，与桌面客户端无缝共享任务状态、配置和模型资源，闲置自动回收，桌面打开无缝接入
+- **强大的 CLI 命令行与脚本批处理**：提供 `smartsub` 统一命令行入口，支持复杂任务流水线一键编排（`pipeline.run`）、JSON / stdin 管道传参、任务状态轮询与去重机制，让音视频生产轻松融入 Shell 脚本与 CI/CD 自动化。详见 [MCP 与 CLI 接入指南](docs/docs/guides/automation.md)
 
 ### 在线视频下载
 
@@ -63,7 +105,7 @@
 
 ### 字幕翻译
 
-- 20 个翻译服务：内置免费翻译（必应 / 谷歌免费接口，自动回退与限速）、百度、阿里云、腾讯、讯飞、火山引擎、豆包、小牛、DeepLX、Azure、Google，以及 Ollama（本地模型）、DeepSeek、Gemini、通义千问、SiliconFlow、Azure OpenAI、[DeerAPI](https://api.deerapi.com/register?aff=QvHM) 等大模型服务
+- 20 个翻译服务：内置免费翻译（有道 / 必应 / 谷歌免费接口，自动回退与限速）、百度、阿里云、腾讯、讯飞、火山引擎、豆包、小牛、DeepLX、Azure、Google，以及 Ollama（本地模型）、DeepSeek、Gemini、通义千问、SiliconFlow、Azure OpenAI、[DeerAPI](https://api.deerapi.com/register?aff=QvHM) 等大模型服务
 - 兼容任意 OpenAI 风格 API，可接入自有服务
 - 输出纯译文，或「原文 + 译文」双语字幕
 - 每个 AI 服务可在界面直接配置自定义请求参数，支持导出导入，无需改代码
@@ -72,7 +114,15 @@
 
 - 内置校对台，逐句对照视频检查修改，定位精准
 - 撤销 / 重做，单条删除可恢复
-- AI 一键润色
+- AI 一键润色，并可随时呼出右侧 AI 助手进行对话式修改与答疑
+
+### 🎙️ AI 助手与自动化协同
+
+除了常规界面操作外，妙幕提供了强大的智能化副驾体验与开发者级自动化支持：
+
+- **实时协作（智能副驾）**：在校对、配音或任务页面遇到问题，随时呼出 AI 助手，自然语言对话即可直接修改当前字幕内容、排查任务失败原因或解答音视频术语。
+- **视觉排障（截屏多模态）**：遇到不会设置的参数或复杂的报错界面，点击相机图标截取工作台发送给模型，AI 即可看图定位问题并指导操作。
+- **外部 AI 与脚本调度（MCP & CLI）**：无需打开前端 UI，支持 Cursor、Claude Code、终端脚本通过标准 MCP 协议或 `smartsub` CLI 批量处理大规模音视频流水线。
 
 ### TTS 配音与声音克隆
 
@@ -111,7 +161,7 @@
 | -------- | ---------------------------------------------------------------------------------- | ---------------------------- |
 | 视频下载 | yt-dlp / lux 开源引擎                                                              | 应用内一键安装，免费使用     |
 | 语音转写 | whisper.cpp / faster-whisper / FunASR / Qwen3-ASR / FireRedASR / Parakeet 本地模型 | 模型下载一次，离线可用       |
-| 字幕翻译 | 内置免费翻译（必应 / 谷歌接口，自动回退）、Ollama 本地大模型、DeepLX               | 免费翻译开箱即用，零配置     |
+| 字幕翻译 | 内置免费翻译（有道 / 必应 / 谷歌接口，自动回退）、Ollama 本地大模型、DeepLX        | 免费翻译开箱即用，零配置     |
 | TTS 配音 | 本地 Kokoro / VITS / ZipVoice 声音克隆；Edge TTS 免费档                            | 本地模型离线合成，无用量限制 |
 | 字幕烧录 | 内置 ffmpeg                                                                        | 本地合成                     |
 
@@ -143,6 +193,16 @@ brew upgrade --cask smartsub # 升级
 1. 安装后跟随新手引导下载一个语音模型（无 GPU 或不想下模型，也可配置云端听写）
 2. 在启动台选择任务，拖入音视频或字幕文件（或粘贴链接下载在线视频），设置源语言、目标语言等参数
 3. 开始处理；完成后可继续校对字幕、配音或烧录合成
+
+## 代码签名策略（Code signing policy）
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+
+- **签名范围**：Windows 安装包（`SmartSub_Windows_<版本>_x64.exe`）。签名在 GitHub Actions 中自动完成，每个正式版本发布前都要经过人工批准。签名从证书签发后的首个版本开始生效，此前发布的版本未签名。
+- **团队角色**：
+  - Authors（可直接修改源码）与 Reviewers（审核外部贡献者提交的 Pull Request）：[@buxuku](https://github.com/buxuku)
+  - Approvers（批准每一次发布签名）：[@buxuku](https://github.com/buxuku)
+- **隐私政策**：SmartSub 不收集、不上传任何使用数据，也不含统计 SDK。启动时自动联网只用于检查更新，共两项：应用更新（请求 GitHub Releases，可在设置中关闭「启动时检查更新」），以及已安装 faster-whisper 运行时才会进行的每日运行时更新检查（请求 GitHub，只提示、不自动下载，不受该开关控制）。下载模型、加速包与视频下载引擎、下载在线视频，以及云端翻译、云端听写、云端配音，都只在你使用对应功能时才联网，内容只发往你自己选择或配置的服务，这些服务适用它们各自的隐私政策。崩溃诊断与日志只保存在本机，不会自动上传。详见[隐私政策](https://smartsub.linxiaodong.com/code-signing-policy#privacy-policy)。
 
 ## 进阶指南
 
@@ -270,6 +330,37 @@ AI 翻译的结果受模型和提示词影响较大，可以尝试不同的模�
 </details>
 
 <details>
+<summary><b>AI 助手与 MCP / CLI 自动化配置</b></summary>
+
+<br/>
+
+#### 1. AI 创作助手（智能副驾）
+
+- **快捷键**：`⌘J`（macOS）或 `Ctrl+J`（Windows / Linux）可随时呼出或收起右侧 AI 助手面板，展开后自动聚焦输入框。
+- **配置服务**：在应用「翻译」设置页中配置的大模型（OpenAI 兼容、DeepSeek、通义千问、Gemini、SiliconFlow、DeerAPI 等）可直接用于助手对话。在聊天面板底部可随时切换当前对话的模型。
+- **上下文引用**：默认勾选「引用当前上下文」，助手能自动读取当前播放进度、选中的字幕行、错误日志和工作区状态。取消勾选即可开启纯独立会话。
+- **视觉截图排障**：点击输入框的相机图标，助手自动捕获当前工作区画面，并结合多模态模型视觉能力定位报错弹窗与配置问题。
+- **文件与媒体对话**：直接拖拽音视频（MP4/MKV/MP3/WAV 等）、字幕或参考文稿到对话框，由助手调用底层 MCP 工具直接在本地提取音频、生成或润色字幕。
+
+#### 2. 连接外部 AI 工具（Cursor / Codex / Claude Code）
+
+在软件中打开 **设置 → 连接 AI 工具（MCP）**：
+
+- **Cursor**：点击「一键导入 Cursor」，在 Cursor 打开的页面中点击确认即可自动注册。
+- **OpenAI Codex**：点击「复制配置」，将生成的 TOML 块粘贴到 `~/.codex/config.toml` 中。
+- **Claude Code**：在终端运行随包自带命令安装：
+  ```bash
+  # macOS
+  "/Applications/SmartSub.app/Contents/Resources/automation/smartsub" setup cli --install
+  "$HOME/.local/bin/smartsub" setup mcp --client claude --install
+  ```
+- **其他 MCP 客户端**：复制通用 JSON 配置，将 `smartsub` 条目合并到客户端的 `mcpServers` 字段中即可。无需额外安装 Node.js！
+
+详细使用指引请参阅 [AI 助手使用文档](docs/docs/features/ai-assistant.md) 与 [MCP 与 CLI 接入指南](docs/docs/guides/automation.md)。
+
+</details>
+
+<details>
 <summary><b>手动下载与导入模型</b></summary>
 
 <br/>
@@ -367,6 +458,7 @@ yarn dev
 - [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) — FunASR / Qwen3-ASR / FireRedASR / Parakeet 与本地 TTS 的运行时
 - [FFmpeg](https://ffmpeg.org/) — 音视频处理与字幕烧录
 - [Bob](https://bobtranslate.com/) — 翻译服务申请文档
+- [LINUX DO](https://linux.do) — 新的理想型社区，感谢社区的交流与反馈
 
 ## 许可证
 

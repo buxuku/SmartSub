@@ -101,6 +101,11 @@ export type StoreType = {
       model?: string;
       asrProviderId?: string;
     };
+    /**
+     * 通读摘要提示词用户稿。空 / 缺省回落 types/summaryPrompt.ts 的出厂模板，
+     * 不做首启动写死，避免锁死后续出厂更新。
+     */
+    summaryPrompt?: string;
     fasterWhisperDevice?: 'auto' | 'cpu' | 'cuda';
     fasterWhisperComputeType?: string;
     fasterWhisperModelsPath?: string;
@@ -168,10 +173,17 @@ export type StoreType = {
     closeHintShown?: boolean;
     /** 云端听写「上传第三方」隐私确认：用户勾「不再提醒」后置 true，跳过后续开跑确认。 */
     cloudUploadConsent?: boolean;
+    /**
+     * 开始任务前的内封字幕确认：用户勾「记住我的选择，不再提示」后置 false，也可在
+     * 「更多设置 › 常用」里勾回「开始前提示我选择」；缺省 / true = 视频带内封字幕时开始前询问
+     * （新用户的默认：出厂不写这个键）。
+     */
+    embeddedSubtitlePrompt?: boolean;
   };
   providerVersion?: number;
   lastAddonLoadResult?: AddonLoadResultInfo;
   addonLoadHistory?: AddonLoadHistoryEntry[];
+  whisperProbeHistory?: import('../../../types/whisperProbe').WhisperProbeResult[];
   /** 已完成过 CoreML 首次编译（成功跑完一次转写）的模型名，用于「首次使用耗时」提示去重 */
   coremlCompiledModels?: string[];
   customParameters?: Record<string, CustomParameterConfig>;
@@ -203,6 +215,7 @@ export type StoreType = {
    * 探测不可用时，UI 回落 CPU 显示且不改写存储值（换回有硬件的环境自动恢复）。
    */
   mergePreferences?: {
+    softContainer?: 'mkv' | 'mp4';
     outputMode?: MergeOutputMode;
     videoQuality?: VideoQuality;
     encoderMode?: EncoderMode;

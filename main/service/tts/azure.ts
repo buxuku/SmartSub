@@ -5,6 +5,7 @@ import type {
   TtsSegmentRequest,
 } from '../../../types/ttsProvider';
 import type { TtsSynthesizeResult } from './types';
+import { streamPreviewAudio } from './previewStream';
 import { TaskCancelledError } from '../../helpers/taskContext';
 import {
   transcodeToPcm16Wav,
@@ -91,6 +92,7 @@ export async function synthesizeWithAzure(
     }
     throw new Error(azureErrorHint(res.status, detail));
   }
+  if (request.preview) return streamPreviewAudio(res.body, request);
   const audio = Buffer.from(await res.arrayBuffer());
   if (audio.length === 0) throw new Error('Azure TTS: empty audio response');
 
@@ -130,7 +132,7 @@ export async function synthesizeWithAzure(
  */
 export async function listAzureVoices(
   provider: TtsProvider,
-): Promise<Array<{ id: string; name: string }>> {
+): Promise<import('../../../types/ttsVoice').TtsVoiceEntry[]> {
   const apiKey = String(provider.apiKey ?? '').trim();
   if (!apiKey) throw new Error('Azure TTS: Subscription Key is required');
   const url = buildAzureVoicesListURL(

@@ -6,6 +6,16 @@ import {
 } from '../../types/missedSpeech';
 
 export interface TranscriptionDiagnostics {
+  /** Independent, sensitive VAD used only for the bounded second pass. */
+  reviewSpeechSegments?: SpeechInterval[];
+  reviewCompleted?: boolean;
+  reviewPending?: Array<
+    SpeechInterval & {
+      suggestedText?: string;
+      originalText?: string;
+      issue?: 'timing' | 'text';
+    }
+  >;
   /** Actual VAD output only. Recognition segments are not independent speech evidence. */
   vadSegments?: SpeechInterval[];
   /** Whether the selected engine actually ran a VAD pass for this transcription. */
@@ -129,9 +139,17 @@ export function detectMissedSpeech(
     normalizeSpeechIntervals(input.vadSegments),
     durationMs,
   );
-  const candidates = intersection(energy, uncovered).filter(
-    (s) => s.endMs - s.startMs >= MISSED_SPEECH_MIN_MS,
-  );
+  const reviewSpeech = normalizeSpeechIntervals(input.reviewSpeechSegments);
+  const reviewed =
+    input.reviewCompleted === true && Array.isArray(input.reviewSpeechSegments);
+  const candidates = intersection(
+    // A negative VAD result cannot rule out quiet speech. Retain energy gaps
+    // as lower-confidence review items, including after successful review.
+    reviewed
+      ? mergeSpeechIntervals([...energy, ...reviewSpeech], durationMs)
+      : energy,
+    uncovered,
+  ).filter((s) => s.endMs - s.startMs >= MISSED_SPEECH_MIN_MS);
   const warnings: MissedSpeechWarning[] = [];
   for (const range of candidates) {
     const length = range.endMs - range.startMs;
@@ -149,22 +167,81 @@ export function detectMissedSpeech(
       range.endMs <= cueCoverage[cueCoverage.length - 1].startMs &&
       coverage(cueGaps) >= length * 0.8;
     const wordGap = coverage(wordGaps) >= length * 0.8;
-    if (!vadSupport && !internalGap && !wordGap) continue;
-    const signals: MissedSpeechSignal[] = ['energySpeech'];
+    const reviewSupport =
+      reviewed && coverage(reviewSpeech) >= Math.min(800, length * 0.6);
+    if (!vadSupport && !internalGap && !wordGap && !reviewSupport) continue;
+    const signals: MissedSpeechSignal[] = [];
+    if (coverage(energy) > 0) signals.push('energySpeech');
     if (vadSupport) signals.push('engineVad');
     if (internalGap) signals.push('subtitleGap');
     if (wordGap) signals.push('wordGap');
+    if (reviewSupport) signals.push('speechReview');
     warnings.push({
       id: `missed-speech:${Math.round(range.startMs)}:${Math.round(range.endMs)}`,
       startMs: Math.round(range.startMs),
       endMs: Math.round(range.endMs),
-      // Keep the most meaningful independent signal as the severity. A word
-      // gap can coexist with a subtitle coverage gap; the latter is stronger
-      // evidence and must not be downgraded to low.
-      level: vadSupport ? 'high' : internalGap ? 'medium' : 'low',
+      // Independent speech evidence ranks above energy plus a timeline gap.
+      // A completed review with no speech support leaves a low-confidence item.
+      level:
+        vadSupport || reviewSupport
+          ? 'high'
+          : !reviewed && internalGap
+            ? 'medium'
+            : 'low',
       signals,
       cueIds: [],
     });
   }
-  return associateMissedSpeechWarnings(warnings, cues);
+  // The review can find short utterances below the legacy energy threshold.
+  for (const pending of input.reviewPending ?? []) {
+    if (
+      !Number.isFinite(pending.startMs + pending.endMs) ||
+      pending.endMs <= pending.startMs
+    )
+      continue;
+    warnings.push({
+      id: `missed-speech:${Math.round(pending.startMs)}:${Math.round(pending.endMs)}`,
+      startMs: Math.round(pending.startMs),
+      endMs: Math.round(pending.endMs),
+      level: 'high',
+      signals: [
+        'speechReview',
+        ...(pending.issue === 'timing' ? ['timingMismatch' as const] : []),
+        ...(pending.issue === 'text' ? ['textMismatch' as const] : []),
+      ],
+      cueIds: [],
+      ...(pending.suggestedText
+        ? { suggestedText: pending.suggestedText }
+        : {}),
+      ...(pending.originalText ? { originalText: pending.originalText } : {}),
+    });
+  }
+  // One interrupted phrase should be one item to listen to. Do not bridge a cue.
+  const grouped: MissedSpeechWarning[] = [];
+  for (const warning of warnings.sort((a, b) => a.startMs - b.startMs)) {
+    const last = grouped[grouped.length - 1];
+    if (
+      last &&
+      warning.startMs <= last.endMs + 700 &&
+      !cues.some((c) => c.startMs >= last.endMs && c.endMs <= warning.startMs)
+    ) {
+      last.endMs = Math.max(last.endMs, warning.endMs);
+      last.id = `missed-speech:${last.startMs}:${last.endMs}`;
+      last.signals = [...new Set([...last.signals, ...warning.signals])];
+      if (
+        warning.level === 'high' ||
+        (warning.level === 'medium' && last.level === 'low')
+      )
+        last.level = warning.level;
+      if (warning.suggestedText && warning.suggestedText !== last.suggestedText)
+        last.suggestedText = [last.suggestedText, warning.suggestedText]
+          .filter(Boolean)
+          .join('\n');
+      if (warning.originalText && warning.originalText !== last.originalText)
+        last.originalText = [last.originalText, warning.originalText]
+          .filter(Boolean)
+          .join('\n');
+    } else grouped.push({ ...warning });
+  }
+  return associateMissedSpeechWarnings(grouped, cues);
 }

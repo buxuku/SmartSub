@@ -1,20 +1,12 @@
-/**
- * 站点 Cookie 档案管理对话框：预设（bilibili/youtube）+ 自定义域名档案。
- * 三种导入（浏览器提取/cookies.txt 文件/粘贴原始串），按站点隔离存储，
- * 展示来源/导入时间/过期状态，支持删除。浏览器提取按平台标注兼容性。
- */
+/** 一次导入、按站点自动匹配；列表仅展示站点、有效期和清空操作。 */
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'next-i18next';
-import { toast } from 'sonner';
 import {
   AlertTriangle,
-  ClipboardPaste,
   Cookie,
   FileUp,
   Globe,
   Loader2,
-  Plus,
-  ShieldAlert,
   Trash2,
   X,
 } from 'lucide-react';
@@ -26,17 +18,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { cn } from 'lib/utils';
-import type { CookieProfileView } from '../../../types/download';
+import type {
+  BrowserCookieProfile,
+  CookieBatchImportResult,
+  CookieProfileView,
+} from '../../../types/download';
 
 const BROWSERS = ['firefox', 'chrome', 'edge', 'brave', 'safari'] as const;
 type Browser = (typeof BROWSERS)[number];
@@ -83,12 +70,6 @@ interface CookieProfilesDialogProps {
   focusProfileId?: string | null;
 }
 
-interface CustomDef {
-  name: string;
-  matchDomains: string[];
-  cookieDomains: string[];
-}
-
 export default function CookieProfilesDialog({
   open,
   onOpenChange,
@@ -99,45 +80,68 @@ export default function CookieProfilesDialog({
   const { t } = useTranslation('download');
   const platform = platformOf();
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [pasteFor, setPasteFor] = useState<string | null>(null);
-  const [pasteText, setPasteText] = useState('');
-  const [showCustom, setShowCustom] = useState(false);
-  const [customName, setCustomName] = useState('');
-  const [customDomain, setCustomDomain] = useState('');
-  // 导入失败信息内联展示（文案偏长、含操作指引，比短 toast 更完整可读）
   const [importError, setImportError] = useState<string | null>(null);
+  const [importResult, setImportResult] =
+    useState<CookieBatchImportResult | null>(null);
+  const [browser, setBrowser] = useState<Browser>(
+    platform === 'win32' ? 'firefox' : 'chrome',
+  );
+  const [browserProfiles, setBrowserProfiles] = useState<
+    BrowserCookieProfile[]
+  >([]);
+  const [browserProfile, setBrowserProfile] = useState('');
+  const [profilesLoading, setProfilesLoading] = useState(false);
+  const [profilesError, setProfilesError] = useState(false);
+  const importedProfiles = profiles.filter(
+    (p) => p.configured || p.needsReimport,
+  );
+  const busy = busyId !== null;
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setProfilesLoading(true);
+    setProfilesError(false);
+    setBrowserProfiles([]);
+    setBrowserProfile('');
+    window.ipc
+      .invoke('videoDownload:cookieProfiles:browserProfiles', { browser })
+      .then((result: BrowserCookieProfile[]) => {
+        if (cancelled) return;
+        const list = Array.isArray(result) ? result : [];
+        setBrowserProfiles(list);
+        setBrowserProfile(
+          list.find((p) => p.isDefault)?.id || list[0]?.id || '',
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setProfilesError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setProfilesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [browser, open]);
 
   useEffect(() => {
     if (!open) {
-      setPasteFor(null);
-      setPasteText('');
-      setShowCustom(false);
-      setCustomName('');
-      setCustomDomain('');
       setImportError(null);
+      setImportResult(null);
     }
   }, [open]);
 
-  const reload = useCallback(() => onChanged(), [onChanged]);
-
   const runImport = useCallback(
-    async (channel: string, payload: Record<string, unknown>, id: string) => {
-      setBusyId(id);
+    async (channel: string, payload: Record<string, unknown>) => {
+      setBusyId('import');
       setImportError(null);
+      setImportResult(null);
       try {
-        const res = await window?.ipc?.invoke(channel, payload);
-        if (res?.cancelled) return;
-        toast.success(
-          t('cookie.importSuccess', {
-            count: res?.cookieCount ?? 0,
-          }),
-        );
-        setPasteFor(null);
-        setPasteText('');
-        setShowCustom(false);
-        setCustomName('');
-        setCustomDomain('');
-        reload();
+        const result = await window.ipc.invoke(channel, payload);
+        if (result?.cancelled) return;
+        setImportResult(result);
+        onChanged();
       } catch (error) {
         const raw = error instanceof Error ? error.message : String(error);
         let msg = raw;
@@ -148,6 +152,14 @@ export default function CookieProfilesDialog({
         } else if (raw.includes('BROWSER_NOT_FOUND')) {
           const browser = raw.split('BROWSER_NOT_FOUND::')[1]?.trim() || '';
           msg = t('cookie.errBrowserNotFound', { browser });
+        } else if (raw.includes('NO_SUPPORTED_SITE_COOKIES')) {
+          msg = t('cookie.errNoSupportedSites');
+        } else if (raw.includes('NO_VALID_COOKIES')) {
+          msg = t('cookie.errNoValidCookies');
+        } else if (raw.includes('BROWSER_COOKIE_DECRYPT_FAILED')) {
+          msg = t('cookie.errDecrypt');
+        } else if (raw.includes('BROWSER_PROFILE_NOT_FOUND')) {
+          msg = t('cookie.errProfileMissing');
         }
         // 内联展示（持久、可读全文），长文案不再被短 toast 截断
         setImportError(msg);
@@ -155,281 +167,42 @@ export default function CookieProfilesDialog({
         setBusyId(null);
       }
     },
-    [reload, t],
+    [onChanged, t],
   );
 
-  const customDefFor = useCallback(
-    (id: string): CustomDef | undefined => {
-      const profile = profiles.find((p) => p.id === id);
-      if (profile && profile.kind === 'custom') {
-        return {
-          name: profile.name,
-          matchDomains: profile.matchDomains,
-          cookieDomains: profile.cookieDomains,
-        };
-      }
-      return undefined;
-    },
-    [profiles],
-  );
-
-  const handleDelete = useCallback(
-    async (id: string) => {
-      setBusyId(id);
+  const handleClear = useCallback(
+    async (id?: string) => {
+      setBusyId(id ?? 'clear-all');
+      setImportError(null);
+      setImportResult(null);
       try {
-        await window?.ipc?.invoke('videoDownload:cookieProfiles:delete', {
-          id,
-        });
-        reload();
+        if (id)
+          await window.ipc.invoke('videoDownload:cookieProfiles:delete', {
+            id,
+          });
+        else await window.ipc.invoke('videoDownload:cookieProfiles:clearAll');
+      } catch {
+        setImportError(t('cookie.errClear'));
       } finally {
         setBusyId(null);
+        // 删除失败也刷新：例如内容已清除，但元数据写入失败，不能继续展示旧状态。
+        onChanged();
       }
     },
-    [reload],
+    [onChanged, t],
   );
 
-  const addCustomAndImport = useCallback(
-    (kind: 'file' | 'paste' | 'browser', browser?: Browser) => {
-      const name = customName.trim();
-      const domain = customDomain.trim().toLowerCase();
-      if (!domain) {
-        toast.error(t('cookie.errNoDomain'));
-        return;
-      }
-      const id = `custom-${crypto.randomUUID()}`;
-      const customDef: CustomDef = {
-        name: name || domain,
-        matchDomains: [domain],
-        cookieDomains: [domain],
-      };
-      if (kind === 'file') {
-        void runImport(
-          'videoDownload:cookieProfiles:importFile',
-          { id, customDef },
-          'custom-draft',
-        );
-      } else if (kind === 'browser' && browser) {
-        void runImport(
-          'videoDownload:cookieProfiles:importFromBrowser',
-          { id, browser, customDef },
-          'custom-draft',
-        );
-      } else if (kind === 'paste') {
-        if (!pasteText.trim()) {
-          toast.error(t('cookie.errNoPaste'));
-          return;
-        }
-        void runImport(
-          'videoDownload:cookieProfiles:importPaste',
-          { id, raw: pasteText, customDef },
-          'custom-draft',
-        );
-      }
-    },
-    [customName, customDomain, pasteText, runImport, t],
-  );
-
-  const renderImportButtons = (
-    id: string,
-    isDraft: boolean,
-    draftBrowserImport?: (browser: Browser) => void,
-  ) => {
-    const busy = busyId === id || (isDraft && busyId === 'custom-draft');
-    return (
-      <div className="flex flex-wrap items-center gap-1.5">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs"
-              disabled={busy}
-            >
-              {busy ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Globe className="mr-1 h-3.5 w-3.5" />
-              )}
-              {t('cookie.importBrowser')}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {BROWSERS.map((browser) => {
-              const compat = browserCompat(browser, platform);
-              if (compat.level === 'blocked' && browser === 'safari') {
-                return null;
-              }
-              return (
-                <DropdownMenuItem
-                  key={browser}
-                  disabled={compat.level === 'blocked'}
-                  // 显式 hover 高亮：嵌在模态 Dialog 内时 Radix 的 pointermove→focus
-                  // 高亮驱动失灵，直接用 CSS hover 兜底（不影响键盘 focus 高亮）
-                  className="cursor-pointer hover:bg-accent hover:text-accent-foreground"
-                  onSelect={() => {
-                    if (isDraft && draftBrowserImport) {
-                      draftBrowserImport(browser);
-                    } else {
-                      void runImport(
-                        'videoDownload:cookieProfiles:importFromBrowser',
-                        { id, browser, customDef: customDefFor(id) },
-                        id,
-                      );
-                    }
-                  }}
-                >
-                  <span className="capitalize">{browser}</span>
-                  <span
-                    className={cn(
-                      'ml-2 text-[11px]',
-                      compat.level === 'blocked'
-                        ? 'text-destructive'
-                        : compat.level === 'warn'
-                          ? 'text-warning'
-                          : 'text-muted-foreground',
-                    )}
-                  >
-                    {t(compat.noteKey)}
-                  </span>
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 text-xs"
-          disabled={busy}
-          onClick={() => {
-            if (isDraft) {
-              addCustomAndImport('file');
-            } else {
-              void runImport(
-                'videoDownload:cookieProfiles:importFile',
-                { id, customDef: customDefFor(id) },
-                id,
-              );
-            }
-          }}
-        >
-          <FileUp className="mr-1 h-3.5 w-3.5" />
-          {t('cookie.importFile')}
-        </Button>
-
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 text-xs"
-          disabled={busy}
-          onClick={() => {
-            setPasteText('');
-            setPasteFor(pasteFor === id ? null : id);
-          }}
-        >
-          <ClipboardPaste className="mr-1 h-3.5 w-3.5" />
-          {t('cookie.importPaste')}
-        </Button>
-      </div>
-    );
-  };
-
-  const renderPasteBox = (id: string, isDraft: boolean) => {
-    if (pasteFor !== id) return null;
-    return (
-      <div className="mt-2 space-y-1.5">
-        <Textarea
-          value={pasteText}
-          onChange={(e) => setPasteText(e.target.value)}
-          placeholder={t('cookie.pastePlaceholder')}
-          className="h-16 text-xs"
-        />
-        <div className="flex justify-end gap-1.5">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 text-xs"
-            onClick={() => {
-              setPasteFor(null);
-              setPasteText('');
-            }}
-          >
-            {t('cookie.cancel')}
-          </Button>
-          <Button
-            size="sm"
-            className="h-7 text-xs"
-            disabled={!pasteText.trim()}
-            onClick={() => {
-              if (isDraft) {
-                addCustomAndImport('paste');
-              } else {
-                void runImport(
-                  'videoDownload:cookieProfiles:importPaste',
-                  { id, raw: pasteText, customDef: customDefFor(id) },
-                  id,
-                );
-              }
-            }}
-          >
-            {t('cookie.confirmImport')}
-          </Button>
-        </div>
-      </div>
-    );
-  };
-
-  const renderStatus = (profile: CookieProfileView) => {
-    if (profile.needsReimport) {
-      return (
-        <span className="flex items-center gap-1 text-destructive">
-          <AlertTriangle className="h-3 w-3" />
-          {t('cookie.needsReimport')}
-        </span>
-      );
-    }
-    if (!profile.configured) {
-      return (
-        <span className="text-muted-foreground">
-          {t('cookie.notConfigured')}
-        </span>
-      );
-    }
-    const parts: React.ReactNode[] = [];
-    parts.push(
-      <span key="src">
-        {t(`cookie.source_${profile.source}`)} ·{' '}
-        {t('cookie.cookieCount', { count: profile.cookieCount ?? 0 })}
-      </span>,
-    );
-    if (profile.expired) {
-      parts.push(
-        <Badge key="exp" variant="destructive" className="h-4 px-1 text-[10px]">
-          {t('cookie.expired')}
-        </Badge>,
-      );
-    } else if (profile.expiresAt) {
-      parts.push(
-        <span key="expat" className="text-muted-foreground">
-          {t('cookie.expiresAt', {
-            date: new Date(profile.expiresAt * 1000).toLocaleDateString(),
-          })}
-        </span>,
-      );
-    } else {
-      parts.push(
-        <span key="sess" className="text-muted-foreground">
-          {t('cookie.noExpiry')}
-        </span>,
-      );
-    }
-    return <span className="flex flex-wrap items-center gap-1.5">{parts}</span>;
+  const expiryText = (profile: CookieProfileView) => {
+    if (profile.needsReimport) return t('cookie.reimportRequired');
+    if (profile.expired) return t('cookie.expired');
+    if (profile.expiresAt)
+      return new Date(profile.expiresAt * 1000).toLocaleDateString();
+    return t('cookie.expiryUnknown');
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-4">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Cookie className="h-4 w-4" />
@@ -438,16 +211,113 @@ export default function CookieProfilesDialog({
           <DialogDescription>{t('cookie.description')}</DialogDescription>
         </DialogHeader>
 
+        <section aria-label={t('cookie.bulkImport')} className="space-y-2.5">
+          <div className="flex gap-2">
+            <select
+              aria-label={t('cookie.browserLabel')}
+              value={browser}
+              disabled={busy}
+              className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
+              onChange={(event) => setBrowser(event.target.value as Browser)}
+            >
+              {BROWSERS.filter(
+                (item) => item !== 'safari' || platform === 'darwin',
+              ).map((item) => (
+                <option
+                  key={item}
+                  value={item}
+                  disabled={browserCompat(item, platform).level === 'blocked'}
+                >
+                  {item === 'firefox'
+                    ? 'Firefox'
+                    : item.charAt(0).toUpperCase() + item.slice(1)}
+                </option>
+              ))}
+            </select>
+            {(profilesLoading || browserProfiles.length > 1) && (
+              <select
+                aria-label={t('cookie.browserProfile')}
+                value={browserProfile}
+                disabled={busy || profilesLoading}
+                className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm disabled:opacity-60"
+                onChange={(event) => setBrowserProfile(event.target.value)}
+              >
+                {!browserProfiles.length && (
+                  <option value="">{t('cookie.loadingProfiles')}</option>
+                )}
+                {browserProfiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name} ({profile.id})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              disabled={
+                busy ||
+                profilesLoading ||
+                profilesError ||
+                browserCompat(browser, platform).level === 'blocked'
+              }
+              onClick={() =>
+                void runImport(
+                  'videoDownload:cookieProfiles:importAllFromBrowser',
+                  {
+                    browser,
+                    ...(browserProfile ? { browserProfile } : {}),
+                  },
+                )
+              }
+            >
+              {busyId === 'import' ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Globe className="mr-1 h-3.5 w-3.5" />
+              )}
+              {t(busyId === 'import' ? 'cookie.importing' : 'cookie.importAll')}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() =>
+                void runImport('videoDownload:cookieProfiles:importAllFile', {})
+              }
+            >
+              <FileUp className="mr-1 h-3.5 w-3.5" />
+              {t('cookie.importFile')}
+            </Button>
+          </div>
+          {browserCompat(browser, platform).level !== 'ok' && (
+            <p className="text-xs text-muted-foreground">
+              {t(browserCompat(browser, platform).noteKey)}
+            </p>
+          )}
+          {profilesError && (
+            <p role="alert" className="text-xs text-destructive">
+              {t('cookie.errProfileList')}
+            </p>
+          )}
+        </section>
+
+        {importResult && (
+          <p role="status" className="text-xs text-muted-foreground">
+            {t('cookie.batchSuccess', { count: importResult.profiles.length })}
+          </p>
+        )}
         {importError && (
-          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-xs text-destructive">
-            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-            <span className="min-w-0 flex-1 leading-relaxed">
-              {importError}
-            </span>
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md bg-destructive/10 p-2.5 text-xs text-destructive"
+          >
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1">{importError}</span>
             <button
               type="button"
               onClick={() => setImportError(null)}
-              className="flex-shrink-0 rounded p-0.5 opacity-70 transition-opacity hover:opacity-100"
               aria-label={t('cookie.cancel')}
             >
               <X className="h-3.5 w-3.5" />
@@ -455,107 +325,101 @@ export default function CookieProfilesDialog({
           </div>
         )}
 
-        <div className="max-h-[60vh] space-y-2.5 overflow-y-auto pr-1">
-          {profiles.map((profile) => (
-            <div
-              key={profile.id}
-              className={cn(
-                'rounded-md border p-3',
-                focusProfileId === profile.id && 'ring-2 ring-primary',
-              )}
+        <section className="flex min-h-0 flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-medium">
+              {t('cookie.importedSites', { count: importedProfiles.length })}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+              disabled={busy || !importedProfiles.length}
+              onClick={() => void handleClear()}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 text-sm font-medium">
-                    {profile.isNameLiteral ? profile.name : t(profile.name)}
-                    {profile.hasRiskNote && (
-                      <span
-                        className="flex items-center gap-0.5 text-[11px] text-warning"
-                        title={t('cookie.riskNote')}
-                      >
-                        <ShieldAlert className="h-3 w-3" />
-                      </span>
-                    )}
-                  </div>
-                  <div className="truncate text-[11px] text-muted-foreground">
-                    {profile.matchDomains.join(', ')}
-                  </div>
-                </div>
-                {(profile.configured || profile.kind === 'custom') && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7 flex-shrink-0"
-                    disabled={busyId === profile.id}
-                    onClick={() => handleDelete(profile.id)}
-                    title={t('cookie.delete')}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-              </div>
-
-              {profile.hasRiskNote && (
-                <div className="mt-1.5 rounded bg-warning/10 px-2 py-1 text-[11px] text-warning">
-                  {t('cookie.riskNote')}
-                </div>
+              {busyId === 'clear-all' ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1 h-3.5 w-3.5" />
               )}
-
-              <div className="mt-2 text-xs">{renderStatus(profile)}</div>
-
-              <div className="mt-2">
-                {renderImportButtons(profile.id, false)}
-              </div>
-              {renderPasteBox(profile.id, false)}
-            </div>
-          ))}
-
-          {/* 自定义域名档案 */}
-          {showCustom ? (
-            <div className="rounded-md border border-dashed p-3">
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
-                  placeholder={t('cookie.customNamePlaceholder')}
-                  className="h-8 text-xs"
-                />
-                <Input
-                  value={customDomain}
-                  onChange={(e) => setCustomDomain(e.target.value)}
-                  placeholder={t('cookie.customDomainPlaceholder')}
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="mt-2">
-                {renderImportButtons('custom-draft', true, (browser) =>
-                  addCustomAndImport('browser', browser),
-                )}
-              </div>
-              {renderPasteBox('custom-draft', true)}
-              <div className="mt-2 flex justify-end">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 text-xs"
-                  onClick={() => setShowCustom(false)}
-                >
-                  {t('cookie.cancel')}
-                </Button>
-              </div>
+              {t('cookie.clearAll')}
+            </Button>
+          </div>
+          {importedProfiles.length ? (
+            <div className="min-h-0 overflow-y-auto rounded-md border">
+              <table
+                aria-label={t('cookie.entry')}
+                className="w-full table-fixed text-sm"
+              >
+                <thead className="sticky top-0 bg-muted text-xs text-muted-foreground">
+                  <tr>
+                    <th scope="col" className="px-3 py-2 text-left font-normal">
+                      {t('cookie.site')}
+                    </th>
+                    <th
+                      scope="col"
+                      className="w-36 px-3 py-2 text-left font-normal"
+                    >
+                      {t('cookie.expiry')}
+                    </th>
+                    <th scope="col" className="w-16 px-2 py-2">
+                      <span className="sr-only">{t('cookie.clear')}</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {importedProfiles.map((profile) => {
+                    const name = profile.isNameLiteral
+                      ? profile.name
+                      : t(profile.name);
+                    return (
+                      <tr
+                        key={profile.id}
+                        className={cn(
+                          focusProfileId === profile.id && 'bg-accent/50',
+                        )}
+                      >
+                        <td className="truncate px-3 py-1" title={name}>
+                          {name}
+                        </td>
+                        <td
+                          className={cn(
+                            'px-3 py-1 text-xs tabular-nums',
+                            profile.expired || profile.needsReimport
+                              ? 'text-destructive'
+                              : 'text-muted-foreground',
+                          )}
+                        >
+                          {expiryText(profile)}
+                        </td>
+                        <td className="px-1 py-1 text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                            aria-label={t('cookie.clearSite', { name })}
+                            disabled={busy}
+                            onClick={() => void handleClear(profile.id)}
+                          >
+                            {busyId === profile.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              t('cookie.clear')
+                            )}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full border-dashed text-xs"
-              onClick={() => setShowCustom(true)}
-            >
-              <Plus className="mr-1 h-3.5 w-3.5" />
-              {t('cookie.addCustom')}
-            </Button>
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {t('cookie.empty')}
+            </p>
           )}
-        </div>
+        </section>
       </DialogContent>
     </Dialog>
   );

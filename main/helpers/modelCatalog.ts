@@ -32,31 +32,17 @@ export function getFasterWhisperModelsPath(): string {
   return resolved;
 }
 
-/** HuggingFace Hub 标准缓存子目录：{modelsPath}/hub/models--* */
+/**
+ * HuggingFace Hub 标准缓存子目录：{modelsPath}/hub/models--*。
+ *
+ * 只返回路径，不创建、不搬移：模型路径可能指向与其他 HuggingFace 软件共享的缓存
+ * （models--* 直接位于其下，#519），该函数在刷新模型列表、转写、下载时都会被调用，
+ * 在这里动用户目录等于每次刷新都改写一次共享缓存。读取侧同时兼容 {modelsPath}/ 与
+ * {modelsPath}/hub/（inspectCt2ModelSnapshot / getFasterWhisperModelsInstalled），
+ * 目录在首次下载时由下载器按需创建。
+ */
 export function getFasterWhisperHubDir(): string {
-  const root = getFasterWhisperModelsPath();
-  const hub = path.join(root, 'hub');
-  if (!fs.existsSync(hub)) {
-    fs.mkdirSync(hub, { recursive: true });
-  }
-  migrateLegacyCt2Layout(root, hub);
-  return hub;
-}
-
-/** 将旧版 {root}/models--* 布局迁移到 {root}/hub/models--* */
-function migrateLegacyCt2Layout(root: string, hub: string): void {
-  try {
-    for (const entry of fs.readdirSync(root)) {
-      if (!entry.startsWith('models--')) continue;
-      const src = path.join(root, entry);
-      const dest = path.join(hub, entry);
-      if (!fs.existsSync(src) || !fs.statSync(src).isDirectory()) continue;
-      if (fs.existsSync(dest)) continue;
-      fs.renameSync(src, dest);
-    }
-  } catch {
-    // 忽略迁移失败，不影响主流程
-  }
+  return path.join(getFasterWhisperModelsPath(), 'hub');
 }
 
 export function toCt2CacheDirName(modelId: string): string {

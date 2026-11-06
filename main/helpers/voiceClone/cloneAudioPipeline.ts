@@ -12,6 +12,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { TaskCancelledError } from '../taskContext';
 import { stderrTail } from '../ffmpegErrorUtils';
+import { FIRST_AUDIO_STREAM } from '../audioStreamSelection';
 import {
   readWavInfo,
   probeMediaDurationMs,
@@ -166,6 +167,27 @@ interface SherpaVadRuntimeLike {
 }
 
 /**
+ * 回落到帧能量法时留一条日志：这里原先是静默 catch，Silero 不可用了（例如 Windows 中文路径下
+ * 模型打不开）既没有提示也没有日志，只剩质量变差的分段，排查时毫无线索。
+ * lazy require 保持本模块纯 node 可引入（单测 / 脚本没有应用上下文时不记）。
+ */
+function logVadFallback(error: unknown): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { logMessage } = require('../storeManager') as {
+      logMessage: (message: string, level: 'warning') => void;
+    };
+    const reason = error instanceof Error ? error.message : String(error);
+    logMessage(
+      `voice clone: Silero VAD unavailable, falling back to energy-based speech detection: ${reason}`,
+      'warning',
+    );
+  } catch {
+    // 没有应用上下文：不记
+  }
+}
+
+/**
  * VAD 语音段（ms）：优先 Silero（内置随包，经 ASR 常驻 worker；lazy require，
  * 保持本模块纯 node 可引入），失败回落帧能量法（纯函数，零推理）。
  */
@@ -204,7 +226,8 @@ async function detectSpeechSegmentsMs(
       startMs: Math.round(s.start * 1000),
       endMs: Math.round(s.end * 1000),
     }));
-  } catch {
+  } catch (error) {
+    logVadFallback(error);
     return energySegmentsFromFrames(frames);
   }
 }
@@ -229,7 +252,7 @@ export async function analyzeCloneSource(
     .audioFrequency(16000)
     .audioChannels(1)
     .audioCodec('pcm_s16le')
-    .outputOptions('-y');
+    .outputOptions(['-map', FIRST_AUDIO_STREAM, '-y']);
   await runSave(command, analysisWavPath, opts?.signal);
 
   const { samples, sampleRate } = readWavSamples(analysisWavPath);
@@ -405,7 +428,9 @@ export async function prepareCloneReference(
   keeps.forEach((iv, i) => {
     const s = ((from + iv.startMs) / 1000).toFixed(3);
     const e = ((from + iv.endMs) / 1000).toFixed(3);
-    parts.push(`[0:a]atrim=start=${s}:end=${e},asetpts=PTS-STARTPTS[k${i}]`);
+    parts.push(
+      `[${FIRST_AUDIO_STREAM}]atrim=start=${s}:end=${e},asetpts=PTS-STARTPTS[k${i}]`,
+    );
     labels.push(`[k${i}]`);
   });
   const gainFilter = gainDb > 0 ? `,volume=${gainDb}dB` : '';

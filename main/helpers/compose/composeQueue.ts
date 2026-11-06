@@ -8,13 +8,19 @@
  */
 
 import { randomUUID } from 'crypto';
+import { isDeepStrictEqual } from 'util';
 import { logMessage } from '../storeManager';
 import {
   acquireTaskPowerSaveBlocker,
   releaseTaskPowerSaveBlocker,
 } from '../powerSaveManager';
 import { MERGE_CANCELLED } from '../subtitleMerger';
+import { assertComposeOutputWritable } from '../../../types/composeContainer';
 import { runComposeJob } from './composeRunner';
+import {
+  startProcessingHistory,
+  updateProcessingHistory,
+} from '../processingHistory';
 import type {
   ComposeConfig,
   ComposeJobSource,
@@ -36,15 +42,18 @@ export interface ComposeJobResult {
 
 interface InternalJob {
   id: string;
+  requestId?: string;
   config: ComposeConfig;
   source: ComposeJobSource;
   status: ComposeJobStatus;
   createdAt: number;
   error?: string;
+  resultPath?: string;
   /** runner 注册的"杀当前 ffmpeg"入口（running 时有效） */
   cancelRunning?: () => void;
   /** 可选的作业级进度回调（流水线阶段等提交方直连消费） */
   onProgress?: (progress: MergeProgress) => void;
+  beforePublish?: () => Promise<void>;
   settle: (result: ComposeJobResult) => void;
   done: Promise<ComposeJobResult>;
 }
@@ -69,14 +78,22 @@ function toView(job: InternalJob): ComposeJobView {
   const { subtitle, audio } = job.config;
   return {
     id: job.id,
+    requestId: job.requestId,
     status: job.status,
     source: job.source,
-    outputPath: job.config.outputPath,
+    outputPath: job.resultPath || job.config.outputPath,
     createdAt: job.createdAt,
     error: job.error,
     videoPath: job.config.videoPath,
     subtitlePath: subtitle.mode === 'none' ? undefined : subtitle.subtitlePath,
     subtitleMode: subtitle.mode,
+    ...(subtitle.mode === 'hard'
+      ? {
+          style: subtitle.style,
+          videoQuality: subtitle.videoQuality,
+          encoderMode: subtitle.encoderMode,
+        }
+      : {}),
     audioTrack:
       audio.mode === 'keep'
         ? undefined
@@ -123,22 +140,61 @@ function broadcastQueue(): void {
 export function enqueueCompose(
   config: ComposeConfig,
   source: ComposeJobSource,
-  opts?: { onProgress?: (progress: MergeProgress) => void },
+  opts?: {
+    requestId?: string;
+    onProgress?: (progress: MergeProgress) => void;
+    beforePublish?: () => Promise<void>;
+  },
 ): { jobId: string; done: Promise<ComposeJobResult> } {
+  // WebM/Ogg 写不下 H.264/AAC：入口同步拒绝，不排队、不进历史、不建暂存目录（#521）
+  assertComposeOutputWritable(config.outputPath);
+  if (opts?.requestId !== undefined) {
+    if (
+      typeof opts.requestId !== 'string' ||
+      !opts.requestId ||
+      opts.requestId.length > 128
+    )
+      throw new Error('Invalid compose request ID');
+    const existing = jobs.find(
+      (job) => job.source === source && job.requestId === opts.requestId,
+    );
+    if (existing) {
+      if (!isDeepStrictEqual(existing.config, config))
+        throw new Error('Compose request ID reused with different settings');
+      return { jobId: existing.id, done: existing.done };
+    }
+  }
   let settle!: (result: ComposeJobResult) => void;
   const done = new Promise<ComposeJobResult>((resolve) => {
     settle = resolve;
   });
   const job: InternalJob = {
     id: randomUUID(),
+    requestId: opts?.requestId,
     config,
     source,
     status: 'queued',
     createdAt: Date.now(),
     onProgress: opts?.onProgress,
+    beforePublish: opts?.beforePublish,
     settle,
     done,
   };
+  if (source === 'subtitleMerge') {
+    startProcessingHistory({
+      id: job.id,
+      type: 'compose',
+      inputPaths: [
+        config.videoPath,
+        ...(config.subtitle.mode !== 'none'
+          ? [config.subtitle.subtitlePath]
+          : []),
+        ...(config.audio.mode !== 'keep' ? [config.audio.trackPath] : []),
+      ],
+      config: { ...config },
+      status: 'waiting',
+    });
+  }
   jobs.push(job);
   logMessage(
     `合成作业入列: ${job.id} (source=${source}, output=${config.outputPath})`,
@@ -172,6 +228,8 @@ export function cancelComposeJob(
 
   if (target.status === 'queued') {
     target.status = 'cancelled';
+    if (target.source === 'subtitleMerge')
+      updateProcessingHistory(target.id, 'interrupted');
     logMessage(`合成作业已从队列移除: ${target.id}`, 'warning');
     target.settle({ success: true, cancelled: true });
     // 排队取消也要给该作业发 idle 进度：渲染层等待 done 的同时靠它复位展示
@@ -202,10 +260,13 @@ async function pump(): Promise<void> {
       if (!next) break;
       runningJob = next;
       next.status = 'running';
+      if (next.source === 'subtitleMerge')
+        updateProcessingHistory(next.id, 'running');
       broadcastQueue();
       acquireTaskPowerSaveBlocker(COMPOSE_POWER_SAVE_REASON);
       try {
         const outputPath = await runComposeJob(next.config, {
+          beforePublish: next.beforePublish,
           jobId: next.id,
           onProgress: (progress) => {
             const withSource = { ...progress, source: next.source };
@@ -217,15 +278,22 @@ async function pump(): Promise<void> {
           },
         });
         next.status = 'done';
+        next.resultPath = outputPath;
+        if (next.source === 'subtitleMerge')
+          updateProcessingHistory(next.id, 'done', [outputPath]);
         next.settle({ success: true, outputPath });
       } catch (err) {
         const error = err as Error;
         if (error.message === MERGE_CANCELLED) {
           next.status = 'cancelled';
+          if (next.source === 'subtitleMerge')
+            updateProcessingHistory(next.id, 'interrupted');
           next.settle({ success: true, cancelled: true });
         } else {
           next.status = 'error';
           next.error = error.message;
+          if (next.source === 'subtitleMerge')
+            updateProcessingHistory(next.id, 'error', [], error.message);
           next.settle({ success: false, error: error.message });
         }
       } finally {

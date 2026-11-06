@@ -5,6 +5,7 @@ import { useTheme } from 'next-themes';
 import {
   AudioLines,
   BookOpenText,
+  Boxes,
   Captions,
   Clapperboard,
   CloudDownload,
@@ -45,6 +46,7 @@ export default function CommandPalette({
   open,
   onOpenChange,
   locale,
+  lastSubtitleSlug = 'generate-translate',
   onCheckUpdates,
   onOpenLogs,
   onOpenShortcuts,
@@ -54,6 +56,7 @@ export default function CommandPalette({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   locale: string;
+  lastSubtitleSlug?: string;
   onCheckUpdates: () => void;
   onOpenLogs: () => void;
   onOpenShortcuts: () => void;
@@ -98,13 +101,14 @@ export default function CommandPalette({
     { href: 'home', label: t('nav.launchpad'), icon: Home },
     { href: 'download', label: t('nav.download'), icon: CloudDownload },
     {
-      href: 'tasks/generate-translate',
+      href: `tasks/${lastSubtitleSlug}`,
       label: t('nav.subtitles'),
       icon: Captions,
     },
     { href: 'proofread', label: t('nav.proofread'), icon: PenLine },
     { href: 'subtitleMerge', label: t('nav.compose'), icon: Clapperboard },
     { href: 'dubbing', label: t('nav.dubbing'), icon: Mic },
+    { href: 'toolbox', label: t('nav.toolbox'), icon: Boxes },
     { href: 'engines', label: t('nav.engines'), icon: Cpu },
     { href: 'translation', label: t('nav.translation'), icon: Languages },
     { href: 'glossary', label: t('nav.glossary'), icon: BookOpenText },
@@ -183,10 +187,7 @@ export default function CommandPalette({
           </CommandItem>
           <CommandItem
             value={`action ${t('help.checkUpdates')}`}
-            onSelect={() => {
-              onOpenChange(false);
-              onCheckUpdates();
-            }}
+            onSelect={() => runDeferred(onCheckUpdates)}
           >
             <RefreshCw />
             <span>{t('help.checkUpdates')}</span>

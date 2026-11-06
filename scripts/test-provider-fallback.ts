@@ -1,5 +1,6 @@
 import {
   cloneProviderForFallback,
+  isProviderConfigured,
   nextProviderInstanceName,
   PROVIDER_TYPES,
   type Provider,
@@ -17,6 +18,8 @@ import {
 import { isFallbackEligibleError } from '../main/translate/utils/error';
 import { isFallbackProviderInstance } from '../renderer/lib/providerUtils';
 import { ParameterProcessor } from '../main/helpers/parameterProcessor';
+import fs from 'fs';
+import path from 'path';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -362,6 +365,234 @@ function testDeepLXGetsConservativeRateLimitDefault() {
   );
 }
 
+const LEGACY_FREE_CHAIN = 'bingFree,googleFree,deeplx';
+const YOUDAO_FIRST_CHAIN = 'youdaoFree,bingFree,googleFree,deeplx';
+
+function templateDefault(typeId: string, key: string): unknown {
+  return PROVIDER_TYPES.find((type) => type.id === typeId)?.fields.find(
+    (field) => field.key === key,
+  )?.defaultValue;
+}
+
+function testYoudaoFreeProviderDefinition() {
+  const youdao = PROVIDER_TYPES.find((type) => type.id === 'youdaoFree');
+  assert(youdao, 'youdaoFree should be a provider type');
+  assert(
+    youdao.isBuiltin === true &&
+      youdao.isAi === false &&
+      youdao.group === 'free',
+    'youdaoFree should be a built-in free machine-translation provider',
+  );
+  assert(
+    youdao.fields.every((field) => !field.required) &&
+      !youdao.fields.some((field) =>
+        ['apiKey', 'apiSecret', 'appId', 'apiUrl'].includes(field.key),
+      ),
+    'youdaoFree should need no credentials',
+  );
+  assert(
+    isProviderConfigured({
+      id: 'youdaoFree',
+      name: 'youdaoFree',
+      type: 'youdaoFree',
+      isAi: false,
+    }),
+    'a bare youdaoFree provider counts as configured',
+  );
+  assert(
+    templateDefault('youdaoFree', 'batchSize') === 30 &&
+      templateDefault('youdaoFree', 'batchConcurrency') === 2 &&
+      templateDefault('youdaoFree', 'requestInterval') === 0.2 &&
+      templateDefault('youdaoFree', 'windowMaxRequests') === 0,
+    'youdaoFree should default to batch 30, concurrency 2, interval 0.2 s, no window cap',
+  );
+
+  assert(
+    templateDefault('autoFree', 'fallbackChain') === YOUDAO_FIRST_CHAIN,
+    'autoFree should default to Youdao first',
+  );
+  assert(
+    templateDefault('autoFree', 'batchSize') === 10 &&
+      templateDefault('autoFree', 'batchConcurrency') === 1 &&
+      templateDefault('autoFree', 'requestInterval') === 0.3 &&
+      templateDefault('autoFree', 'windowMaxRequests') === 0,
+    'autoFree performance defaults must not change',
+  );
+  assert(
+    templateDefault('bingFree', 'batchSize') === 10 &&
+      templateDefault('bingFree', 'batchConcurrency') === 1 &&
+      templateDefault('bingFree', 'requestInterval') === 0.2 &&
+      templateDefault('googleFree', 'batchSize') === 5 &&
+      templateDefault('googleFree', 'batchConcurrency') === 1 &&
+      templateDefault('googleFree', 'requestInterval') === 0.5,
+    'the other free sources keep their request shape',
+  );
+
+  for (const language of ['zh', 'en']) {
+    const strings = JSON.parse(
+      fs.readFileSync(
+        path.join(
+          process.cwd(),
+          'renderer/public/locales',
+          language,
+          'translateControl.json',
+        ),
+        'utf8',
+      ),
+    );
+    assert(
+      strings.phFallbackChain === YOUDAO_FIRST_CHAIN,
+      `${language} fallback chain placeholder should show the default order`,
+    );
+  }
+}
+
+function testProviderBrandIcons() {
+  // Every provider is listed with its brand image, and the file really ships
+  // in renderer/public (a missing one silently falls back to an emoji).
+  const publicDir = path.join(process.cwd(), 'renderer/public');
+  for (const type of PROVIDER_TYPES) {
+    assert(type.iconImg, `${type.id} should use a brand icon image`);
+    assert(
+      fs.existsSync(path.join(publicDir, type.iconImg)),
+      `${type.id} icon ${type.iconImg} should exist under renderer/public`,
+    );
+  }
+}
+
+function testYoudaoFreeMigration() {
+  const autoFree = (overrides: Partial<Provider> = {}): Provider => ({
+    id: 'autoFree',
+    name: 'autoFree',
+    type: 'autoFree',
+    isAi: false,
+    fallbackChain: LEGACY_FREE_CHAIN,
+    batchSize: 10,
+    batchConcurrency: 1,
+    requestInterval: 0.3,
+    windowMaxRequests: 0,
+    ...overrides,
+  });
+  const migratedAutoFree = (overrides: Partial<Provider> = {}) =>
+    migrateProviders([autoFree(overrides)]).find(
+      (item) => item.type === 'autoFree',
+    )!;
+
+  // the untouched legacy default follows the new default, whitespace aside
+  assert(
+    migratedAutoFree().fallbackChain === YOUDAO_FIRST_CHAIN,
+    'the legacy default chain should move to the new default',
+  );
+  assert(
+    migratedAutoFree({ fallbackChain: ' bingFree , googleFree,\tdeeplx ' })
+      .fallbackChain === YOUDAO_FIRST_CHAIN,
+    'whitespace must not stop the legacy default from migrating',
+  );
+
+  // any other chain is the user's choice and stays exactly as it was
+  for (const chain of [
+    'googleFree,bingFree',
+    'bingFree,googleFree',
+    'deeplx,googleFree,bingFree',
+    'bingFree,googleFree,deeplx,youdaoFree',
+    'bingFree',
+    YOUDAO_FIRST_CHAIN,
+  ]) {
+    assert(
+      migratedAutoFree({ fallbackChain: chain }).fallbackChain === chain,
+      `custom chain "${chain}" should be kept`,
+    );
+  }
+  assert(
+    migratedAutoFree({ fallbackChain: undefined }).fallbackChain === undefined,
+    'a missing chain is left to the runtime default',
+  );
+
+  // performance fields are never touched
+  const tuned = migratedAutoFree({
+    batchSize: 25,
+    batchConcurrency: 3,
+    requestInterval: 1.5,
+    windowMaxRequests: 20,
+  });
+  assert(
+    tuned.batchSize === 25 &&
+      tuned.batchConcurrency === 3 &&
+      tuned.requestInterval === 1.5 &&
+      tuned.windowMaxRequests === 20,
+    'autoFree performance fields should keep the user values',
+  );
+
+  // youdaoFree is added with its defaults and nothing else moves
+  const bing: Provider = {
+    id: 'bingFree',
+    name: 'bingFree',
+    type: 'bingFree',
+    isAi: false,
+    batchSize: 7,
+    batchConcurrency: 1,
+    requestInterval: 0.2,
+    windowMaxRequests: 0,
+  };
+  const input = [autoFree({ fallbackChain: 'googleFree,bingFree' }), bing];
+  const migrated = migrateProviders(input);
+  const added = migrated.filter((item) => item.type === 'youdaoFree');
+  assert(added.length === 1, 'youdaoFree should be added exactly once');
+  assert(
+    added[0].id === 'youdaoFree' &&
+      added[0].isAi === false &&
+      added[0].batchSize === 30 &&
+      added[0].batchConcurrency === 2 &&
+      added[0].requestInterval === 0.2 &&
+      added[0].windowMaxRequests === 0,
+    'the added youdaoFree should use the template defaults',
+  );
+  assert(
+    migrated.find((item) => item.type === 'bingFree')?.batchSize === 7,
+    'other providers keep their settings',
+  );
+
+  // an existing youdaoFree keeps its settings; like the other free sources a
+  // zero request interval is backfilled with the template default
+  const existing = migrateProviders([
+    {
+      id: 'youdaoFree',
+      name: 'youdaoFree',
+      type: 'youdaoFree',
+      isAi: false,
+      batchSize: 12,
+      batchConcurrency: 3,
+      requestInterval: 0,
+      windowMaxRequests: 0,
+    },
+  ]).find((item) => item.type === 'youdaoFree')!;
+  assert(
+    existing.batchSize === 12 &&
+      existing.batchConcurrency === 3 &&
+      existing.requestInterval === 0.2,
+    'youdaoFree should join the free request-interval backfill and keep other values',
+  );
+
+  // fresh installs are built from the templates
+  assert(
+    migrateProviders([]).find((item) => item.type === 'autoFree')
+      ?.fallbackChain === YOUDAO_FIRST_CHAIN,
+    'fresh providers should start with the new default chain',
+  );
+
+  // Running the migration again leaves the free sources alone. (Other
+  // providers are not stable across runs: Volc and Azure reset their batch
+  // size every time, which predates this change.)
+  const again = migrateProviders(migrated);
+  for (const type of ['autoFree', 'youdaoFree', 'bingFree', 'googleFree']) {
+    assert(
+      JSON.stringify(again.find((item) => item.type === type)) ===
+        JSON.stringify(migrated.find((item) => item.type === type)),
+      `${type} should be stable when the migration runs again`,
+    );
+  }
+}
+
 function testAiPerformanceDefaults() {
   const migrated = migrateProviders([
     provider({
@@ -626,6 +857,9 @@ export async function runProviderFallbackTests() {
   testFallbackConfigNormalization();
   testMigrationPreservesProviderInstances();
   testDeepLXGetsConservativeRateLimitDefault();
+  testYoudaoFreeProviderDefinition();
+  testProviderBrandIcons();
+  testYoudaoFreeMigration();
   testAiPerformanceDefaults();
   await testDraftFallbackIsSkipped();
   testLocalizedInstanceNames();

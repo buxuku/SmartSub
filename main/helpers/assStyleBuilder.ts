@@ -15,10 +15,18 @@ import type {
 } from '../../types/subtitleMerge';
 import type { SubtitleCue } from './subtitleFormats';
 import { formatAssTime } from './subtitleFormats';
+import { subtitleTextRuns, subtitleGlow } from '../../types/subtitleAppearance';
+import { parseSubtitleColor } from '../../types/subtitleColor';
+import { mapAssOverrideBlocks } from '../../types/assOverrides';
+import {
+  ASS_PLAY_RES_X,
+  ASS_PLAY_RES_Y,
+  absoluteSubtitleY,
+  subtitleAnchor,
+} from '../../types/subtitleCanvas';
 
 /** 烧录/预览共用的 ASS 脚本空间（与 ffmpeg 的 SRT 隐式转换一致） */
-export const ASS_PLAY_RES_X = 384;
-export const ASS_PLAY_RES_Y = 288;
+export { ASS_PLAY_RES_X, ASS_PLAY_RES_Y } from '../../types/subtitleCanvas';
 
 /** 背景不透明度缺省值（百分比，≈旧版硬编码 alpha=128） */
 export const DEFAULT_BACK_OPACITY = 50;
@@ -27,7 +35,7 @@ export const DEFAULT_BACK_OPACITY = 50;
  * 将前端 numpad 风格的 Alignment 转换为 ASS/SSA legacy Alignment。
  *
  * 前端 numpad 风格：7/8/9=上排，4/5/6=中排，1/2/3=下排（左/中/右）。
- * SSA legacy 编码（[V4+ Styles] 中 libass 亦接受）：
+ * SSA legacy 编码（仅用于 FFmpeg force_style 的兼容接口，不用于 V4+ Style 行）：
  *   底部 1/2/3；中部 9/10/11；顶部 5/6/7。
  */
 export function convertAlignment(numpadAlignment: SubtitleAlignment): number {
@@ -51,40 +59,20 @@ export function convertAlignment(numpadAlignment: SubtitleAlignment): number {
  * ASS: &HAABBGGRR（Alpha, Blue, Green, Red；alpha 00=不透明 FF=全透明）
  */
 export function cssColorToAss(cssColor: string, alpha: number = 0): string {
-  let r: number, g: number, b: number;
-
-  if (cssColor.startsWith('#')) {
-    const hex = cssColor.slice(1);
-    r = parseInt(hex.substr(0, 2), 16);
-    g = parseInt(hex.substr(2, 2), 16);
-    b = parseInt(hex.substr(4, 2), 16);
-  } else if (cssColor.startsWith('rgb')) {
-    const match = cssColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-    if (match) {
-      r = parseInt(match[1]);
-      g = parseInt(match[2]);
-      b = parseInt(match[3]);
-    } else {
-      r = 255;
-      g = 255;
-      b = 255;
-    }
-  } else {
-    r = 255;
-    g = 255;
-    b = 255;
-  }
-
-  if (![r, g, b].every((v) => Number.isFinite(v))) {
-    r = 255;
-    g = 255;
-    b = 255;
-  }
-
-  const clampedAlpha = Math.max(0, Math.min(255, Math.round(alpha)));
+  const color = parseSubtitleColor(cssColor);
+  if (!color) throw new Error(`Invalid subtitle color: ${cssColor}`);
+  // Color opacity and the separate background/glow opacity multiply.
+  const opacity = color.opacity * (1 - Math.max(0, Math.min(255, alpha)) / 255);
+  const clampedAlpha = Math.round((1 - opacity) * 255);
   const toHex = (v: number) => v.toString(16).padStart(2, '0').toUpperCase();
 
-  return `&H${toHex(clampedAlpha)}${toHex(b)}${toHex(g)}${toHex(r)}`;
+  return `&H${toHex(clampedAlpha)}${toHex(color.blue)}${toHex(color.green)}${toHex(color.red)}`;
+}
+
+export function assPrimaryColorTags(color: string): string {
+  const ass = cssColorToAss(color);
+  // Override colors use BGR; unlike style colors, their alpha is a separate tag.
+  return `{\\1c&H${ass.slice(4)}&\\1a&H${ass.slice(2, 4)}&}`;
 }
 
 /** 背景不透明度（0-100%）→ ASS alpha（0-255，语义反转：00=不透明） */
@@ -148,7 +136,7 @@ export function buildAssStyleLine(style: SubtitleStyle): string {
     String(style.borderStyle), // BorderStyle
     String(effectiveOutline), // Outline
     String(effectiveShadow), // Shadow
-    String(convertAlignment(style.alignment)), // Alignment
+    String(style.alignment), // V4+ uses numpad alignment directly.
     String(style.marginL), // MarginL
     String(style.marginR), // MarginR
     String(style.marginV), // MarginV
@@ -167,6 +155,38 @@ function escapeAssText(text: string): string {
     .replace(/\n/g, '\\N');
 }
 
+export function styledAssText(text: string, style: SubtitleStyle): string {
+  if (
+    !style.secondLineColor &&
+    !style.highlightTerms?.some((term) => term.trim())
+  )
+    return escapeAssText(text);
+  return subtitleTextRuns(text, style)
+    .map((run) => `${assPrimaryColorTags(run.color)}${escapeAssText(run.text)}`)
+    .join('');
+}
+
+export function assGlowTags(style: SubtitleStyle): string {
+  const glow = subtitleGlow(style);
+  const color = cssColorToAss(style.glowColor || '#FFFFFF', 96);
+  return glow
+    ? `{\\1a&HFF&\\3c&H${color.slice(4)}&\\3a&H${color.slice(2, 4)}&\\bord${style.outline + glow}\\blur${glow}\\shad0}`
+    : '';
+}
+
+export function assGlowText(text: string, style: SubtitleStyle): string {
+  const tags = assGlowTags(style);
+  return (
+    tags +
+    mapAssOverrideBlocks(text, (tag) => {
+      if (tag.startsWith('\\r')) return `${tag}${tags.slice(1, -1)}`;
+      if (/^\\1a(?:&|$)/.test(tag)) return '\\1a&HFF&';
+      if (/^\\alpha(?:&|$)/.test(tag)) return `${tag}\\1a&HFF&`;
+      return tag;
+    })
+  );
+}
+
 /**
  * 生成完整 ASS 文档（Script Info + Styles + Events）。
  * 烧录与预览共用此函数，保证两端渲染输入一致。
@@ -175,6 +195,11 @@ export function buildAssDocument(
   cues: SubtitleCue[],
   style: SubtitleStyle,
 ): string {
+  const anchor = subtitleAnchor(style);
+  const position =
+    absoluteSubtitleY(style) === undefined
+      ? ''
+      : `{\\an${style.alignment}\\pos(${Number(anchor.x.toFixed(3))},${Number(anchor.y.toFixed(3))})}`;
   const header = `[Script Info]
 ScriptType: v4.00+
 Collisions: Normal
@@ -193,12 +218,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
   const events = cues
     .filter((cue) => cue.text.trim() !== '' && cue.endMs > cue.startMs)
-    .map(
-      (cue) =>
-        `Dialogue: 0,${formatAssTime(cue.startMs)},${formatAssTime(
-          cue.endMs,
-        )},Default,,0,0,0,,${escapeAssText(cue.text)}`,
-    )
+    .flatMap((cue) => {
+      const timing = `${formatAssTime(cue.startMs)},${formatAssTime(cue.endMs)},Default,,0,0,0,,`;
+      const text = styledAssText(cue.text, style);
+      const glow = assGlowTags(style);
+      return glow
+        ? [
+            `Dialogue: 0,${timing}${position}${assGlowText(text, style)}`,
+            `Dialogue: 1,${timing}${position}${text}`,
+          ]
+        : [`Dialogue: 0,${timing}${position}${text}`];
+    })
     .join('\n');
 
   return header + events + '\n';

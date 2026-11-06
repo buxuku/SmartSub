@@ -51,9 +51,11 @@ function collectRecentCandidates(items: WorkItem[]): RecentImportCandidate[] {
 export default function DubbingFileBar({
   dub,
   hideExport = false,
+  onReviewTiming,
 }: {
   dub: UseDubbingReturn;
   hideExport?: boolean;
+  onReviewTiming?: () => void;
 }) {
   const { t } = useTranslation('dubbing');
   const {
@@ -69,6 +71,12 @@ export default function DubbingFileBar({
     summary,
     loading,
   } = dub;
+  const disabled =
+    running ||
+    dub.exporting ||
+    dub.speakerUpdating ||
+    loading ||
+    dub.configBlocked;
 
   const [recent, setRecent] = useState<RecentImportCandidate[]>([]);
   useEffect(() => {
@@ -95,7 +103,7 @@ export default function DubbingFileBar({
             </span>
             <button
               onClick={clearSubtitle}
-              disabled={running}
+              disabled={disabled}
               aria-label={t('clearSubtitle')}
               className="ml-0.5 rounded hover:bg-muted"
             >
@@ -103,7 +111,12 @@ export default function DubbingFileBar({
             </button>
           </Badge>
         ) : (
-          <Button variant="outline" size="sm" onClick={pickSubtitle}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            onClick={pickSubtitle}
+          >
             {t('selectSubtitle')}
           </Button>
         )}
@@ -122,7 +135,7 @@ export default function DubbingFileBar({
             </span>
             <button
               onClick={clearVideo}
-              disabled={running}
+              disabled={disabled}
               aria-label={t('clearVideo')}
               className="ml-0.5 rounded hover:bg-muted"
             >
@@ -130,7 +143,12 @@ export default function DubbingFileBar({
             </button>
           </Badge>
         ) : (
-          <Button variant="outline" size="sm" onClick={pickVideo}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            onClick={pickVideo}
+          >
             {t('selectVideoOptional')}
           </Button>
         )}
@@ -140,7 +158,7 @@ export default function DubbingFileBar({
       {recent.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" disabled={running}>
+            <Button variant="ghost" size="sm" disabled={disabled}>
               <History className="mr-1 h-3.5 w-3.5" />
               {t('importFromRecent')}
               <ChevronDown className="ml-0.5 h-3 w-3" />
@@ -173,7 +191,8 @@ export default function DubbingFileBar({
         <span className="text-xs text-muted-foreground">
           {t('cueSummary', {
             total: summary.total,
-            done: summary.done,
+            generated: summary.generated,
+            ready: summary.done,
           })}
           {summary.overlong > 0 && (
             <span className="ml-1 text-warning">
@@ -191,7 +210,11 @@ export default function DubbingFileBar({
       {/* 右上角主操作簇：开始/继续/重跑 + 导出 + 进度 */}
       {subtitlePath && (
         <div className="ml-auto">
-          <DubbingActionBar dub={dub} hideExport={hideExport} />
+          <DubbingActionBar
+            dub={dub}
+            hideExport={hideExport}
+            onReviewTiming={onReviewTiming}
+          />
         </div>
       )}
     </div>

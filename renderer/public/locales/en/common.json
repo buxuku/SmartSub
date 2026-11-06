@@ -13,6 +13,7 @@
     "proofread": "Proofread",
     "compose": "Compose",
     "dubbing": "Dubbing",
+    "toolbox": "Toolbox",
     "engines": "Engines",
     "translation": "Translate",
     "glossary": "Terms",
@@ -20,8 +21,21 @@
     "settings": "Settings"
   },
   "statusbar": {
+    "checking": "Checking",
+    "checkFailed": "Health check failed",
+    "unverified": "Configured · connection unverified",
+    "connected": "Connection verified (within 5 min)",
+    "failed": "Connection failed",
+    "serviceConnected": "{{count}} service connections verified",
+    "serviceFailed": "Service connection failed",
     "engineReady": "Engine ready",
-    "gpuPending": "Detecting"
+    "gpuPending": "Detecting",
+    "modelReady": "Model ready",
+    "modelMissing": "No local model",
+    "serviceConfigured": "Cloud configured",
+    "serviceMissing": "No cloud service",
+    "gpuAccel": "GPU acceleration",
+    "cpuMode": "CPU mode"
   },
   "tasks": "Tasks",
   "modelManagement": "Model Management",
@@ -35,6 +49,7 @@
   "newVersionAvailable": "New version available",
   "provider": {
     "autoFree": "Free (Auto)",
+    "youdaoFree": "Youdao (Free)",
     "bingFree": "Bing (Free)",
     "googleFree": "Google (Free)",
     "baidu": "Baidu",
@@ -124,6 +139,8 @@
   "downloading": "Downloading",
   "confirmDeleteModel": "Confirm Delete Model",
   "deleteModelDesc": "After deletion, if you need to use the model again, you need to re-download.",
+  "deleteModelFolders": "These folders will be deleted from disk:",
+  "deleteModelSharedNote": "If a folder is shared with other HuggingFace apps, they lose this model too.",
   "cancel": "Cancel",
   "delete": "Delete",
   "download": "Download",
@@ -191,6 +208,59 @@
     "checkUpdates": "Check for Updates",
     "reportIssue": "Report an Issue"
   },
+  "diagnostics": {
+    "action": "Export diagnostics",
+    "title": "Export diagnostics",
+    "description": "Bundle recent logs, crash records and environment details into one zip to help troubleshoot crashes. The file is saved only where you choose and is never uploaded automatically.",
+    "loading": "Reading…",
+    "contentsTitle": "What's inside",
+    "logs": "Application logs of the last {{count}} days (about {{size}})",
+    "logsNone": "No application logs yet",
+    "events": "{{count}} crash records",
+    "eventsNone": "No crash records yet",
+    "dumpSummaries": "Summaries of {{count}} crash dumps (exception code, faulting module, CPU model)",
+    "dumpSummariesNone": "No crash dumps yet",
+    "system": "System, CPU instruction sets, GPU and acceleration environment",
+    "settings": "A subset of settings (no API keys or provider configs; paths only say whether they are customized)",
+    "privacy": "Your home directory is replaced by ~ in logs and API keys are masked. Logs may still mention file names, so feel free to unzip and review them before sharing.",
+    "rawDumps": "Include raw crash dumps ({{count}}, {{size}} in total)",
+    "rawDumpsWarning": "Raw dumps may contain fragments of memory from the moment of the crash, so they are off by default. Only enable this when a developer asks for it.",
+    "crashReporterOff": "Crash dump recording has been turned off by an environment variable, so no new dumps are produced.",
+    "export": "Export",
+    "exporting": "Exporting…",
+    "doneTitle": "Diagnostics exported",
+    "doneDesc": "File size {{size}}. Send the zip to the developer, or drag it into your GitHub issue.",
+    "warnings": "{{count}} items could not be collected; everything else was exported.",
+    "reveal": "Show in folder",
+    "reportIssue": "Report on GitHub",
+    "close": "Close",
+    "failed": "Export failed: {{error}}",
+    "previousRun": {
+      "title": "The app seems to have closed unexpectedly last time",
+      "description": "A crash record was found. Exporting a diagnostics bundle for the developer helps find the cause; nothing is uploaded automatically.",
+      "descriptionDetail": "A crash record was found ({{detail}}). Exporting a diagnostics bundle for the developer helps find the cause; nothing is uploaded automatically.",
+      "action": "Export diagnostics",
+      "suppressedFamily": "The built-in speech recognition addons were disabled (this computer's CPU may lack an instruction set they need). Use cloud speech recognition instead, or retry from the “GPU Acceleration” settings.",
+      "suppressedBackends": "Disabled automatically: {{backends}}. Transcription will use something else; you can retry from the “GPU Acceleration” settings.",
+      "listSeparator": ", "
+    },
+    "probe": {
+      "title": "Whisper transcription diagnostic",
+      "description": "Pause other transcription tasks first. Test Vulkan / CPU or VAD with the bundled short audio and an installed model. Each test takes up to 3 minutes and leaves acceleration settings unchanged.",
+      "unavailable": "An installed whisper.cpp model and Vulkan or CPU addon are required.",
+      "model": "Test model",
+      "backend": "Test backend",
+      "vad": "Enable voice activity detection (VAD)",
+      "run": "Run test",
+      "running": "Testing. You can cancel at any time…",
+      "completed": "Test completed.",
+      "error": "The test returned an error.",
+      "exited": "The test process exited unexpectedly.",
+      "timeout": "The test timed out.",
+      "cancelled": "Test cancelled.",
+      "saved": "Results saved. Export the diagnostics bundle to include the last 6 tests."
+    }
+  },
   "faq": {
     "title": "Frequently Asked Questions",
     "macDamagedQ": "macOS says the app is damaged and can't be opened?",
@@ -250,6 +320,7 @@
     "groupTasks": "Task page",
     "groupEditor": "Proofread editor",
     "commandPalette": "Command palette",
+    "toggleAssistant": "Toggle AI assistant",
     "openSettings": "Open settings",
     "showShortcuts": "Show shortcuts",
     "importFiles": "Import files",
@@ -318,6 +389,46 @@
     "sampleProjectName": "Sample · First subtitle",
     "sampleFailed": "Failed to set up the sample task. Try again or import a file manually."
   },
+  "draftRecovery": {
+    "readFailedTitle": "Draft could not be read",
+    "readFailedDescription": "The draft is damaged or local storage is unavailable. The original data is preserved. Retry reading or explicitly discard this draft.",
+    "retryRead": "Retry reading",
+    "title": "Recover unsaved work?",
+    "description": "An unsaved draft is available for this work. Restore it to continue editing.",
+    "restore": "Restore draft",
+    "discard": "Discard draft",
+    "storageFailed": "Draft storage failed. Save your work before closing the application.",
+    "wizardStorageFailed": "The draft was not written to local storage and may be lost after restarting. Free up storage space, then retry saving."
+  },
+  "providerPersistence": {
+    "loading": "Loading service configuration...",
+    "loadFailed": "Service configuration could not be loaded. Editing is unavailable.",
+    "saveFailed": "Service configuration is not saved.",
+    "repair": "Check configuration directory permissions and available space, then retry. Your changes are retained.",
+    "conflict": "Another window changed the service configuration. Your input is retained. Review it before discarding and reloading.",
+    "reload": "Reload",
+    "discardReload": "Discard changes and reload",
+    "discardDescription": "Unsaved service configuration on this page will be discarded and the latest configuration will be loaded from disk."
+  },
+  "saveState": {
+    "retry": "Retry save",
+    "idle": "",
+    "dirty": "Unsaved changes",
+    "saving": "Saving...",
+    "saved": "Saved",
+    "save_error": "Save failed",
+    "details": "Error details"
+  },
+  "navigationGuard": {
+    "discardFailed": "The draft could not be discarded. Check the page error details and retry before leaving.",
+    "title": "Unsaved changes",
+    "desc": "You have unsaved changes that will be lost if you leave this page. Would you like to save them first?",
+    "keepEditing": "Stay on page",
+    "discardAndLeave": "Discard and leave",
+    "saveAndLeave": "Save and leave",
+    "saving": "Saving...",
+    "changedDuringSave": "More changes were made while saving. Save again or stay on this page to review them."
+  },
   "undo": "Undo",
   "checkingForUpdates": "Checking for updates…",
   "alreadyLatestVersion": "You are on the latest version",
@@ -334,6 +445,12 @@
   "cpuModeBadge": "CPU mode",
   "cpuModeTip": "Transcription runs on CPU. Click to view acceleration options.",
   "coarseTimeline": "Coarse timeline",
+  "gateRelease": {
+    "pending": "Release confirmation pending",
+    "failed": "Release could not be confirmed",
+    "details": "Details",
+    "retry": "Retry release"
+  },
   "engineBadge": {
     "builtin": "Whisper.cpp",
     "fasterWhisper": "Faster-Whisper",
@@ -343,5 +460,104 @@
     "parakeet": "Parakeet",
     "localCli": "Local command",
     "cloud": "Cloud ASR"
+  },
+  "assistant": {
+    "title": "AI assistant",
+    "new": "New conversation",
+    "close": "Close assistant",
+    "history": "Conversation history",
+    "delete": "Delete conversation",
+    "deleteHint": "Only chat history is deleted. Creation tasks are kept.",
+    "service": "AI service",
+    "chooseService": "Choose a compatible AI service",
+    "configure": "Configure an AI model with tool support in translation services",
+    "you": "You",
+    "line": "Line {{index}}",
+    "draft": "Unsaved",
+    "context": "Use current context",
+    "hasErrors": "Includes error details",
+    "input": "Message to AI assistant",
+    "placeholder": "Send a message or drop files…",
+    "inputHint": "Enter to send · Shift+Enter for a new line · {{shortcut}} to toggle assistant",
+    "send": "Send",
+    "stop": "Stop",
+    "working": "Working…",
+    "progress": "Processing",
+    "viewTask": "View task",
+    "cancelTask": "Cancel task",
+    "welcome": "Create with your AI assistant",
+    "description": "Ask a question, attach files, or create with your workspace. Subtitle edits remain undoable drafts.",
+    "exampleEdit": "Make the current subtitle sound more natural",
+    "exampleTask": "Create English–Chinese subtitles for this video and compose it",
+    "exampleModels": "Show my installed models",
+    "interrupted": "This turn stopped. Submitted tasks continue and can be cancelled in their task cards.",
+    "limited": "This turn reached its execution limit. Send “continue” to proceed; existing tasks are kept.",
+    "errorHint": "This turn could not finish. Check that the service and model support tool calling, or resolve the error below before retrying.",
+    "status": {
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "interrupted": "Interrupted",
+      "queued": "Queued",
+      "paused": "Paused",
+      "cancelling": "Cancelling",
+      "cancelled": "Cancelled",
+      "review": "Review"
+    },
+    "tools": {
+      "discover_tools": "Find tools",
+      "load_tools": "Load tools",
+      "context": "Read workspace context",
+      "editor_read": "Read subtitles",
+      "editor_edit": "Edit subtitle draft",
+      "editor_locate": "Locate subtitle",
+      "editor_save": "Save subtitles",
+      "capture_screen": "Capture screen"
+    },
+    "captureScreen": "Capture workspace screen",
+    "screenshotPreview": "Workspace screenshot",
+    "openScreenshot": "View file",
+    "screenshotFailed": "Failed to capture screen, please try again.",
+    "resize": "Resize assistant",
+    "closeHistory": "Close conversation history",
+    "emptyHistory": "No conversations yet",
+    "attach": "Attach files",
+    "removeAttachment": "Remove {{name}}",
+    "dropFiles": "Drop files to attach",
+    "attachmentHint": "Media, subtitles, manuscripts and JSON files send local paths only. Images send content, up to 5 MB, and require a vision model. Up to 8 files.",
+    "attachmentLimit": "Attach up to 8 files per message.",
+    "attachmentFailed": "Could not attach files. Try again or choose local files.",
+    "analyzeAttachments": "Please analyze these attachments.",
+    "attachmentKind": {
+      "audio": "Audio · local path only",
+      "video": "Video · local path only",
+      "image": "Vision model required",
+      "file": "Local path only"
+    },
+    "attachmentErrors": {
+      "ATTACHMENT_TOO_LARGE": "Images must be 5 MB or smaller.",
+      "ATTACHMENT_NOT_FILE": "Choose a file. Folders are not supported.",
+      "unreadable": "Could not access the file. Check that it is still available locally.",
+      "ATTACHMENT_UNSUPPORTED": "Unsupported format. Choose media, subtitles, TXT/MD manuscripts, JSON files or images."
+    }
+  },
+  "cpuAdvisory": {
+    "missing": {
+      "title": "This computer's CPU may not support built-in speech recognition",
+      "description": "Built-in speech recognition needs a CPU with {{features}}, which was not detected on this computer. Continuing may crash the app. Consider cloud speech recognition or another engine.",
+      "legacyPack": {
+        "description": "You can also try the experimental “Legacy CPU pack” (it only needs AVX, but is much slower): download it, then import it under Engines → whisper.cpp (built-in) → GPU acceleration · Manage / Advanced → Custom Addon.",
+        "action": "Download and import guide"
+      },
+      "customAddon": {
+        "title": "A custom addon is enabled",
+        "description": "This computer's CPU is missing {{features}}, which the built-in acceleration packs need. Make sure the addon you imported is the Legacy CPU pack (its file name contains “-avx”). If transcription still crashes, clear the custom addon and use cloud speech recognition or another engine."
+      }
+    },
+    "translated": {
+      "title": "Running under translation",
+      "descriptionMac": "This is the Intel (x64) build running through Rosetta on Apple silicon. It is slower, and the translation layer may not provide every instruction set built-in speech recognition needs, which can crash the app. Consider the Apple silicon (arm64) build.",
+      "descriptionOther": "This is the x64 build running through translation on an ARM device. It is slower, and the translation layer may not provide every instruction set built-in speech recognition needs, which can crash the app. Consider cloud speech recognition or another engine."
+    }
   }
 }

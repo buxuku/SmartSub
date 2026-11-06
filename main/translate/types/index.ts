@@ -1,5 +1,6 @@
 import type { ResolvedGlossaryEntry } from '../../../types/glossary';
 import type { ProviderFallbackRunner } from '../services/providerFallback';
+import type { ActivityObserver } from '../../../types/taskActivity';
 
 export interface Subtitle {
   id: string;
@@ -17,11 +18,19 @@ export interface TranslationResult {
 }
 
 export interface TranslationConfig {
+  onActivity?: ActivityObserver;
   sourceLanguage: string;
   targetLanguage: string;
   provider: Provider;
   translator: TranslatorFunction;
   glossaryEntries?: ResolvedGlossaryEntry[];
+  subtitleTranslationStyle?: 'neutral' | 'conversational';
+  /** 词库来源标注；缺省时 match 日志保持旧文案。 */
+  glossarySourceLabel?: string;
+  /** 通读摘要正文；仅 AI 翻译注入 system。 */
+  episodeSummary?: string;
+  /** 无摘要时的稳定原因码，供日志说明。 */
+  summarySkipReason?: string;
   signal?: AbortSignal;
   /** 同一任务内按顺序尝试的备用实例；候选实例必须与 provider.type 相同。 */
   fallbackProviders?: Provider[];
@@ -55,12 +64,27 @@ export interface TranslationResponseMeta {
   /** usage.completion_tokens_details.reasoning_tokens */
   reasoningTokens?: number;
   completionTokens?: number;
+  /** 输入 token（usage.prompt_tokens / ollama prompt_eval_count），不回传则保持 undefined */
+  promptTokens?: number;
   /** 思考内联进 content 的情况（<think> 标签），同样视为思考发生 */
   contentThinkTagPresent?: boolean;
 }
 
 export interface TranslationRequestOptions {
   signal?: AbortSignal;
+  /**
+   * Per-attempt timeout (ms) for the OpenAI-compatible SDK services.
+   * The SDK waits 10 minutes per attempt and re-sends a timed-out request
+   * twice, so a stalled request can hold its caller for 30 minutes (#507).
+   * Unset keeps the SDK default; services without an SDK ignore it.
+   */
+  timeoutMs?: number;
+  /**
+   * SDK-level re-sends after a transient failure (timeout, 429, 5xx) for the
+   * OpenAI-compatible services. Unset keeps the SDK default (2). Callers that
+   * can live without the answer (an optional retry) set 0.
+   */
+  maxRetries?: number;
   /** Fallback scheduler hook for each SDK request, including format retries. */
   beforeRequest?: () => Promise<void>;
   /** 支持原生术语参数的非 AI 翻译服务可读取当前批次的词库。 */

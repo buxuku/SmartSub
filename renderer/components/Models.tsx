@@ -65,6 +65,8 @@ interface IProps {
   ) => void;
   className?: string;
   disabled?: boolean;
+  /** Toolbar summary: keep the model visible; engine details remain in the title and menu. */
+  compact?: boolean;
 }
 
 /**
@@ -100,6 +102,7 @@ const Models = React.forwardRef<
     onChange,
     className,
     disabled,
+    compact = false,
   } = props;
 
   const groups = getEngineModelGroups(
@@ -157,15 +160,24 @@ const Models = React.forwardRef<
       onValueChange={handleValueChange}
       disabled={disabled}
     >
-      <SelectTrigger className={className} id="model" ref={ref}>
+      <SelectTrigger
+        className={className}
+        id="model"
+        ref={ref}
+        title={
+          selected ? `${groupLabel(selected.group)} · ${selected.model}` : model
+        }
+      >
         {selected ? (
           // 用 div 承载（而非 span）：SelectTrigger 的 `[&>span]:line-clamp-1`
           // 会把直接子 span 设为竖排 -webkit-box，导致图标/徽标/模型名换行竖排。
           <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap">
             <EngineIcon engine={selected.engine} className="h-4 w-4 shrink-0" />
-            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">
-              {groupLabel(selected.group)}
-            </span>
+            {!compact && (
+              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">
+                {groupLabel(selected.group)}
+              </span>
+            )}
             {selected.group.coarseTimeline && (
               <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-800 dark:bg-amber-950 dark:text-amber-200">
                 {t('coarseTimeline')}

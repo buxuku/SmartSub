@@ -1,3 +1,4 @@
+import { ipcMain } from '../automation/handlers';
 /**
  * IPC Handlers for Parameter Management
  *
@@ -5,7 +6,6 @@
  * custom parameter configuration management.
  */
 
-import { ipcMain } from 'electron';
 import { store } from './store';
 import { ParameterProcessor } from './parameterProcessor';
 import { configurationManager } from '../service/configurationManager';
@@ -107,13 +107,7 @@ async function validateParameterConfiguration(
       providerId,
     );
 
-    // Convert validation result to ValidationError format
-    return result.errors.map((error) => ({
-      key: error.field || 'unknown',
-      type: 'validation' as const,
-      message: error.message,
-      suggestion: 'Check the parameter configuration and try again',
-    }));
+    return result.errors;
   } catch (error) {
     logMessage(
       `Error validating parameters for ${providerId}: ${error}`,
