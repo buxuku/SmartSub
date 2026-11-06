@@ -60,6 +60,7 @@ import {
 } from './pipelineConfig';
 import { validateDownloadDependencies } from '../helpers/videoDownload/pipelineReadiness';
 import { atomicReplaceTextFile } from '../helpers/atomicFile';
+import { ensureDirectorySync } from '../helpers/ensureDirectory';
 import { isModelDownloadBusy } from '../helpers/systemInfoManager';
 import {
   DEFAULT_PIPELINE_STYLE,
@@ -102,7 +103,7 @@ function assertOutput(file?: string) {
   if (!file) return;
   if (!path.isAbsolute(file)) throw new Error('ABSOLUTE_PATH_REQUIRED');
   if (fs.existsSync(file)) throw new Error(`OUTPUT_EXISTS: ${file}`);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  ensureDirectorySync(path.dirname(file));
 }
 function assertNoDraft(file: string) {
   const directory = path.join(app.getPath('userData'), 'proofread-drafts');
@@ -749,7 +750,7 @@ export class AutomationService {
         const format = a.format || path.extname(file).slice(1);
         if (!['srt', 'vtt', 'ass', 'lrc', 'txt'].includes(format))
           throw new Error('INVALID_SUBTITLE_FORMAT');
-        fs.mkdirSync(path.dirname(file), { recursive: true });
+        ensureDirectorySync(path.dirname(file));
         const text = serializeSubtitleCues(a.cues, format);
         if (existed)
           fs.copyFileSync(

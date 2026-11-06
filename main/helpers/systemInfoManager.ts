@@ -122,6 +122,7 @@ import { getSherpaTtsRuntime } from './sherpaOnnx/ttsRuntime';
 import fse from 'fs-extra';
 import path from 'path';
 import { getTempDir } from './fileUtils';
+import { ensureDirectorySync } from './ensureDirectory';
 import { logMessage, store } from './storeManager';
 import { resolveModelRoot, type StorageKind } from './storagePaths';
 import { testTranslation } from '../translate';
@@ -1049,7 +1050,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
                       ? getSpeakerDiarizationModelsRoot()
                       : (getPath('modelsPath') as string);
       try {
-        await fse.ensureDir(modelsPath);
+        ensureDirectorySync(modelsPath);
         const err = await shell.openPath(modelsPath);
         if (err) {
           return { success: false, error: err };
@@ -1086,7 +1087,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       (store.get('settings')?.storageRoot || '').trim() ||
       app.getPath('userData');
     try {
-      await fse.ensureDir(root);
+      ensureDirectorySync(root);
       const err = await shell.openPath(root);
       if (err) {
         return { success: false, error: err };

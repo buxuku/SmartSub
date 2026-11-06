@@ -48,6 +48,9 @@ const real = new Set(
     'types/translateContent.ts',
     'types/workItem.ts',
     'main/helpers/pythonRuntime/downloader.ts',
+    'main/helpers/ensureDirectory.ts',
+    'main/helpers/subtitleFormats.ts',
+    'main/helpers/atomicFile.ts',
   ].map(definition),
 );
 const configValues = new Map();
@@ -587,6 +590,48 @@ async function main() {
   assert.equal(
     (await service.jobs.wait(optimized.id, 1000)).result.text,
     sourceText,
+  );
+  // Windows 对「已存在的卷根」（F:\）调用 mkdir 会抛 EPERM，即使带 recursive: true（issue #590）。
+  // CLI / MCP 把输出写到盘符根目录时不能因此被拒绝：把一个已存在的目录当作卷根，
+  // 让 fs.mkdirSync 对它抛同样的 EPERM，其余路径照常。
+  const volumeRoot = fs.mkdtempSync(path.join(root, 'volume-root-'));
+  const realMkdirSync = fs.mkdirSync;
+  fs.mkdirSync = (target, mkdirOptions) => {
+    if (path.resolve(String(target)) === volumeRoot)
+      throw Object.assign(
+        new Error(`EPERM: operation not permitted, mkdir '${target}'`),
+        { code: 'EPERM', syscall: 'mkdir', path: String(target) },
+      );
+    return realMkdirSync(target, mkdirOptions);
+  };
+  try {
+    // 带 outputPath 的操作：assertOutput 要确保父目录存在，卷根本身已经存在
+    let exportPayload;
+    handlers.set('glossaries:export', (_event, payload) => {
+      exportPayload = payload;
+      return { success: true };
+    });
+    const exportTarget = path.join(volumeRoot, 'glossary.csv');
+    await service.call('glossaries.export', {
+      glossaryId: 'fixture',
+      format: 'csv',
+      outputPath: exportTarget,
+    });
+    assert.equal(exportPayload.outputPath, exportTarget);
+
+    // subtitles.write 直接写到卷根；目录确实不存在时仍会被创建
+    const cues = [{ startMs: 0, endMs: 1000, text: sourceText }];
+    const atRoot = path.join(volumeRoot, 'edited.srt');
+    await service.call('subtitles.write', { filePath: atRoot, cues });
+    assert.ok(fs.readFileSync(atRoot, 'utf8').includes(sourceText));
+    const nested = path.join(volumeRoot, 'new', 'folder', 'nested.srt');
+    await service.call('subtitles.write', { filePath: nested, cues });
+    assert.ok(fs.existsSync(nested));
+  } finally {
+    fs.mkdirSync = realMkdirSync;
+  }
+  console.log(
+    'PASS outputs written directly in a drive root (Windows mkdir EPERM)',
   );
   handlers.set('dubbing:loadSubtitle', () => ({ success: true, data: {} }));
   const wave = path.join(root, 'retained.wav');

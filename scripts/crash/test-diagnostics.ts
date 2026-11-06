@@ -583,6 +583,62 @@ async function main() {
     assert.deepEqual(leftovers, []);
   });
 
+  await test('保存到盘符根目录：卷根上 mkdir 抛 EPERM（Windows）时 zip 仍能写出', async () => {
+    // Windows 对「已存在的卷根」（F:\）调用 mkdir 会抛 EPERM，即使带 recursive: true（issue #590）。
+    // 保存对话框里可以选盘符根目录。这里把一个已存在的目录当作卷根，让 mkdir 对它抛同样的
+    // EPERM；同步和异步两个入口都拦，不论实现用哪个都能暴露问题。
+    const dir = tmp();
+    const volumeRoot = path.join(dir, 'volume-root');
+    fs.mkdirSync(volumeRoot);
+    const input = await collectDiagnosticsInput(makeSources(dir));
+    const { root, entries } = buildBundleEntries(input, {
+      includeRawDumps: false,
+      ...options,
+    });
+    const rejectVolumeRoot = (target: fs.PathLike) => {
+      if (path.resolve(String(target)) !== volumeRoot) return;
+      throw Object.assign(
+        new Error(`EPERM: operation not permitted, mkdir '${target}'`),
+        { code: 'EPERM', syscall: 'mkdir', path: String(target) },
+      );
+    };
+    const mkdirSync = fs.mkdirSync;
+    const mkdir = fs.promises.mkdir;
+    fs.mkdirSync = ((
+      target: fs.PathLike,
+      mkdirOptions?: fs.MakeDirectoryOptions,
+    ) => {
+      rejectVolumeRoot(target);
+      return mkdirSync(target, mkdirOptions);
+    }) as typeof fs.mkdirSync;
+    fs.promises.mkdir = (async (
+      target: fs.PathLike,
+      mkdirOptions?: fs.MakeDirectoryOptions,
+    ) => {
+      rejectVolumeRoot(target);
+      return mkdir(target, mkdirOptions);
+    }) as typeof fs.promises.mkdir;
+    try {
+      const target = path.join(volumeRoot, 'bundle.zip');
+      const bytes = await writeZipFile(target, entries);
+      assert.equal(bytes, fs.statSync(target).size);
+      assert.ok((await zipEntries(target)).has(`${root}/README.txt`));
+      assert.deepEqual(
+        fs.readdirSync(volumeRoot),
+        ['bundle.zip'],
+        '不应留下临时文件',
+      );
+
+      // 目录确实不存在时仍会被创建。
+      const nested = path.join(volumeRoot, 'new', 'folder', 'bundle.zip');
+      await writeZipFile(nested, entries);
+      assert.ok(fs.existsSync(nested));
+    } finally {
+      fs.mkdirSync = mkdirSync;
+      fs.promises.mkdir = mkdir;
+    }
+  });
+
   await test('预览：日志天数与体积、事件条数、转储的异常名与故障模块', async () => {
     const dir = tmp();
     const sources = makeSources(dir);
