@@ -9,14 +9,15 @@
  *                      → output.publish() → output.cleanup()
  * <视频所在目录> 即 wrapFileObject().directory = path.dirname(filePath)：视频在 F:\ 根目录时就是 `F:\`。
  *
- * 每个可写的卷根上跑三组：
+ * 每个可写的卷根上跑四组：
  *   - 视频直接在盘符根目录（#590 的场景）；
  *   - 视频在盘符根目录下的子文件夹（对照，用户报告这种情况一切正常）；
  *   - ensureDirectorySync 直接作用于卷根和卷根下尚不存在的目录（下载目录 videoDownload/scheduler.ts
- *     用的是同一个原语）。
+ *     用的是同一个原语）；
+ *   - 诊断包 zip 直接保存在卷根（crash/diagnosticsBundle.ts writeZipFile，保存对话框里可以直接选盘符根目录）。
  * 修复前（createComposeOutput 里直接 fs.mkdirSync(parent, { recursive: true })），第一组在
  * `EPERM: operation not permitted, mkdir 'D:\\'` 处失败，其余通过；修复后全部应通过，
- * 且不留下 .smartsub-compose-* 暂存目录。
+ * 且不留下 .smartsub-compose-* 暂存目录和 zip 临时文件。
  *
  * 非 Windows 没有盘符根目录，直接跳过（DRIVE_ROOTS 指定目录可以在本地演练脚本本身）。
  * 退出码：任何断言失败即非 0。
@@ -46,6 +47,9 @@ const { ensureDirectorySync } = requireRepoTs(
   'main/helpers/ensureDirectory.ts',
 );
 const { copyIndependent } = requireRepoTs('main/helpers/taskRuns/artifacts.ts');
+const { writeZipFile } = requireRepoTs(
+  'main/helpers/crash/diagnosticsBundle.ts',
+);
 
 const SRT = '1\n00:00:00,000 --> 00:00:01,000\nhello\n';
 const isWindows = process.platform === 'win32';
@@ -181,6 +185,37 @@ function checkEnsureDirectory(root, volume) {
   }
 }
 
+/** 诊断包（crash/diagnosticsBundle.ts）：保存对话框里可以直接选盘符根目录，zip 就写在卷根下。 */
+async function checkDiagnosticsZip(root, volume) {
+  const label = `diagnostics zip saved directly in the drive root ${root} (${volume})`;
+  const name = `${RUN_ID}-diagnostics.zip`;
+  const target = path.join(root, name);
+  try {
+    const bytes = await writeZipFile(target, [
+      { name: 'README.txt', content: 'hello', mtime: new Date() },
+    ]);
+    const problems = [];
+    if (!fs.existsSync(target) || fs.statSync(target).size !== bytes || !bytes)
+      problems.push('zip is missing or its size does not match');
+    const leftovers = fs
+      .readdirSync(root)
+      .filter((entry) => entry.startsWith(`${name}.`));
+    if (leftovers.length)
+      problems.push(`left temp files behind: ${leftovers.join(', ')}`);
+    checks.check(
+      label,
+      problems.length === 0,
+      problems.join('; ') || `wrote ${bytes} bytes to ${target}`,
+    );
+  } catch (error) {
+    checks.check(label, false, `threw ${describeError(error)}`);
+  } finally {
+    for (const entry of fs.readdirSync(root))
+      if (entry === name || entry.startsWith(`${name}.`))
+        fs.rmSync(path.join(root, entry), { force: true });
+  }
+}
+
 let usable = 0;
 try {
   for (const root of roots) {
@@ -207,6 +242,7 @@ try {
       { precreate: true },
     );
     checkEnsureDirectory(root, volume);
+    await checkDiagnosticsZip(root, volume);
   }
 } finally {
   fs.rmSync(scratch, { recursive: true, force: true });

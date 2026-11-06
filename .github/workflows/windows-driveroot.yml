@@ -11,7 +11,8 @@ name: Windows drive-root export
 #   1. probe：只报告运行时的实际行为（对卷根 mkdir 失败，但在卷根里建文件 / mkdtemp / 硬链接都成功），
 #      用来确认「对卷根 mkdir 会失败」这个前提在当前 runner 和 Node 版本上仍然成立；
 #   2. verify：用应用里真实的 createComposeOutput + copyIndependent + ensureDirectorySync 走一遍
-#      「导出字幕」的发布流程，断言视频在盘符根目录和在子目录下都能导出。
+#      「导出字幕」的发布流程，断言视频在盘符根目录和在子目录下都能导出；
+#      再用真实的 writeZipFile 把诊断包直接保存到卷根（保存对话框里可以直接选盘符根目录）。
 # 不能用 subst 模拟盘符：subst 出来的盘符指向一个普通目录，CreateDirectory 会返回「已存在」，复现不了。
 # Node 20.16.0 是 Electron 30.5.1 内置的版本（应用实际运行的版本），22.14.0 与其余 CI 一致。
 # 不使用任何 secrets，不发布任何产物。
@@ -21,6 +22,7 @@ on:
   pull_request:
     paths:
       - 'main/helpers/compose/composeOutput.ts'
+      - 'main/helpers/crash/diagnosticsBundle.ts'
       - 'main/helpers/ensureDirectory.ts'
       - 'main/helpers/taskRuns/adapters.ts'
       - 'main/helpers/taskRuns/artifacts.ts'
@@ -35,6 +37,7 @@ on:
       - main
     paths:
       - 'main/helpers/compose/composeOutput.ts'
+      - 'main/helpers/crash/diagnosticsBundle.ts'
       - 'main/helpers/ensureDirectory.ts'
       - 'main/helpers/taskRuns/adapters.ts'
       - 'main/helpers/taskRuns/artifacts.ts'
@@ -77,7 +80,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: yarn
 
-      # 脚本只需要 typescript（把应用里的 .ts 源码转译后直接 require），不需要 Electron 二进制和原生库：
+      # 脚本只需要 typescript（把应用里的 .ts 源码转译后直接 require）和纯 JS 依赖（yazl），不需要 Electron 二进制和原生库：
       # 不跑 postinstall。--ignore-engines：个别依赖声明了更高的 Node 版本，在 20.16.0 这一档会被 yarn 拦下，
       # 而这里只运行本仓库的脚本，不运行那些依赖。
       - name: Install dependencies
@@ -90,6 +93,6 @@ jobs:
       - name: Probe drive roots (runtime behaviour)
         run: node scripts/windows-driveroot/probe-drive-root.mjs
 
-      # 断言：视频在盘符根目录 / 子目录下，应用真实的「导出字幕」发布流程都能成功
+      # 断言：视频在盘符根目录 / 子目录下，应用真实的「导出字幕」发布流程都能成功；诊断包 zip 能直接保存到卷根
       - name: Verify subtitle export at a drive root
         run: node scripts/windows-driveroot/verify-export-at-root.mjs
