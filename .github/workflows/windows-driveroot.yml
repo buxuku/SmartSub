@@ -1,0 +1,95 @@
+name: Windows drive-root export
+
+# issue #590：视频放在盘符根目录（如 F:\video.mp4）时，导出字幕阶段报 mkdir 失败；放进任何子目录就正常。
+# 原因在 Windows + Node 的组合，而不是系统不许往盘符根目录写东西：
+#   对「已存在的卷根」调用 fs.mkdir（即使 recursive: true），Windows 的 CreateDirectory 返回
+#   ERROR_ACCESS_DENIED（而不是 ERROR_ALREADY_EXISTS），libuv 映射成 EPERM，Node 的递归 mkdir 只吞掉
+#   EEXIST，于是抛 `EPERM: operation not permitted, mkdir 'F:\'`（Node 文档 fs.mkdir 对此有说明）。
+#   修复是 main/helpers/ensureDirectory.ts：目录已经存在就不再调用 mkdir。
+# ci.yml 只在 ubuntu 上跑，POSIX 的 mkdir('/') 返回 EEXIST，单靠它发现不了这类问题。这里在 windows
+# runner 的真实卷根（C:\、D:\）上做两件事：
+#   1. probe：只报告运行时的实际行为（对卷根 mkdir 失败，但在卷根里建文件 / mkdtemp / 硬链接都成功），
+#      用来确认「对卷根 mkdir 会失败」这个前提在当前 runner 和 Node 版本上仍然成立；
+#   2. verify：用应用里真实的 createComposeOutput + copyIndependent + ensureDirectorySync 走一遍
+#      「导出字幕」的发布流程，断言视频在盘符根目录和在子目录下都能导出。
+# 不能用 subst 模拟盘符：subst 出来的盘符指向一个普通目录，CreateDirectory 会返回「已存在」，复现不了。
+# Node 20.16.0 是 Electron 30.5.1 内置的版本（应用实际运行的版本），22.14.0 与其余 CI 一致。
+# 不使用任何 secrets，不发布任何产物。
+#
+# 触发：相关文件的 PR / 合入 main，或手动运行。
+on:
+  pull_request:
+    paths:
+      - 'main/helpers/compose/composeOutput.ts'
+      - 'main/helpers/ensureDirectory.ts'
+      - 'main/helpers/taskRuns/adapters.ts'
+      - 'main/helpers/taskRuns/artifacts.ts'
+      - 'main/helpers/taskRuns/storageIO.ts'
+      - 'main/helpers/videoDownload/scheduler.ts'
+      - 'scripts/windows-driveroot/**'
+      - 'scripts/windows-nonascii/lib.mjs'
+      - 'scripts/windows-nonascii/ts-require.cjs'
+      - '.github/workflows/windows-driveroot.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'main/helpers/compose/composeOutput.ts'
+      - 'main/helpers/ensureDirectory.ts'
+      - 'main/helpers/taskRuns/adapters.ts'
+      - 'main/helpers/taskRuns/artifacts.ts'
+      - 'main/helpers/taskRuns/storageIO.ts'
+      - 'main/helpers/videoDownload/scheduler.ts'
+      - 'scripts/windows-driveroot/**'
+      - 'scripts/windows-nonascii/lib.mjs'
+      - 'scripts/windows-nonascii/ts-require.cjs'
+      - '.github/workflows/windows-driveroot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-driveroot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drive-root:
+    name: Drive-root export (Node ${{ matrix.node }})
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node:
+          - 20.16.0
+          - 22.14.0
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: yarn
+
+      # 脚本只需要 typescript（把应用里的 .ts 源码转译后直接 require），不需要 Electron 二进制和原生库：
+      # 不跑 postinstall。--ignore-engines：个别依赖声明了更高的 Node 版本，在 20.16.0 这一档会被 yarn 拦下，
+      # 而这里只运行本仓库的脚本，不运行那些依赖。
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-scripts --ignore-engines
+
+      - name: Volumes on this runner
+        run: powershell -NoProfile -Command "Get-Volume | Where-Object DriveLetter | Format-Table DriveLetter,FileSystem,Size,SizeRemaining -AutoSize" || true
+
+      # 只报告：对真实卷根 mkdir 会怎样、在卷根里写文件是否被允许
+      - name: Probe drive roots (runtime behaviour)
+        run: node scripts/windows-driveroot/probe-drive-root.mjs
+
+      # 断言：视频在盘符根目录 / 子目录下，应用真实的「导出字幕」发布流程都能成功
+      - name: Verify subtitle export at a drive root
+        run: node scripts/windows-driveroot/verify-export-at-root.mjs
