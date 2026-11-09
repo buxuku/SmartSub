@@ -444,6 +444,25 @@ test('scheduler: shouldStop stops dispatching but lets running units finish', as
   assert.deepEqual([...finished].sort(), [0, 1]);
 });
 
+test('scheduler: shouldStop is checked again once a unit has waited for its slot', async () => {
+  // Unit 1 sleeps for its interval slot while unit 0 raises the stop: starting it
+  // afterwards would only send one more request that nobody wants.
+  const started = [];
+  let stopped = false;
+  await runWithBatchConcurrency({
+    total: 3,
+    concurrency: 2,
+    requestIntervalMs: 60,
+    shouldStop: () => stopped,
+    run: async (index) => {
+      started.push(index);
+      stopped = true;
+      await sleep(10);
+    },
+  });
+  assert.deepEqual(started, [0]);
+});
+
 test('scheduler: an abort stops dispatching and rejects with the cancel error', async () => {
   const controller = new AbortController();
   const started = [];

@@ -202,7 +202,10 @@ function installLlm(reply) {
   return calls;
 }
 
-async function segment(words, { signal, provider, formData = {} } = {}) {
+async function segment(
+  words,
+  { signal, provider, formData = {}, onActivity } = {},
+) {
   const text = words.map((w) => w.text).join('');
   return runAiSegmentation({
     cues: [['00:00:00,000', '00:00:30,000', text.trim()]],
@@ -210,6 +213,7 @@ async function segment(words, { signal, provider, formData = {} } = {}) {
     formData,
     provider: provider || makeProvider(),
     signal,
+    onActivity,
   });
 }
 
@@ -221,6 +225,14 @@ const logLines = (level) =>
     .map((entry) => entry.message);
 const timeoutError = () =>
   new Error('OpenAI translation failed: Request timed out.');
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+function deferred() {
+  let resolve;
+  const promise = new Promise((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 // ------------------------------------------------------------------ runner --
 
@@ -389,6 +401,240 @@ test('cancellation during a retry still cancels the stage', async () => {
   await assert.rejects(
     () => segment(wordsOf(SENTENCE), { signal: controller.signal }),
     (error) => isTaskCancelledError(error),
+  );
+});
+
+// -------------------------------------------------------------- window pool --
+// The windows of one stage run on a worker pool shared with AI correction
+// (runWithBatchConcurrency): the provider's 「批次并发数」 and 「请求间隔」 decide
+// how many windows are in flight and how far their starts are spaced.
+
+/** Window k: a 7-word phrase carrying its number, 15 times (105 words). */
+const phraseOf = (k) => `window${k} alpha beta gamma delta epsilon zeta`;
+const poolWindowText = (k) => repeat(phraseOf(k), 15);
+const poolWindowAnswer = (k) => repeat(phraseOf(k), 15, '<br>');
+
+/**
+ * `count` windows, each closed by a 5 s pause (4 s ends a window once it holds
+ * 50 words). Needs 5+ windows: up to 500 words stay a single window.
+ */
+function poolWords(count) {
+  let words = [];
+  for (let k = 1; k <= count; k += 1) {
+    const startMs = words.length ? words[words.length - 1].end + 5000 : 0;
+    words = words.concat(wordsOf(poolWindowText(k), { startMs }));
+  }
+  return words;
+}
+
+/**
+ * A model that answers any pool window correctly and meters itself: requests in
+ * flight now (and the peak), and when each one started and ended. `latency` is
+ * milliseconds or (call) => ms; `fail(call)` returns an Error to throw, or nothing.
+ */
+function installPoolLlm({ latency = 30, fail } = {}) {
+  const meter = { inFlight: 0, peak: 0, calls: [] };
+  TRANSLATOR_MAP.fakellm = async (prompt) => {
+    const call = {
+      k: Number(/window(\d+)/.exec(prompt)[1]),
+      startedAt: Date.now(),
+      endedAt: 0,
+    };
+    meter.calls.push(call);
+    meter.inFlight += 1;
+    meter.peak = Math.max(meter.peak, meter.inFlight);
+    try {
+      await sleep(typeof latency === 'function' ? latency(call) : latency);
+      const failure = fail && fail(call);
+      if (failure) throw failure;
+      return poolWindowAnswer(call.k);
+    } finally {
+      meter.inFlight -= 1;
+      call.endedAt = Date.now();
+    }
+  };
+  return meter;
+}
+
+test('pool: windows run at the provider batchConcurrency', async () => {
+  const meter = installPoolLlm({ latency: 40 });
+  const outcome = await segment(poolWords(6), {
+    provider: makeProvider({ batchConcurrency: 3 }),
+  });
+  assert.equal(outcome.totalWindows, 6);
+  assert.equal(outcome.degradedWindows, 0);
+  assert.equal(meter.calls.length, 6);
+  assert.equal(meter.peak, 3, 'three windows are in flight at once');
+  assert.ok(
+    logLines().some((line) =>
+      /^AI segmentation windows=6, concurrency=3, requestInterval=0ms$/.test(
+        line,
+      ),
+    ),
+    `the effective concurrency is logged: ${JSON.stringify(logLines().slice(0, 3))}`,
+  );
+});
+
+test('pool: concurrency is capped by the number of windows', async () => {
+  const meter = installPoolLlm({ latency: 30 });
+  const outcome = await segment(poolWords(6), {
+    provider: makeProvider({ batchConcurrency: 50 }),
+  });
+  assert.equal(outcome.degradedWindows, 0);
+  assert.equal(meter.peak, 6);
+  assert.ok(logLines().some((line) => /concurrency=6,/.test(line)));
+});
+
+test('pool: batchConcurrency unset stays strictly serial', async () => {
+  const meter = installPoolLlm({ latency: 15 });
+  const outcome = await segment(poolWords(5), {
+    provider: makeProvider({ batchConcurrency: undefined }),
+  });
+  assert.equal(outcome.degradedWindows, 0);
+  assert.equal(meter.peak, 1);
+  assert.deepEqual(
+    meter.calls.map((call) => call.k),
+    [1, 2, 3, 4, 5],
+    'windows go out in order',
+  );
+  meter.calls.forEach((call, i) => {
+    if (i === 0) return;
+    assert.ok(
+      call.startedAt >= meter.calls[i - 1].endedAt,
+      `window ${i + 1} waits for window ${i}`,
+    );
+  });
+});
+
+test('pool: requestInterval spaces window starts while windows still overlap', async () => {
+  const meter = installPoolLlm({ latency: 150 });
+  await segment(poolWords(6), {
+    provider: makeProvider({ batchConcurrency: 3, requestInterval: '0.05' }),
+  });
+  const starts = meter.calls
+    .map((call) => call.startedAt)
+    .sort((a, b) => a - b);
+  const gaps = starts.slice(1).map((time, i) => time - starts[i]);
+  assert.equal(meter.calls.length, 6);
+  assert.ok(
+    gaps.every((gap) => gap >= 40),
+    `start gaps should be about 50ms: ${gaps}`,
+  );
+  assert.ok(meter.peak >= 2, 'the interval must not serialise the windows');
+  assert.ok(logLines().some((line) => /requestInterval=50ms/.test(line)));
+});
+
+test('pool: a window waiting for its interval slot is shown as an interval unit', async () => {
+  installPoolLlm({ latency: 40 });
+  const events = [];
+  await segment(poolWords(5), {
+    provider: makeProvider({ batchConcurrency: 3, requestInterval: '0.05' }),
+    onActivity: (detail) => events.push(structuredClone(detail)),
+  });
+  const waiting = events
+    .flatMap((detail) => detail.units ?? [])
+    .filter((unit) => unit.phase === 'interval');
+  assert.ok(waiting.length > 0, 'a delayed window reports its wait');
+  assert.ok(
+    waiting.every((unit) => unit.waitUntil > unit.startedAt),
+    'with the time it will start',
+  );
+});
+
+test('pool: out-of-order completion keeps the windows in order in the output', async () => {
+  // The first window is the slowest, so windows finish in the reverse order.
+  const meter = installPoolLlm({ latency: (call) => 175 - call.k * 30 });
+  const outcome = await segment(poolWords(5), {
+    provider: makeProvider({ batchConcurrency: 5 }),
+  });
+  const finishOrder = [...meter.calls]
+    .sort((a, b) => a.endedAt - b.endedAt)
+    .map((call) => call.k);
+  assert.notDeepEqual(
+    finishOrder,
+    [1, 2, 3, 4, 5],
+    'the scenario must really complete out of order',
+  );
+  assert.equal(outcome.degradedWindows, 0);
+  // Every window's text carries its number, so equal text means equal order.
+  assert.equal(
+    joinedCueText(outcome),
+    [1, 2, 3, 4, 5].map(poolWindowText).join(' '),
+    'cues stay in window order',
+  );
+});
+
+test('pool: a configuration error stops handing out windows and degrades the stage', async () => {
+  const meter = installPoolLlm({
+    latency: (call) => (call.k === 1 ? 10 : 60),
+    fail: (call) => (call.k === 1 ? new Error('Invalid API key') : undefined),
+  });
+  const outcome = await segment(poolWords(6), {
+    provider: makeProvider({ batchConcurrency: 2 }),
+  });
+  assert.equal(outcome.degraded, true);
+  assert.equal(
+    meter.calls.length,
+    2,
+    'the in-flight window finishes, nothing new starts',
+  );
+  assert.ok(
+    logLines('warning').some((line) =>
+      /degraded to rule cues: configuration error: Invalid API key/.test(line),
+    ),
+  );
+});
+
+test('pool: a configuration error also drops windows still waiting for their interval slot', async () => {
+  // Window 2 sleeps for its slot while window 1 fails with a bad key. Sending it
+  // afterwards only adds a request that is certain to fail the same way.
+  const meter = installPoolLlm({
+    latency: 10,
+    fail: (call) => (call.k === 1 ? new Error('Invalid API key') : undefined),
+  });
+  const outcome = await segment(poolWords(6), {
+    provider: makeProvider({ batchConcurrency: 2, requestInterval: '0.15' }),
+  });
+  assert.equal(outcome.degraded, true);
+  assert.deepEqual(
+    meter.calls.map((call) => call.k),
+    [1],
+    'only the window that hit the error was sent',
+  );
+});
+
+test('pool: an abort while a window waits for its interval slot cancels the stage promptly', async () => {
+  const controller = new AbortController();
+  const stuck = deferred();
+  const sent = [];
+  TRANSLATOR_MAP.fakellm = (prompt) => {
+    sent.push(prompt);
+    return stuck.promise;
+  };
+  const running = segment(poolWords(6), {
+    signal: controller.signal,
+    provider: makeProvider({ batchConcurrency: 2, requestInterval: 30 }),
+  });
+  await sleep(30);
+  controller.abort();
+  const outcome = await Promise.race([
+    running.then(
+      () => 'resolved',
+      (error) => error,
+    ),
+    sleep(1500).then(() => 'hung'),
+  ]);
+  stuck.resolve(poolWindowAnswer(1));
+  assert.notEqual(
+    outcome,
+    'hung',
+    'a cancel must not wait for the stuck request',
+  );
+  assert.ok(isTaskCancelledError(outcome), `rejects as cancelled: ${outcome}`);
+  assert.equal(
+    sent.length,
+    1,
+    'the second window was still waiting for its slot',
   );
 });
 
