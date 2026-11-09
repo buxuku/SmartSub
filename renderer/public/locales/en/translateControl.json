@@ -150,7 +150,7 @@
   "batchSizeBingFreeTips": "The Bing free endpoint translates one line at a time; batch size only affects progress granularity. For large volumes, pair it with a request interval to avoid rate limiting.",
   "batchSizeGoogleFreeTips": "Google free translation tries a batch lane first: one request translates a whole batch, and around 20 lines per batch is recommended (more than 50 lines or long texts are split into several requests automatically). If the batch lane is rate limited or fails, that batch is translated line by line and the batch size then only affects progress granularity. Both lanes are unofficial endpoints with no availability guarantee; a lane that gets rate limited (HTTP 429) is paused for about 10 minutes before it is tried again.",
   "batchSizeTip": "Subtitle lines per translation batch. AI defaults to 20 to balance context and speed; use 5–10 for local models or smaller context windows.",
-  "batchConcurrencyTip": "Number of translation batches to run at the same time, capped at 10. The default depends on the provider; higher values improve speed but require quota and may trigger rate limits.",
+  "batchConcurrencyTip": "Number of batches to run at the same time, capped at 10. For AI providers this also sets how many AI refine requests (segmentation windows and correction batches) run at once. The default depends on the provider; higher values improve speed but require quota and may trigger rate limits.",
   "providerRemoved": "Provider \"{{name}}\" removed",
   "confirmRemoveProvider": "Remove this provider?",
   "removeProviderConfirmDesc": "After removal, the configuration (including the API key) for provider \"{{name}}\" will be deleted and you'll need to add it again.",

@@ -412,7 +412,7 @@
       "follow": "Follow translation service (current: {{name}})",
       "followUnavailable": "Follow translation service (unresolvable)",
       "followBlocked": "Translation is off or not an AI provider — pick an AI provider explicitly.",
-      "hint": "Shared by AI segmentation and correction. Defaults to following the translation service; you can also pick a different one (e.g. a large model for translation, local Ollama for refining)."
+      "hint": "Shared by AI segmentation and correction, which also use its Batch Concurrency and Request Interval settings. Defaults to following the translation service; you can also pick a different one (e.g. a large model for translation, local Ollama for refining)."
     },
     "approxNote": "The current transcription engine has no word-level timestamps; AI segmentation will use an approximate timeline (proportional interpolation within each cue).",
     "summary": {
