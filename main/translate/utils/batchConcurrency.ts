@@ -1,5 +1,6 @@
 import type { Subtitle, TranslationResult } from '../types';
 import {
+  throwIfSignalCancelled,
   throwIfTaskCancelled,
   waitForTaskDelay,
 } from '../../helpers/taskContext';
@@ -36,6 +37,102 @@ export function resolveBatchConcurrency(
   if (totalBatches <= 0) return DEFAULT_BATCH_CONCURRENCY;
   const requested = toPositiveInteger(value, DEFAULT_BATCH_CONCURRENCY);
   return Math.min(requested, totalBatches, MAX_BATCH_CONCURRENCY);
+}
+
+type RunWithBatchConcurrencyOptions = {
+  /** Units (batches, windows) to run, addressed by index `0..total-1`. */
+  total: number;
+  /**
+   * Parallel workers. Feed the provider's 「批次并发数」 through
+   * `resolveBatchConcurrency` first: parsing, the default and the cap of 10
+   * live there, this only clamps the result to `[1, total]`.
+   */
+  concurrency: number;
+  /** Minimum gap between two units starting (provider 「请求间隔」); 0 disables it. */
+  requestIntervalMs?: number;
+  /** Cancels the run: see the abort note on `runWithBatchConcurrency`. */
+  signal?: AbortSignal;
+  /** Return true to stop handing out units quietly; units already running finish. */
+  shouldStop?: () => boolean;
+  /** Called synchronously, just before a unit sleeps until `waitUntil` (epoch ms). */
+  onWait?: (index: number, waitUntil: number) => void;
+  /** Runs one unit. Throwing fails the whole run. */
+  run: (index: number) => Promise<void>;
+};
+
+/**
+ * Runs `total` independent units on a worker pool: a shared cursor hands out
+ * indexes, so up to `concurrency` units are in flight and a slow one never holds
+ * the others back. The AI refine passes (segmentation windows, correction
+ * batches) share it; they write into an index-addressed array, so unlike
+ * `runTranslationBatchesInOrder` they need no ordered flush.
+ *
+ * - Fail fast: the first rejection settles the returned promise at once and no
+ *   new unit starts. Units already in flight are not awaited, so `run` has to
+ *   discard its late results once the caller has moved on.
+ * - Request interval: a unit reserves its start slot before sleeping, so workers
+ *   are spaced one interval apart instead of all waking together. The first unit
+ *   starts immediately.
+ * - Abort: a unit that is about to start (including one waiting for its interval
+ *   slot) is dropped and the run rejects with the task-cancelled error. Units
+ *   already running are the caller's to cancel, and once every unit has been
+ *   handed out there is nothing left to abort, so the run resolves.
+ * - `shouldStop` is the quiet counterpart: no more units are started and the run
+ *   resolves. It is checked before a unit is dispatched and again once its
+ *   interval wait is over.
+ */
+export async function runWithBatchConcurrency({
+  total,
+  concurrency,
+  requestIntervalMs = 0,
+  signal,
+  shouldStop,
+  onWait,
+  run,
+}: RunWithBatchConcurrencyOptions): Promise<void> {
+  if (total <= 0) return;
+
+  // Also catches NaN from a malformed setting, which would poison the slots.
+  const intervalMs = requestIntervalMs > 0 ? requestIntervalMs : 0;
+  let cursor = 0;
+  let nextStartAt = 0;
+  let failed = false;
+
+  const stopped = () => failed || !!shouldStop?.();
+
+  const awaitStartSlot = async (index: number) => {
+    if (intervalMs <= 0) return;
+    const now = Date.now();
+    const startAt = Math.max(now, nextStartAt);
+    nextStartAt = startAt + intervalMs;
+    if (startAt <= now) return;
+    onWait?.(index, startAt);
+    await waitForTaskDelay(startAt - now, signal);
+  };
+
+  const worker = async () => {
+    try {
+      for (;;) {
+        if (cursor >= total || stopped()) return;
+        const index = cursor++;
+        await awaitStartSlot(index);
+        if (stopped()) return;
+        throwIfSignalCancelled(signal);
+        await run(index);
+      }
+    } catch (error) {
+      // Set here rather than in a .catch on the promise, so a sibling worker
+      // resuming in the same tick can't start one more unit.
+      failed = true;
+      throw error;
+    }
+  };
+
+  const workerCount = Math.max(
+    1,
+    Math.min(Math.floor(concurrency) || 1, total),
+  );
+  await Promise.all(Array.from({ length: workerCount }, worker));
 }
 
 export function createTranslationBatches(
