@@ -24,13 +24,12 @@ import {
   type TokenTriple,
 } from '../subtitleSegmentation';
 import { logMessage } from '../storeManager';
-import {
-  isTaskCancelledError,
-  throwIfSignalCancelled,
-  waitForTaskDelay,
-} from '../taskContext';
+import { isTaskCancelledError, throwIfSignalCancelled } from '../taskContext';
 import { TRANSLATOR_MAP } from '../../translate/services/translationProvider';
-import { resolveBatchConcurrency } from '../../translate/utils/batchConcurrency';
+import {
+  resolveBatchConcurrency,
+  runWithBatchConcurrency,
+} from '../../translate/utils/batchConcurrency';
 import { isConfigurationError } from '../../translate/utils/error';
 import type { Provider } from '../../translate/types';
 import {
@@ -379,65 +378,53 @@ export async function runAiSegmentation(
   );
   const requestIntervalMs =
     Math.max(0, +(provider.requestInterval || 0)) * 1000;
-  // 速率限制：串行化「请求起始时间」，窗口完成后并发照常。
-  let nextAllowedStartAt = 0;
-  const awaitStartSlot = async (index: number) => {
-    if (requestIntervalMs <= 0) return;
-    const now = Date.now();
-    const wait = Math.max(0, nextAllowedStartAt - now);
-    nextAllowedStartAt = Math.max(now, nextAllowedStartAt) + requestIntervalMs;
-    if (wait > 0) {
-      unitState(index, 'interval', { waitUntil: now + wait });
-      await waitForTaskDelay(wait, signal);
-    }
-  };
 
-  let cursor = 0;
-  const workerCount = Math.max(1, Math.min(concurrency, totalWindows));
   const startedAt = Date.now();
   logMessage(
-    `AI segmentation windows=${totalWindows}, concurrency=${workerCount}, requestInterval=${requestIntervalMs}ms`,
+    `AI segmentation windows=${totalWindows}, concurrency=${concurrency}, requestInterval=${requestIntervalMs}ms`,
     'info',
   );
-  const workers = Array.from({ length: workerCount }, async () => {
-    for (;;) {
-      const index = cursor;
-      cursor += 1;
-      if (index >= totalWindows || fatalError) break;
-      await awaitStartSlot(index);
-      try {
-        const aligned = await processWindow(index);
-        if (aligned === null) {
-          degradedWindows += 1;
-          results[index] = fallbackForWindow(index);
-        } else {
-          results[index] = aligned;
-        }
-      } catch (error) {
-        if (isTaskCancelledError(error)) throw error;
-        throwIfSignalCancelled(signal);
-        if (isConfigurationError(error)) {
-          fatalError =
-            error instanceof Error ? error : new Error(String(error));
-          break;
-        }
-        requestFailures += 1;
+  const runWindow = async (index: number) => {
+    try {
+      const aligned = await processWindow(index);
+      if (aligned === null) {
         degradedWindows += 1;
         results[index] = fallbackForWindow(index);
-        logMessage(
-          `AI segmentation window ${index + 1}/${totalWindows} request failed, degraded to rule cues: ${describeError(error)}`,
-          'warning',
-        );
+      } else {
+        results[index] = aligned;
       }
-      completed += 1;
-      active.delete(index + 1);
-      publish();
-      if (acceptingActivity && !signal?.aborted)
-        onProgress?.(completed, totalWindows);
+    } catch (error) {
+      if (isTaskCancelledError(error)) throw error;
+      throwIfSignalCancelled(signal);
+      if (isConfigurationError(error)) {
+        fatalError = error instanceof Error ? error : new Error(String(error));
+        return;
+      }
+      requestFailures += 1;
+      degradedWindows += 1;
+      results[index] = fallbackForWindow(index);
+      logMessage(
+        `AI segmentation window ${index + 1}/${totalWindows} request failed, degraded to rule cues: ${describeError(error)}`,
+        'warning',
+      );
     }
-  });
+    completed += 1;
+    active.delete(index + 1);
+    publish();
+    if (acceptingActivity && !signal?.aborted)
+      onProgress?.(completed, totalWindows);
+  };
   try {
-    await Promise.all(workers);
+    // 并发数与请求间隔取自服务商配置，与翻译、AI 校正共用同一调度器。
+    await runWithBatchConcurrency({
+      total: totalWindows,
+      concurrency,
+      requestIntervalMs,
+      signal,
+      shouldStop: () => fatalError !== null,
+      onWait: (index, waitUntil) => unitState(index, 'interval', { waitUntil }),
+      run: runWindow,
+    });
   } finally {
     acceptingActivity = false;
   }
@@ -461,7 +448,7 @@ export async function runAiSegmentation(
   });
   const approxNote = tier === 'segment' ? ', timeline=approximate/近似' : '';
   logMessage(
-    `AI segmentation done: tier=${tier}${approxNote}, windows=${totalWindows}, concurrency=${workerCount}, elapsed=${Date.now() - startedAt}ms, degradedWindows=${degradedWindows}, cues ${cues.length} -> ${guarded.length}`,
+    `AI segmentation done: tier=${tier}${approxNote}, windows=${totalWindows}, concurrency=${concurrency}, elapsed=${Date.now() - startedAt}ms, degradedWindows=${degradedWindows}, cues ${cues.length} -> ${guarded.length}`,
     'info',
   );
   return {
