@@ -12,6 +12,9 @@ import type { ActivityObserver, ActivityUnit } from '../../types/taskActivity';
  *
  * 服务自身不触碰 UI/IPC：进度经 onBatchProgress 回调，取消经 AbortSignal，
  * 返回 { results, cancelled, processedCount } 由调用方映射到各自的响应形态。
+ *
+ * 批次并发数（batchConcurrency）与请求间隔（requestInterval）取自 provider，
+ * 与翻译、AI 断句共用 runWithBatchConcurrency；未配置时保持串行。
  */
 
 import { logMessage } from './storeManager';
@@ -28,6 +31,10 @@ import type {
 import { parseAIAnchoredTranslationResponse } from '../translate/utils/aiResponseParser';
 import { validateAnchoredBatch } from '../translate/utils/alignment';
 import { BATCH_SCHEMA_MAX_PROPERTIES } from '../translate/constants/schema';
+import {
+  resolveBatchConcurrency,
+  runWithBatchConcurrency,
+} from '../translate/utils/batchConcurrency';
 import {
   buildGlossaryPromptBlock,
   describeGlossaryContext,
@@ -88,7 +95,10 @@ export interface CorrectionParams {
   suspectWords?: string[];
   fillerPolicy?: 'remove-hesitations' | 'preserve';
   onResult?: (result: CorrectionItemOutcome) => void;
-  /** 每批开始前回调（与既有校对台进度事件语义一致：processedCount 为已完成数）。 */
+  /**
+   * 每批开始前与完成后回调；processedCount 为已完成数（并发时也单调不减），
+   * 完成后的最后一次回调等于 totalCount。
+   */
   onBatchProgress?: (info: {
     processedCount: number;
     totalCount: number;
@@ -280,44 +290,83 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
     );
   }
 
-  const results: CorrectionItemOutcome[] = [];
   const totalBatches = Math.ceil(items.length / batchSize);
   let processedCount = 0;
   let cancelled = false;
 
-  const pushOutcome = (
-    item: CorrectionItem,
-    corrected: string,
-    status: CorrectionItemOutcome['status'],
-    error?: string,
-  ) => {
-    const result: CorrectionItemOutcome = {
-      id: item.id,
-      index: item.index,
-      source: item.source,
-      originalTarget: item.target ?? '',
-      corrected,
-      status,
-      ...(error ? { error } : {}),
-    };
-    results.push(result);
-    params.onResult?.(result);
+  // 批次并发数与请求间隔取自服务商配置，与翻译、AI 断句一致
+  // （resolveBatchConcurrency 负责解析、默认 1 与上限 10）。批次各自完成，
+  // 结果按批次序号归位，完成顺序不影响输出顺序。
+  const concurrency = resolveBatchConcurrency(
+    provider.batchConcurrency,
+    totalBatches,
+  );
+  const requestIntervalMs =
+    Math.max(0, Number(provider.requestInterval) || 0) * 1000;
+  const batchOutcomes: CorrectionItemOutcome[][] = new Array(totalBatches);
+
+  // 进行中的批次：并发时同时展示多个，一批完成即移除（串行时与此前一致）。
+  const active = new Map<number, ActivityUnit>();
+  const publish = () => {
+    if (signal?.aborted) return;
+    params.onActivity?.({
+      phase: 'correcting',
+      completed: processedCount,
+      total: items.length,
+      unit: 'cues',
+      units: [...active.values()],
+    });
   };
-
-  for (let i = 0; i < items.length; i += batchSize) {
-    if (signal?.aborted) {
-      cancelled = true;
-      break;
-    }
-    const batch = items.slice(i, i + batchSize);
-    const currentBatch = Math.floor(i / batchSize) + 1;
-
+  const unitState = (
+    batchNumber: number,
+    phase: ActivityUnit['phase'],
+    extra: Partial<ActivityUnit> = {},
+  ) => {
+    active.set(batchNumber, {
+      id: batchNumber,
+      phase,
+      startedAt: Date.now(),
+      ...extra,
+    });
+    publish();
+  };
+  const reportProgress = (currentBatch: number) =>
     onBatchProgress?.({
       processedCount,
       totalCount: items.length,
       currentBatch,
       totalBatches,
     });
+
+  const processBatch = async (batchIndex: number): Promise<void> => {
+    const batch = items.slice(
+      batchIndex * batchSize,
+      (batchIndex + 1) * batchSize,
+    );
+    const currentBatch = batchIndex + 1;
+    const batchResults: CorrectionItemOutcome[] = [];
+    batchOutcomes[batchIndex] = batchResults;
+
+    const pushOutcome = (
+      item: CorrectionItem,
+      corrected: string,
+      status: CorrectionItemOutcome['status'],
+      error?: string,
+    ) => {
+      const result: CorrectionItemOutcome = {
+        id: item.id,
+        index: item.index,
+        source: item.source,
+        originalTarget: item.target ?? '',
+        corrected,
+        status,
+        ...(error ? { error } : {}),
+      };
+      batchResults.push(result);
+      params.onResult?.(result);
+    };
+
+    reportProgress(currentBatch);
 
     // 逐批术语命中匹配仅用于 legacyMap（校对台翻译优化：原文→译文映射语义正确）；
     // anchored 校正使用上方预计算的「原文标准写法」参考块。
@@ -342,16 +391,7 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
     const activity = (
       phase: ActivityUnit['phase'],
       extra: Partial<ActivityUnit> = {},
-    ) => {
-      if (!signal?.aborted)
-        params.onActivity?.({
-          phase: 'correcting',
-          completed: processedCount,
-          total: items.length,
-          unit: 'cues',
-          units: [{ id: currentBatch, phase, startedAt: Date.now(), ...extra }],
-        });
-    };
+    ) => unitState(currentBatch, phase, extra);
     let retryCount = 0;
     let batchDone = false;
     // anchored：大面积错位的整批重试独立于 maxRetries（对齐翻译框架 D7）。
@@ -368,7 +408,7 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
       });
       if (signal?.aborted) {
         cancelled = true;
-        break;
+        return;
       }
       try {
         if (protocol === 'legacyMap') {
@@ -566,7 +606,7 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
       } catch (error) {
         if (isTaskCancelledError(error) || signal?.aborted) {
           cancelled = true;
-          break;
+          return;
         }
         retryCount += 1;
         if (retryCount <= maxRetries) {
@@ -585,7 +625,7 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
           } catch (delayError) {
             if (isTaskCancelledError(delayError)) {
               cancelled = true;
-              break;
+              return;
             }
             throw delayError;
           }
@@ -607,15 +647,38 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
         }
       }
     }
-    if (cancelled) break;
-    params.onActivity?.({
-      phase: 'correcting',
-      completed: processedCount,
-      total: items.length,
-      unit: 'cues',
-      units: [],
+    active.delete(currentBatch);
+    publish();
+    reportProgress(currentBatch);
+  };
+
+  if (totalBatches > 0) {
+    logMessage(
+      `Correction batches=${totalBatches}, concurrency=${concurrency}, requestInterval=${requestIntervalMs}ms`,
+      'info',
+    );
+  }
+  try {
+    await runWithBatchConcurrency({
+      total: totalBatches,
+      concurrency,
+      requestIntervalMs,
+      signal,
+      shouldStop: () => cancelled,
+      onWait: (index, waitUntil) =>
+        unitState(index + 1, 'interval', { waitUntil }),
+      run: processBatch,
     });
+  } catch (error) {
+    // 调度器在等待请求间隔或派发下一批时遇到取消：与批内取消一样，
+    // 以「已取消」返回已完成批次的结果，而不是抛出。
+    if (!isTaskCancelledError(error) && !signal?.aborted) throw error;
+    cancelled = true;
   }
 
+  const results: CorrectionItemOutcome[] = [];
+  for (const batchResults of batchOutcomes) {
+    if (batchResults) results.push(...batchResults);
+  }
   return { results, cancelled, processedCount };
 }
