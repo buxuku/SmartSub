@@ -15,8 +15,15 @@ const state: {
   userData: string;
   store: any;
   workItems: any[];
+  settings: any;
   logs: Array<{ message: string; type?: string }>;
-} = { userData: '', store: undefined, workItems: [], logs: [] };
+} = {
+  userData: '',
+  store: undefined,
+  workItems: [],
+  settings: undefined,
+  logs: [],
+};
 
 const stubs: Record<string, () => unknown> = {
   electron: () => ({
@@ -30,7 +37,7 @@ const stubs: Record<string, () => unknown> = {
     store: {
       path: path.join(state.userData, 'config.json'),
       store: {},
-      get: () => undefined,
+      get: (key: string) => (key === 'settings' ? state.settings : undefined),
     },
   }),
   '../workItemStore': () => ({ getWorkItems: () => state.workItems }),
@@ -70,6 +77,7 @@ function setup(t: any) {
   state.userData = path.join(base, 'user');
   state.logs = [];
   state.workItems = [];
+  state.settings = undefined;
   const root = path.join(state.userData, 'task-runs');
   const locations = createTaskRunLocations(
     path.join(base, 'locations.json'),
@@ -319,6 +327,120 @@ test('the drafts of a sidecar reclaimed with the task go, those of other sidecar
     false,
   ]);
   assert.deepEqual(savedEntries(draftKey(other, userFile, '')), [true, true]);
+});
+
+const uuid = '3f2b8c1e-9a4d-4e7b-8c55-0d1f6a7b9c21';
+const md5 = (digit: string) => digit.repeat(32);
+
+test('intermediate subtitles of a deleted task go with it unless a record or draft still uses them', async (t) => {
+  const { base, item } = setup(t);
+  const temp = path.join(state.userData, 'whisper-subtitles');
+  fs.mkdirSync(temp, { recursive: true });
+  const write = (file: string) => (fs.writeFileSync(file, '1\n'), file);
+  const translated = write(path.join(temp, `${uuid}.srt`));
+  const source = write(path.join(temp, `${md5('a')}-source.srt`));
+  const sharedFinal = write(path.join(temp, `${md5('b')}-final.srt`));
+  const draftedFinal = write(path.join(temp, `${md5('c')}-final.srt`));
+  const published = write(path.join(base, 'movie.srt'));
+  state.workItems = [
+    {
+      id: 'other',
+      type: 'generateOnly',
+      pipelineFiles: [{ tempFinalSubtitleFile: sharedFinal }],
+    },
+  ];
+  saveEntries(draftKey('', draftedFinal, ''));
+  await runtime.reclaimDeletedWorkItems({
+    items: [
+      {
+        ...item('deleted'),
+        pipelineFiles: [
+          {
+            tempTranslatedSrtFile: translated,
+            tempSrtFile: source,
+            tempFinalSubtitleFile: sharedFinal,
+          },
+          // a subtitle the user published is never an intermediate one
+          { tempSrtFile: published },
+          { tempFinalSubtitleFile: draftedFinal },
+        ],
+      },
+    ],
+    proofreadFiles: [],
+  });
+  assert.equal(fs.existsSync(translated), false, 'the pure translation goes');
+  assert.equal(fs.existsSync(source), false, 'so does the cached export input');
+  assert.ok(fs.existsSync(sharedFinal), 'another task still records it');
+  assert.ok(fs.existsSync(draftedFinal), 'a saved draft still names it');
+  assert.ok(fs.existsSync(published), "the user's subtitle is never touched");
+  assert.ok(
+    state.logs.some(
+      (entry) =>
+        entry.type === 'info' &&
+        /reclaimed 2 intermediate subtitle/.test(entry.message),
+    ),
+    'what was reclaimed is logged',
+  );
+  assert.ok(
+    state.logs.some((entry) =>
+      /kept 2 intermediate subtitle/.test(entry.message),
+    ),
+    'what was kept is logged',
+  );
+});
+
+test('the temp directory in use and the default one are searched, a former one is not', async (t) => {
+  const { base, item } = setup(t);
+  const custom = path.join(base, 'custom-temp');
+  const former = path.join(base, 'former-temp');
+  const standard = path.join(state.userData, 'whisper-subtitles');
+  state.settings = { useCustomTempDir: true, customTempDir: custom };
+  const files = [custom, standard, former].map((directory, index) => {
+    fs.mkdirSync(directory, { recursive: true });
+    const file = path.join(directory, `${md5(String(index))}-final.srt`);
+    fs.writeFileSync(file, '1\n');
+    return file;
+  });
+  await runtime.reclaimDeletedWorkItems({
+    items: [
+      {
+        ...item('deleted'),
+        pipelineFiles: files.map((file) => ({ tempFinalSubtitleFile: file })),
+      },
+    ],
+    proofreadFiles: [],
+  });
+  assert.deepEqual(
+    files.map((file) => fs.existsSync(file)),
+    [false, false, true],
+    'a directory the task no longer points at is left to the manual cache cleanup',
+  );
+});
+
+test('a failure while collecting references keeps the intermediate subtitles', async (t) => {
+  const { item } = setup(t);
+  const temp = path.join(state.userData, 'whisper-subtitles');
+  fs.mkdirSync(temp, { recursive: true });
+  const file = path.join(temp, `${uuid}.srt`);
+  fs.writeFileSync(file, '1\n');
+  const drafts = path.join(state.userData, 'proofread-drafts');
+  fs.mkdirSync(drafts, { recursive: true });
+  fs.writeFileSync(path.join(drafts, 'x.json'), '{"subtitles":[]}');
+  fs.writeFileSync(path.join(drafts, 'x.json.key'), 'not-a-known-key');
+  await runtime.reclaimDeletedWorkItems({
+    items: [
+      { ...item('deleted'), pipelineFiles: [{ tempTranslatedSrtFile: file }] },
+    ],
+    proofreadFiles: [],
+  });
+  assert.ok(
+    fs.existsSync(file),
+    'nothing is removed when references are unknown',
+  );
+  assert.ok(
+    state.logs.some((entry) => entry.type === 'warning'),
+    'the problem is logged as a warning',
+  );
 });
 
 test('the registered reclaimer runs for started requests and settle waits for it', async () => {

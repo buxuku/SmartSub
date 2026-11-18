@@ -1,8 +1,11 @@
+import fs from 'node:fs';
 import path from 'node:path';
+import type { WorkItem } from '../../../types/workItem';
+import type { ReclaimReport } from './cleanup';
 import { within } from './storageIO';
 
-// Pure decisions for what else a deleted task leaves behind. Electron free: the host
-// (storageRuntime) supplies the stores and the reference sets.
+// Decisions for what else a deleted task leaves behind. Electron free: the host
+// (storageRuntime) supplies the stores, directories and reference sets.
 
 const DRAFT_KEY_PREFIX = 'smartsub_proofread_draft_v1:';
 
@@ -111,5 +114,98 @@ export async function reclaimDeletedDrafts(
     report.errors.push(String(error));
   }
   report.errors = [...new Set(report.errors)];
+  return report;
+}
+
+/** Record fields older flows used for subtitles cached among the shared temp files. */
+const INTERMEDIATE_SUBTITLE_FIELDS = [
+  'tempTranslatedSrtFile',
+  'tempSrtFile',
+  'tempFinalSubtitleFile',
+] as const;
+// <uuid>.srt is the pure translation, <md5>-source|final.srt the cached export inputs.
+// Both are generated in lower case, so a name that is not is not ours.
+const INTERMEDIATE_SUBTITLE_NAME =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32}-(?:source|final))\.srt$/;
+
+/**
+ * The intermediate subtitles that the deleted tasks recorded: files named like the ones
+ * the app caches (see above) and sitting directly in one of the shared temp
+ * directories. A subtitle that was published, lives in a subfolder or is named
+ * differently is the user's, whatever field recorded it.
+ */
+export function intermediateSubtitles(
+  items: readonly WorkItem[],
+  tempDirectories: readonly string[],
+): string[] {
+  const directories = tempDirectories.map((directory) =>
+    path.resolve(directory),
+  );
+  const found = new Set<string>();
+  for (const item of items) {
+    const files: unknown = item?.pipelineFiles;
+    if (!Array.isArray(files)) continue;
+    for (const file of files)
+      for (const field of INTERMEDIATE_SUBTITLE_FIELDS) {
+        const value: unknown = file?.[field];
+        if (typeof value !== 'string' || !path.isAbsolute(value)) continue;
+        const resolved = path.resolve(value);
+        if (
+          INTERMEDIATE_SUBTITLE_NAME.test(path.basename(resolved)) &&
+          directories.some(
+            (directory) =>
+              path.relative(directory, path.dirname(resolved)) === '',
+          )
+        )
+          found.add(resolved);
+      }
+  }
+  return [...found];
+}
+
+/**
+ * Deletes intermediate subtitles that no remaining record references. Only regular
+ * files are touched. `protectedFiles` is only asked when something is left to decide,
+ * because it scans every record.
+ */
+export async function reclaimIntermediateSubtitles(
+  files: readonly string[],
+  protectedFiles: () => Promise<(target: string) => boolean>,
+): Promise<ReclaimReport> {
+  const report: ReclaimReport = {
+    files: 0,
+    bytes: 0,
+    errors: [],
+    retained: [],
+  };
+  try {
+    const existing: Array<{ file: string; size: number }> = [];
+    for (const file of files) {
+      try {
+        const stat = await fs.promises.lstat(file);
+        if (stat.isFile()) existing.push({ file, size: stat.size });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
+    if (!existing.length) return report;
+    const isProtected = await protectedFiles();
+    for (const { file, size } of existing) {
+      if (isProtected(file)) {
+        report.retained.push(file);
+        continue;
+      }
+      try {
+        await fs.promises.unlink(file);
+        report.files += 1;
+        report.bytes += size;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+          report.errors.push(String(error));
+      }
+    }
+  } catch (error) {
+    report.errors.push(String(error));
+  }
   return report;
 }

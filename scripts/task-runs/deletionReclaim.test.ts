@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import {
   draftKeyPaths,
+  intermediateSubtitles,
   reclaimDeletedDrafts,
+  reclaimIntermediateSubtitles,
 } from '../../main/helpers/taskRuns/deletionReclaim';
 
 const root = path.resolve('/smartsub-test');
@@ -215,4 +219,159 @@ test('drafts saved or discarded while the references are collected are judged as
   assert.equal(report.removed, 1);
   assert.deepEqual([...store.entries], []);
   assert.deepEqual(report.errors, []);
+});
+
+const uuid = '3f2b8c1e-9a4d-4e7b-8c55-0d1f6a7b9c21';
+const md5 = 'd41d8cd98f00b204e9800998ecf8427e';
+const temp = at('temp');
+const record = (file: Record<string, unknown>) =>
+  ({ id: 'task', pipelineFiles: [file] }) as any;
+
+test('intermediate subtitles are the cached files recorded in a shared temp directory', () => {
+  const recorded = {
+    tempTranslatedSrtFile: path.join(temp, `${uuid}.srt`),
+    tempSrtFile: path.join(temp, `${md5}-source.srt`),
+    tempFinalSubtitleFile: path.join(temp, `${md5}-final.srt`),
+  };
+  assert.deepEqual(
+    intermediateSubtitles([record(recorded), record(recorded)], [temp]),
+    Object.values(recorded),
+    'each file once, in field order',
+  );
+  const otherTemp = at('default-temp');
+  assert.deepEqual(
+    intermediateSubtitles(
+      [record({ tempSrtFile: path.join(otherTemp, `${uuid}.srt`) })],
+      [temp, otherTemp],
+    ),
+    [path.join(otherTemp, `${uuid}.srt`)],
+    'the default temp directory counts as well',
+  );
+});
+
+test('subtitles that are published, nested, renamed or elsewhere are not intermediate', () => {
+  const notCandidates = [
+    { tempSrtFile: at('videos', 'movie.srt') },
+    { tempSrtFile: path.join(temp, 'notes.srt') },
+    { tempSrtFile: path.join(temp, 'sub', `${uuid}.srt`) },
+    { tempSrtFile: path.join(at('elsewhere'), `${uuid}.srt`) },
+    { tempSrtFile: path.join(`${temp}-copy`, `${uuid}.srt`) },
+    { tempTranslatedSrtFile: `${uuid}.srt` },
+    { tempTranslatedSrtFile: path.join(temp, `${uuid}.srt`.toUpperCase()) },
+    { tempFinalSubtitleFile: path.join(temp, `${md5}-draft.srt`) },
+    { tempFinalSubtitleFile: path.join(temp, `${uuid}.vtt`) },
+    { tempFinalSubtitleFile: path.join(temp, `${md5}.srt`) },
+    // named like a cache file, but recorded in a field that is not a cache field
+    { srtFile: path.join(temp, `${uuid}.srt`) },
+    { translatedSrtFile: path.join(temp, `${md5}-final.srt`) },
+    { tempSrtFile: 42 },
+    null,
+  ];
+  for (const file of notCandidates)
+    assert.deepEqual(
+      intermediateSubtitles([record(file as any)], [temp]),
+      [],
+      JSON.stringify(file),
+    );
+  assert.deepEqual(
+    intermediateSubtitles(
+      [{ id: 'a' }, { id: 'b', pipelineFiles: 'nope' }] as any,
+      [temp],
+    ),
+    [],
+  );
+  // a relative path would be resolved against the working directory: never a candidate
+  assert.deepEqual(
+    intermediateSubtitles(
+      [record({ tempTranslatedSrtFile: `${uuid}.srt` })],
+      [process.cwd()],
+    ),
+    [],
+  );
+});
+
+function tempFolder(t: any) {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'intermediate-'));
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+  return folder;
+}
+
+test('unreferenced intermediate subtitles are deleted and referenced ones are kept', async (t) => {
+  const folder = tempFolder(t);
+  const gone = path.join(folder, `${uuid}.srt`);
+  const kept = path.join(folder, `${md5}-source.srt`);
+  const missing = path.join(folder, `${md5}-final.srt`);
+  fs.writeFileSync(gone, '12345');
+  fs.writeFileSync(kept, 'abc');
+  const report = await reclaimIntermediateSubtitles(
+    [gone, kept, missing],
+    async () => (target) => target === kept,
+  );
+  assert.deepEqual(report, {
+    files: 1,
+    bytes: 5,
+    errors: [],
+    retained: [kept],
+  });
+  assert.equal(fs.existsSync(gone), false);
+  assert.equal(fs.readFileSync(kept, 'utf8'), 'abc');
+});
+
+test('only regular files are deleted, and nobody is asked when none is left to decide', async (t) => {
+  const folder = tempFolder(t);
+  const directory = path.join(folder, `${uuid}.srt`);
+  fs.mkdirSync(directory);
+  fs.writeFileSync(path.join(directory, 'inner.txt'), 'x');
+  const target = path.join(folder, 'real.txt');
+  fs.writeFileSync(target, 'precious');
+  const link = path.join(folder, `${md5}-source.srt`);
+  if (process.platform !== 'win32') fs.symlinkSync(target, link);
+  let asked = 0;
+  const report = await reclaimIntermediateSubtitles(
+    [directory, link, path.join(folder, `${md5}-final.srt`)],
+    async () => {
+      asked += 1;
+      return () => false;
+    },
+  );
+  assert.equal(asked, 0);
+  assert.deepEqual(report, { files: 0, bytes: 0, errors: [], retained: [] });
+  assert.ok(fs.existsSync(path.join(directory, 'inner.txt')));
+  assert.equal(fs.readFileSync(target, 'utf8'), 'precious');
+});
+
+test('a subtitle that cannot be deleted is reported and the others still go', async (t) => {
+  const folder = tempFolder(t);
+  const stuck = path.join(folder, `${uuid}.srt`);
+  const fine = path.join(folder, `${md5}-final.srt`);
+  fs.writeFileSync(stuck, 'a');
+  fs.writeFileSync(fine, 'b');
+  const unlink = fs.promises.unlink;
+  const mock = t.mock.method(fs.promises, 'unlink', async (file: any) => {
+    if (file === stuck)
+      throw Object.assign(new Error('EPERM: stuck'), { code: 'EPERM' });
+    return unlink(file);
+  });
+  const report = await reclaimIntermediateSubtitles(
+    [stuck, fine],
+    async () => () => false,
+  );
+  mock.mock.restore();
+  assert.equal(report.files, 1);
+  assert.equal(fs.existsSync(fine), false);
+  assert.ok(fs.existsSync(stuck));
+  assert.equal(report.errors.length, 1);
+  assert.match(report.errors[0], /EPERM: stuck/);
+});
+
+test('a failure to collect the references deletes no subtitle', async (t) => {
+  const folder = tempFolder(t);
+  const file = path.join(folder, `${uuid}.srt`);
+  fs.writeFileSync(file, 'a');
+  const report = await reclaimIntermediateSubtitles([file], async () => {
+    throw new Error('TASK_DRAFT_IDENTITY_UNKNOWN');
+  });
+  assert.equal(report.files, 0);
+  assert.ok(fs.existsSync(file));
+  assert.match(report.errors.join(), /TASK_DRAFT_IDENTITY_UNKNOWN/);
 });
