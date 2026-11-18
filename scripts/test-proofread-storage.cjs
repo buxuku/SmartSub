@@ -97,6 +97,11 @@ const workItems = require('../main/helpers/workItemStore.ts');
 const {
   setupWorkItemHandlers,
 } = require('../main/helpers/workItemHandlers.ts');
+const { setupTaskManager } = require('../main/helpers/taskManager.ts');
+const proofreadStore = require('../main/helpers/proofreadStore.ts');
+const {
+  setupProofreadHandlers,
+} = require('../main/helpers/ipcProofreadHandlers.ts');
 
 let passed = 0;
 let failed = 0;
@@ -992,6 +997,145 @@ async function testBackgroundDeletionStillSettles() {
   }
 }
 
+// A reclaimer that holds every cleanup until the test lets go of it.
+function heldReclaimer() {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const requests = [];
+  reclaimRegistry.setTaskDataReclaimer(async (request) => {
+    requests.push(request.items.map((item) => item.id));
+    await gate;
+  });
+  return { requests, release };
+}
+function startEntryPoints(items) {
+  startStore(items);
+  setupTaskManager();
+  setupProofreadHandlers();
+  // The proofread handlers point the sidecar folder at userData; these tests keep none.
+  storage.setProofreadDataRoot(undefined);
+}
+/** Resolves with the reply, or with 'waiting' when it is still pending after a moment. */
+function replyOrWaiting(call) {
+  return Promise.race([call, sleep(60).then(() => 'waiting')]);
+}
+const proofreadItem = (id) => ({
+  id,
+  sourceSubtitlePath: `/tmp/${id}.srt`,
+  detectedSubtitles: [],
+});
+
+async function testEmptyingAProjectWaitsForTheReclaim() {
+  const { requests, release } = heldReclaimer();
+  try {
+    startEntryPoints([workItem('emptied'), workItem('other')]);
+    const call = ipcHandlers.get('saveTaskProject')(null, {
+      id: 'emptied',
+      files: [],
+    });
+    ok((await replyOrWaiting(call)) === 'waiting', 'the save waits for it');
+    same(requests, [['emptied']], 'the reclaimer learns which project went');
+    ok(!workItems.getWorkItemById('emptied'), 'the project is already gone');
+    ok(workItems.getWorkItemById('other'), 'other projects stay');
+    release();
+    ok((await call) === null, 'and then reports that nothing is left');
+  } finally {
+    release();
+    reclaimRegistry.setTaskDataReclaimer(undefined);
+  }
+}
+
+async function testSavingAProjectNeverWaitsForACleanup() {
+  const { release } = heldReclaimer();
+  try {
+    startEntryPoints([workItem('going'), workItem('kept')]);
+    // Another task's cleanup is still running.
+    workItems.deleteWorkItem('going');
+    const reply = await replyOrWaiting(
+      ipcHandlers.get('saveTaskProject')(null, {
+        id: 'kept',
+        files: [
+          {
+            uuid: 'clip',
+            fileName: 'clip.mp4',
+            filePath: '/videos/clip.mp4',
+            fileExtension: '.mp4',
+            directory: '/videos',
+          },
+        ],
+      }),
+    );
+    ok(reply !== 'waiting', 'saving files does not wait for it');
+    ok(reply && reply.id === 'kept', 'and returns the saved project');
+    ok(
+      workItems.getWorkItemById('kept').pipelineFiles.length === 1,
+      'with its files stored',
+    );
+  } finally {
+    release();
+    await reclaimRegistry.settleTaskDataReclaim();
+    reclaimRegistry.setTaskDataReclaimer(undefined);
+  }
+}
+
+async function testRemovingTheLastItemWaitsForTheReclaim() {
+  const { requests, release } = heldReclaimer();
+  try {
+    startEntryPoints([]);
+    const task = proofreadStore.createProofreadTask(
+      [proofreadItem('only')],
+      'Batch',
+    );
+    const call = ipcHandlers.get('removeItemFromTask')(null, {
+      taskId: task.id,
+      itemId: 'only',
+    });
+    ok((await replyOrWaiting(call)) === 'waiting', 'the removal waits for it');
+    same(requests, [[task.id]], 'the reclaimer learns which task went');
+    ok(!workItems.getWorkItemById(task.id), 'the task went with its last item');
+    release();
+    same(
+      await call,
+      { success: true, data: null },
+      'and then reports the removal',
+    );
+  } finally {
+    release();
+    reclaimRegistry.setTaskDataReclaimer(undefined);
+  }
+}
+
+async function testRemovingAnItemDoesNotWaitForAnotherTasksCleanup() {
+  const { release } = heldReclaimer();
+  try {
+    startEntryPoints([workItem('going')]);
+    const task = proofreadStore.createProofreadTask(
+      [proofreadItem('first'), proofreadItem('second')],
+      'Batch',
+    );
+    // Another task's cleanup is still running.
+    workItems.deleteWorkItem('going');
+    const reply = await replyOrWaiting(
+      ipcHandlers.get('removeItemFromTask')(null, {
+        taskId: task.id,
+        itemId: 'first',
+      }),
+    );
+    ok(reply !== 'waiting', 'taking out one item does not wait for it');
+    same(
+      reply.data && reply.data.items.map((item) => item.id),
+      ['second'],
+      'and the task keeps its other item',
+    );
+  } finally {
+    release();
+    await reclaimRegistry.settleTaskDataReclaim();
+    reclaimRegistry.setTaskDataReclaimer(undefined);
+  }
+}
+
 async function run() {
   const tmp = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), 'smartsub-proofread-storage-'),
@@ -1040,6 +1184,18 @@ async function run() {
     );
     await section('background deletion', () =>
       testBackgroundDeletionStillSettles(),
+    );
+    await section('emptying a project waits for cleanup', () =>
+      testEmptyingAProjectWaitsForTheReclaim(),
+    );
+    await section('saving a project never waits', () =>
+      testSavingAProjectNeverWaitsForACleanup(),
+    );
+    await section('removing the last proofread item waits', () =>
+      testRemovingTheLastItemWaitsForTheReclaim(),
+    );
+    await section('removing one proofread item never waits', () =>
+      testRemovingAnItemDoesNotWaitForAnotherTasksCleanup(),
     );
   } finally {
     storage.setProofreadDataRoot(undefined);
