@@ -28,6 +28,7 @@ import {
   assertLegacyTaskWriteAllowed,
   retireTaskRuns,
 } from './taskRuns/access';
+import { settleTaskDataReclaim, startTaskDataReclaim } from './taskDataReclaim';
 
 export function setupWorkItemHandlers(): void {
   setWorkItemDeletionHandler((items: WorkItem[]) => {
@@ -87,6 +88,10 @@ export function setupWorkItemHandlers(): void {
         items
           .filter((item) => item.type === 'download')
           .forEach((item) => cancelDownloadBatch(item.id));
+        // The index and every transaction above are committed: reclaim the rest of what
+        // these tasks produced. IPC callers wait for it (settleTaskDataReclaim); other
+        // callers let it finish in the background.
+        startTaskDataReclaim({ items, proofreadFiles });
       },
     };
   });
@@ -99,8 +104,11 @@ export function setupWorkItemHandlers(): void {
     return saveWorkItem(item, { durable: true });
   });
 
-  ipcMain.handle('deleteWorkItem', (_event, id: string) => {
-    return deleteWorkItem(id);
+  ipcMain.handle('deleteWorkItem', async (_event, id: string) => {
+    const deleted = deleteWorkItem(id);
+    // The record is already gone; wait only so its temporary data is gone when we reply.
+    await settleTaskDataReclaim();
+    return deleted;
   });
 
   ipcMain.handle(
@@ -109,8 +117,9 @@ export function setupWorkItemHandlers(): void {
       renameWorkItem(payload?.id, payload?.name || ''),
   );
 
-  ipcMain.handle('clearAllWorkItems', () => {
+  ipcMain.handle('clearAllWorkItems', async () => {
     clearAllWorkItems();
+    await settleTaskDataReclaim();
     return true;
   });
 }

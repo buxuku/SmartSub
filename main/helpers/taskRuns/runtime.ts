@@ -129,21 +129,10 @@ export function initializeTaskRuns() {
   getRunStore().reconcileRetirements(getWorkItems().map((item) => item.id));
   setTaskRunServiceResolver(getRunService);
   setManagedTaskAcceptance(acceptManagedTask);
-  setTaskRunDeletion((ids) => {
-    const transaction = getRunStore().prepareRetirement(ids);
-    return {
-      rollback: transaction.rollback,
-      commit() {
-        transaction.commit();
-        // Defer until WorkItem and dubbing deletion transactions have committed.
-        setTimeout(() => {
-          void import('./storageRuntime')
-            .then(({ cleanTaskStorage }) => cleanTaskStorage())
-            .catch(console.warn);
-        }, 0);
-      },
-    };
-  });
+  // Retirement only hides the data. Reclaiming it is driven by the work-item deletion
+  // pipeline (taskDataReclaim), once the WorkItem and dubbing transactions have
+  // committed; the startup collector remains the fallback for anything left behind.
+  setTaskRunDeletion((ids) => getRunStore().prepareRetirement(ids));
   setTaskRunEditGuard((input) => {
     const all = getRunStore().all();
     if (

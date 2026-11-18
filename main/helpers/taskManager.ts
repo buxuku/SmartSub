@@ -7,6 +7,7 @@ import {
   assertLegacyTaskWriteAllowed,
   requireTaskRunService as getRunService,
 } from './taskRuns/access';
+import { settleTaskDataReclaim } from './taskDataReclaim';
 import {
   deleteWorkItem,
   getWorkItemById,
@@ -218,8 +219,10 @@ export function setupTaskManager() {
     },
   );
 
-  ipcMain.handle('deleteTaskProject', (_event, id: string) => {
+  ipcMain.handle('deleteTaskProject', async (_event, id: string) => {
     deleteWorkItem(id);
+    // Callers may recreate a project under the same id right away (onboarding sample).
+    await settleTaskDataReclaim();
     return true;
   });
 }

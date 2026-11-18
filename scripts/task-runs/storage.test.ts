@@ -6,7 +6,11 @@ import { test } from 'node:test';
 import { createTaskRunLocations } from '../../main/helpers/taskRuns/locations';
 import { createTaskRunStore } from '../../main/helpers/taskRuns/store';
 import { createStageArtifactStore } from '../../main/helpers/taskRuns/artifacts';
-import { collectTaskRunGarbage } from '../../main/helpers/taskRuns/cleanup';
+import {
+  collectTaskRunGarbage,
+  liveWorkspaces,
+  reclaimRetiredProjects,
+} from '../../main/helpers/taskRuns/cleanup';
 import { resolveTaskRunsRoot } from '../../main/helpers/storagePaths';
 
 function setup(t: any) {
@@ -284,4 +288,206 @@ test('partial recursive deletion cannot revive retired manifests, including afte
   );
   assert.equal(fs.existsSync(project), false);
   assert.deepEqual(reopened.locations!.entries(), []);
+});
+
+/** Writes a run plus one attempt media file; returns the run directory and that file. */
+function seedRun(store: any, run: any, name = 'extracted-audio.wav') {
+  store.write(run);
+  const directory = path.dirname(store.runPath(run.projectId, run.runId));
+  const media = path.join(
+    directory,
+    'files',
+    'f',
+    'attempts',
+    'extractAudio-a',
+    name,
+  );
+  fs.mkdirSync(path.dirname(media), { recursive: true });
+  fs.writeFileSync(media, 'audio');
+  return { directory, media };
+}
+
+test('deleting a task reclaims its retired data at once, even while another task is running', async (t) => {
+  const { store, run, locations } = setup(t);
+  seedRun(store, run);
+  const live = seedRun(
+    store,
+    { ...run, projectId: 'other', runId: 'live', status: 'running' },
+    'live.wav',
+  );
+  store.prepareRetirement(['project']).commit();
+  const report = await reclaimRetiredProjects(store, {
+    projectIds: ['project'],
+    references: [],
+  });
+  assert.deepEqual(report.errors, []);
+  assert.deepEqual(report.retained, []);
+  assert.ok(report.files > 0 && report.bytes > 0);
+  assert.equal(fs.existsSync(store.projectPath('project')), false);
+  assert.ok(fs.existsSync(live.media), 'a running task keeps its data');
+  assert.equal(locations.entries().length, 1, 'only the live run stays pinned');
+});
+
+test('a retired task that another record still references is kept and reported', async (t) => {
+  const { store, run } = setup(t);
+  const { directory, media } = seedRun(store, run);
+  store.prepareRetirement(['project']).commit();
+  const project = store.projectPath('project');
+  const kept = await reclaimRetiredProjects(store, {
+    projectIds: ['project'],
+    references: [{ tempAudioFile: media }],
+  });
+  assert.deepEqual(kept.errors, []);
+  assert.deepEqual(kept.retained, [project]);
+  assert.ok(fs.existsSync(media));
+  assert.ok(fs.existsSync(path.join(project, 'retired.json')));
+  // References may be supplied lazily; once nothing points here any more it is reclaimed.
+  const later = await reclaimRetiredProjects(store, {
+    projectIds: ['project'],
+    references: async () => [],
+  });
+  assert.deepEqual(later.errors, []);
+  assert.equal(fs.existsSync(directory), false);
+  assert.equal(fs.existsSync(project), false);
+});
+
+test('only retirement-marked directories of the deleted ids are reclaimed', async (t) => {
+  const { store, run } = setup(t);
+  const other = seedRun(store, { ...run, projectId: 'other', runId: 'o' });
+  seedRun(store, run);
+  store.prepareRetirement(['project']).commit();
+  // "other" was never retired, so naming it must not delete anything.
+  const report = await reclaimRetiredProjects(store, {
+    projectIds: ['other', 'unknown'],
+    references: [],
+  });
+  assert.deepEqual(report, { files: 0, bytes: 0, errors: [], retained: [] });
+  assert.ok(fs.existsSync(other.media));
+  assert.ok(
+    fs.existsSync(path.join(store.projectPath('project'), 'retired.json')),
+  );
+});
+
+test('stage workspaces are reclaimed per owning project; live ones are skipped', async (t) => {
+  const { base, store, locations } = setup(t);
+  const scratch = path.join(base, 'scratch');
+  locations.rememberWorkspaceRoot(scratch);
+  const artifacts = createStageArtifactStore(store, {
+    workspaceRoot: () => scratch,
+  });
+  const token = (projectId: string, attemptId: string) =>
+    ({
+      projectId,
+      runId: 'run',
+      fileId: 'file',
+      stageId: 'translate',
+      attemptId,
+    }) as const;
+  const mine = artifacts.workspace(token('project', 'a'));
+  const running = artifacts.workspace(token('project', 'b'));
+  const theirs = artifacts.workspace(token('other', 'a'));
+  for (const directory of [mine, running, theirs])
+    fs.writeFileSync(path.join(directory, 'temp.srt'), 'subtitle');
+  liveWorkspaces.add(running);
+  t.after(() => liveWorkspaces.delete(running));
+  const report = await reclaimRetiredProjects(store, {
+    projectIds: ['project'],
+    references: [],
+  });
+  assert.deepEqual(report.errors, []);
+  assert.equal(fs.existsSync(mine), false);
+  assert.ok(fs.existsSync(running), 'a live attempt keeps its workspace');
+  assert.ok(fs.existsSync(theirs), 'other projects keep theirs');
+});
+
+test('unsupported manifests keep a retired task for the global collector', async (t) => {
+  const { store, run } = setup(t);
+  seedRun(store, run);
+  store.prepareRetirement(['project']).commit();
+  const manifest = store.runPath('project', 'run');
+  fs.writeFileSync(manifest, JSON.stringify({ ...run, schemaVersion: 999 }));
+  const report = await reclaimRetiredProjects(store, {
+    projectIds: ['project'],
+    references: [],
+  });
+  assert.ok(
+    report.errors.some((error) =>
+      error.includes('TASK_RUN_VERSION_UNSUPPORTED'),
+    ),
+  );
+  assert.ok(fs.existsSync(manifest));
+  assert.ok(
+    fs.existsSync(path.join(store.projectPath('project'), 'retired.json')),
+  );
+});
+
+test('a task created again under the same id while reclaiming is not wiped', async (t) => {
+  const { store, run } = setup(t);
+  seedRun(store, { ...run, runId: 'first' });
+  seedRun(store, { ...run, runId: 'second' });
+  store.prepareRetirement(['project']).commit();
+  const rm = fs.promises.rm;
+  let revived = false;
+  const mock = t.mock.method(
+    fs.promises,
+    'rm',
+    async (target: any, options: any) => {
+      await rm(target, options);
+      if (revived) return;
+      revived = true;
+      // The same project id is submitted again right after the first removal.
+      store.write({ ...run, runId: 'again', createdAt: 3 });
+    },
+  );
+  const report = await reclaimRetiredProjects(store, {
+    projectIds: ['project'],
+    references: [],
+  });
+  mock.mock.restore();
+  assert.deepEqual(report.errors, []);
+  const project = store.projectPath('project');
+  assert.equal(fs.existsSync(path.join(project, 'retired.json')), false);
+  assert.ok(
+    fs.existsSync(path.join(project, 'again', 'manifest.json')),
+    'the new run must survive',
+  );
+  assert.ok(store.all().some((value) => value.runId === 'again'));
+  assert.equal(
+    ['first', 'second'].filter((id) => fs.existsSync(path.join(project, id)))
+      .length,
+    1,
+    'removal stops as soon as the project is live again',
+  );
+});
+
+test('a task with only a saved draft is retired and reclaimed with it', async (t) => {
+  const { store } = setup(t);
+  const draft = (revision: number) =>
+    ({ revision, config: {}, files: [] }) as any;
+  store.writeDraft('draft-only', draft(1));
+  const project = store.projectPath('draft-only');
+  store.prepareRetirement(['draft-only']).commit();
+  assert.ok(fs.existsSync(path.join(project, 'retired.json')));
+  const report = await reclaimRetiredProjects(store, {
+    projectIds: ['draft-only'],
+    references: [],
+  });
+  assert.deepEqual(report.errors, []);
+  assert.equal(fs.existsSync(project), false);
+  // Saving a draft under a retired id starts a live project again.
+  store.writeDraft('draft-only', draft(1));
+  store.prepareRetirement(['draft-only']).commit();
+  store.writeDraft('draft-only', draft(2));
+  assert.equal(fs.existsSync(path.join(project, 'retired.json')), false);
+  assert.equal(store.readDraft('draft-only')?.revision, 2);
+});
+
+test('retirement still refuses a project whose pinned data is offline', (t) => {
+  const { store, run } = setup(t);
+  seedRun(store, run);
+  fs.unlinkSync(store.runPath('project', 'run'));
+  assert.throws(
+    () => store.prepareRetirement(['project']),
+    /TASK_STORAGE_UNAVAILABLE/,
+  );
 });

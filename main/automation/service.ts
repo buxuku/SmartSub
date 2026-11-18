@@ -18,6 +18,7 @@ import {
   getWorkItemById,
   deleteWorkItem,
 } from '../helpers/workItemStore';
+import { settleTaskDataReclaim } from '../helpers/taskDataReclaim';
 import {
   enqueueTaskSubmission,
   isTranscriptionBusy,
@@ -573,9 +574,11 @@ export class AutomationService {
           throw new Error('TASK_BUSY');
         if (job.projectId && getWorkItemById(job.projectId))
           deleteWorkItem(job.projectId);
+        await settleTaskDataReclaim();
         return this.jobs.delete(a.id);
       }
       deleteWorkItem(a.id);
+      await settleTaskDataReclaim();
       return { deleted: true };
     }
     if (name === 'pipeline.release') {
