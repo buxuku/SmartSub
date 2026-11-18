@@ -97,6 +97,7 @@ require.extensions['.ts'] = function transpileTypeScript(module, filename) {
 };
 
 const translate = require('../main/translate/index.ts').default;
+const { runWithTaskContext } = require('../main/helpers/taskContext.ts');
 const { resolvePipelineForm } = require('../main/automation/pipelineConfig.ts');
 
 const base = fs.mkdtempSync(
@@ -150,17 +151,22 @@ function check(name, run) {
     );
 }
 
-/** Runs the real translate() for one subtitle in its own directory. */
-async function translateIn(overrides = {}, prepare) {
+/**
+ * Runs the real translate() for one subtitle in its own directory. With `stage` it runs
+ * like a task stage: inside a task context whose workspace is also the output directory.
+ */
+async function translateIn(overrides = {}, prepare, { stage = false } = {}) {
   const dir = fs.mkdtempSync(path.join(base, `case${++scenario}-`));
   state.tempDir = path.join(dir, 'cache');
   fs.mkdirSync(state.tempDir);
+  const workspace = path.join(dir, 'workspace');
+  if (stage) fs.mkdirSync(workspace);
   const srtFile = path.join(dir, 'clip.srt');
   fs.writeFileSync(srtFile, sourceSrt);
   const file = {
     uuid: `file-${scenario}`,
     fileName: 'clip',
-    directory: dir,
+    directory: stage ? workspace : dir,
     srtFile,
     filePath: path.join(dir, 'clip.mp4'),
   };
@@ -180,16 +186,22 @@ async function translateIn(overrides = {}, prepare) {
   };
   state.providerCalls = 0;
   logs.length = 0;
-  const outcome = await translate(event, file, formData, {
-    id: 'test',
-    type: 'test',
-    name: 'Test',
-  }).then(
+  const call = () =>
+    translate(event, file, formData, {
+      id: 'test',
+      type: 'test',
+      name: 'Test',
+    });
+  const outcome = await (
+    stage
+      ? runWithTaskContext({ stageOutputDirectory: workspace }, call)
+      : call()
+  ).then(
     (value) => ({ ok: true, value }),
     (error) => ({ ok: false, error }),
   );
   await settle();
-  return { dir, file, srtFile, messages, outcome };
+  return { dir, file, srtFile, messages, outcome, workspace };
 }
 
 async function main() {
@@ -204,6 +216,64 @@ async function main() {
         'the pure translation kept for later stages never carries source text',
       );
     });
+
+  await check(
+    'inside a task stage the pure translation lives in the stage workspace, not the shared temp directory',
+    async () => {
+      const run = await translateIn(
+        { translateContent: 'sourceAndTranslate' },
+        undefined,
+        { stage: true },
+      );
+      assert.equal(run.outcome.ok, true);
+      const temp = run.file.tempTranslatedSrtFile;
+      assert.equal(path.dirname(temp), run.workspace);
+      assert.match(path.basename(temp), /^[0-9a-f-]{36}\.srt$/);
+      assert.equal(read(temp), translationOnly);
+      assert.equal(
+        read(run.file.translatedSrtFile),
+        expected('sourceAndTranslate'),
+        'the delivered file next to it is not mixed up with it',
+      );
+      assert.notEqual(temp, run.file.translatedSrtFile);
+      assert.deepEqual(
+        fs.readdirSync(state.tempDir),
+        [],
+        'nothing is left behind in the shared temp directory',
+      );
+    },
+  );
+
+  await check(
+    'a stage that fails leaves nothing in the shared temp directory',
+    async () => {
+      state.failConversion = true;
+      try {
+        const run = await translateIn(
+          { translateContent: 'onlyTranslate', targetLanguage: 'zh' },
+          undefined,
+          { stage: true },
+        );
+        assert.equal(run.outcome.ok, false);
+        assert.deepEqual(fs.readdirSync(state.tempDir), []);
+      } finally {
+        state.failConversion = false;
+      }
+    },
+  );
+
+  await check(
+    'without a stage workspace the pure translation stays in the shared temp directory',
+    async () => {
+      const run = await translateIn({});
+      assert.equal(run.outcome.ok, true);
+      assert.equal(path.dirname(run.file.tempTranslatedSrtFile), state.tempDir);
+      assert.match(
+        path.basename(run.file.tempTranslatedSrtFile),
+        /^[0-9a-f-]{36}\.srt$/,
+      );
+    },
+  );
 
   await check('a missing style delivers translation only', async () => {
     const run = await translateIn({});

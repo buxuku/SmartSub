@@ -19,7 +19,7 @@ import { logMessage, store } from '../helpers/storeManager';
 import { IFiles, IFormData } from '../../types';
 import { shouldUseEpisodeSummary } from '../helpers/episodeSummaryCore';
 import { ensureTempDir } from '../helpers/fileUtils';
-import { isTaskCancelledError } from '../helpers/taskContext';
+import { getTaskContext, isTaskCancelledError } from '../helpers/taskContext';
 import { assertOutputDoesNotOverwriteInput } from '../helpers/subtitleOutputGuard';
 import type { ActivityObserver } from '../../types/taskActivity';
 import {
@@ -162,8 +162,11 @@ export default async function translate(
     file.translatedSrtFile = fileSave;
     await createOrClearFile(fileSave);
 
-    // 生成临时纯翻译文件，无论是否是双语字幕
-    const tempDir = ensureTempDir();
+    // 生成临时纯翻译文件，无论是否是双语字幕。
+    // 任务阶段里写进本次尝试的工作区：随阶段产物一并捕获，成功、失败或取消后工作区被清理，
+    // 不再在共享临时目录留下 <uuid>.srt；工具箱等没有阶段工作区的场景仍用共享临时目录。
+    // 文件名保持随机：工作区里还有按用户模板命名的译文文件，固定名字可能与之重名。
+    const tempDir = getTaskContext()?.stageOutputDirectory || ensureTempDir();
     const tempTranslatedFileName = `${uuidv4()}.srt`;
     const tempTranslatedFilePath = path.join(tempDir, tempTranslatedFileName);
     file.tempTranslatedSrtFile = tempTranslatedFilePath;
