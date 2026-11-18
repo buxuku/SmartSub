@@ -138,7 +138,7 @@ smartsub pipeline run --input-json /absolute/pipeline.json --wait
 - `tasks.get/list/wait` 可读取桌面任务；暂停/继续/重试针对流水线，下载另有 `downloads.resume/retry`。`actions` 指示当前支持的控制。不能中断的操作返回 `CANCEL_UNSUPPORTED`。
 - 流水线默认输出到当前配置目录的 `automation/outputs/<任务ID>`，每个输入独立子目录。显式目标已存在时拒绝覆盖；工具箱可能按原有规则生成新的唯一文件名。
 - `subtitles.read` 返回 SHA-256 `version`。原地写入需 `overwrite=true` 和 `expectedVersion`，并保留 `.bak`；版本过期、其他自动化写入或桌面未保存草稿会阻止修改。`proofread.save` 更新校对数据并重新渲染其关联字幕。
-- `tasks.delete` 删除任务记录；关联的配音会话按桌面原有删除规则清理，不删除源媒体。导出的独立文件需自行管理。
+- `tasks.delete` 删除任务记录；关联的配音会话按桌面原有删除规则清理，不删除源媒体。调用返回时，该任务在默认输出目录 `automation/outputs/<任务ID>` 下的产物和任务收据已一并清除，在桌面端删除同一任务时效果相同；仍被其他任务或校对数据引用的文件会保留。运行中或待审核的任务不会被清理。你通过 `outputDir` 或显式路径指定的目录、导出的独立文件需自行管理。
 
 退出码：`0` 成功，`2` 参数错误，`3` 业务失败/任务中断，`4` 后台连接失败，`5` CLI 等待超时，`130` 任务取消。MCP 执行错误使用 `isError=true`；异步执行失败记录在任务的 `error` 中。
 

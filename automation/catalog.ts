@@ -178,7 +178,7 @@ add(
 );
 add(
   'tasks.delete',
-  'Delete a completed task record; does not delete input media.',
+  'Delete a completed task record and the outputs kept for it in the default outputs folder. Input media and outputs written to a folder you chose are never deleted.',
   id,
 );
 add(

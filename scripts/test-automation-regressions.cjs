@@ -48,6 +48,10 @@ const real = new Set(
     'types/translateContent.ts',
     'types/workItem.ts',
     'main/helpers/pythonRuntime/downloader.ts',
+    'main/helpers/taskDataReclaim.ts',
+    'main/automation/reclaim.ts',
+    'main/helpers/taskRuns/cleanup.ts',
+    'main/helpers/taskRuns/storageIO.ts',
   ].map(definition),
 );
 const configValues = new Map();
@@ -81,6 +85,17 @@ stub('main/helpers/workItemStore.ts', {
   getWorkItems: () =>
     [...items.values()].sort((a, b) => b.updatedAt - a.updatedAt),
   getWorkItemById: (id) => items.get(id),
+  // Like the real one: drop the item, then let the task data reclaimer clean up after it.
+  deleteWorkItem(id) {
+    const item = items.get(id);
+    if (!item) return false;
+    items.delete(id);
+    load(definition('main/helpers/taskDataReclaim.ts')).startTaskDataReclaim({
+      items: [item],
+      proofreadFiles: [],
+    });
+    return true;
+  },
 });
 stub('main/helpers/taskProcessor.ts', {
   isTranscriptionBusy: () => false,
@@ -238,6 +253,141 @@ const deferred = () => {
   const promise = new Promise((r) => (resolve = r));
   return { promise, resolve };
 };
+/**
+ * Deleting a task reclaims what automation kept for it. The task storage side is played by
+ * a small stand-in that honors the same contract as the real reclaimer: it asks automation
+ * to reclaim, and hands over what the remaining records still reference.
+ */
+async function deletedTasksTakeTheirAutomationDataAlong() {
+  const registry = load(definition('main/helpers/taskDataReclaim.ts'));
+  const automation = (...parts) => path.join(root, 'automation', ...parts);
+  const receipt = (id) => automation('jobs', `${id}.json`);
+  const remaining = new Map();
+  registry.setTaskDataReclaimer(async (request) => {
+    await registry.reclaimAutomationData({
+      ids: [...request.items.map((item) => item.id), ...(request.jobIds || [])],
+      protector: async (ignore) => {
+        const used = [...remaining]
+          .filter(([file]) => !ignore(file))
+          .flatMap(([, paths]) => paths);
+        return (target) =>
+          used.some(
+            (file) => file === target || file.startsWith(target + path.sep),
+          );
+      },
+    });
+  });
+  registry.setAutomationReclaimer((scope) => service.reclaimWorkItems(scope));
+  const input = path.join(root, 'deletion-input.wav');
+  fs.writeFileSync(input, 'audio fixture');
+  const finish = async (args = {}) => {
+    const job = await service.call('transcribe', { files: [input], ...args });
+    const done = await service.jobs.wait(job.id, 1000);
+    assert.equal(done.status, 'completed', JSON.stringify(done.error));
+    return done;
+  };
+  /** The files a pipeline job leaves in its (default) output folder. */
+  const output = (directory) => {
+    const file = path.join(directory, '1-deletion-input', 'deletion-input.srt');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '1\n');
+    return file;
+  };
+  try {
+    // deleting through automation removes the task, its receipt and its default outputs
+    const first = await finish();
+    const firstOutput = output(automation('outputs', first.id));
+    assert.ok(fs.existsSync(receipt(first.id)));
+    assert.deepEqual(
+      json(await service.call('tasks.delete', { id: first.id })),
+      { deleted: true },
+    );
+    assert.equal(items.has(first.id), false);
+    assert.equal(fs.existsSync(firstOutput), false);
+    assert.equal(fs.existsSync(automation('outputs', first.id)), false);
+    assert.equal(fs.existsSync(receipt(first.id)), false);
+    assert.equal(service.jobs.get(first.id), undefined);
+
+    // a folder the caller chose is theirs: the receipt goes, the files stay
+    const chosen = path.join(root, 'my-exports');
+    const second = await finish({ outputDir: chosen });
+    const chosenOutput = output(chosen);
+    await service.call('tasks.delete', { id: second.id });
+    assert.equal(fs.readFileSync(chosenOutput, 'utf8'), '1\n');
+    assert.equal(fs.existsSync(receipt(second.id)), false);
+    assert.equal(service.jobs.get(second.id), undefined);
+
+    // deleting the task on the desktop does the same, without tasks.delete
+    const third = await finish();
+    const thirdOutput = output(automation('outputs', third.id));
+    load(definition('main/helpers/workItemStore.ts')).deleteWorkItem(third.id);
+    await registry.settleTaskDataReclaim();
+    assert.equal(fs.existsSync(thirdOutput), false);
+    assert.equal(fs.existsSync(receipt(third.id)), false);
+    assert.equal(service.jobs.get(third.id), undefined);
+
+    // outputs a remaining record uses stay; the receipt still goes
+    const fourth = await finish();
+    const fourthOutput = output(automation('outputs', fourth.id));
+    remaining.set('/records/task.json', [fourthOutput]);
+    await service.call('tasks.delete', { id: fourth.id });
+    assert.equal(fs.readFileSync(fourthOutput, 'utf8'), '1\n');
+    assert.equal(fs.existsSync(receipt(fourth.id)), false);
+    remaining.clear();
+
+    // a job without a task of its own (speech synthesis, say) takes its outputs along too
+    const speech = service.jobs.submit('tts.synthesize', {}, async () => ({
+      ok: true,
+    }));
+    await service.jobs.wait(speech.id, 1000);
+    const speechFolder = automation('outputs', speech.id);
+    fs.mkdirSync(speechFolder, { recursive: true });
+    fs.writeFileSync(path.join(speechFolder, 'speech.wav'), 'wav');
+    await service.call('tasks.delete', { id: speech.id });
+    assert.equal(fs.existsSync(speechFolder), false);
+    assert.equal(fs.existsSync(receipt(speech.id)), false);
+    assert.equal(service.jobs.get(speech.id), undefined);
+
+    // a job that has not finished keeps its receipt and outputs, even if its task is gone
+    const gate = deferred();
+    const running = service.jobs.submit('pipeline.run', {}, async (ctx) => {
+      ctx.setCancel(() => gate.resolve({ cancelled: true }));
+      return gate.promise;
+    });
+    await until(() => running.status === 'running');
+    const runningOutput = output(automation('outputs', running.id));
+    try {
+      const report = await service.reclaimWorkItems({
+        ids: [running.id],
+        protector: async () => () => false,
+      });
+      assert.equal(report.files, 0);
+      assert.equal(fs.existsSync(runningOutput), true);
+      assert.equal(fs.existsSync(receipt(running.id)), true);
+      // and the store itself refuses to drop a job that is still running
+      assert.throws(() => service.jobs.discard(running.id), /TASK_BUSY/);
+      assert.equal(service.jobs.get(running.id)?.id, running.id);
+    } finally {
+      gate.resolve({ cancelled: true });
+      await service.jobs.wait(running.id, 1000);
+    }
+
+    // without a reclaimer (headless, tests) deleting a task still removes its receipt
+    registry.setTaskDataReclaimer(undefined);
+    const last = await finish();
+    const lastOutput = output(automation('outputs', last.id));
+    await service.call('tasks.delete', { id: last.id });
+    assert.equal(fs.existsSync(receipt(last.id)), false);
+    assert.equal(service.jobs.get(last.id), undefined);
+    assert.ok(fs.existsSync(lastOutput), 'nothing else is removed then');
+  } finally {
+    registry.setTaskDataReclaimer(undefined);
+    registry.setAutomationReclaimer(undefined);
+  }
+  console.log(
+    'PASS deleting a task removes the automation receipts and default outputs it left, never a chosen folder',
+  );
+}
 async function main() {
   const { setTaskRunServiceResolver } = load(
     definition('main/helpers/taskRuns/access.ts'),
@@ -664,6 +814,7 @@ async function main() {
   runs.get('retry-project').abort();
   runs.delete('retry-project');
   assert.equal((await service.jobs.wait(retry.id, 1000)).status, 'cancelled');
+  await deletedTasksTakeTheirAutomationDataAlong();
   const listeners = automationEvents.listenerCount('event');
   const media = [];
   for (const [operation, channel] of [

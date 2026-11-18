@@ -29,6 +29,7 @@ import { createProofreadDraftStore } from '../proofreadDraftStore';
 import { createQualityReviewStore } from '../qualityReviewStore';
 import { resolveTempDir } from '../storagePaths';
 import {
+  reclaimAutomationData,
   setTaskDataReclaimer,
   type TaskDataReclaimRequest,
 } from '../taskDataReclaim';
@@ -46,7 +47,10 @@ const REVIEW_DIRECTORY = 'quality-reviews';
  */
 type ReferenceScope = 'all' | 'records' | 'drafts';
 
-async function metadataFiles(scope: ReferenceScope = 'all') {
+async function metadataFiles(
+  scope: ReferenceScope = 'all',
+  ignore?: (file: string) => boolean,
+) {
   const files = new Set<string>(scope === 'drafts' ? [] : [store.path]);
   for (const name of [
     'proofread-data',
@@ -60,7 +64,10 @@ async function metadataFiles(scope: ReferenceScope = 'all') {
     const directory = path.join(app.getPath('userData'), name);
     if (fs.existsSync(directory))
       for (const file of await walkFiles(directory))
-        if (file.endsWith('.json') || file.endsWith('.json.key'))
+        if (
+          (file.endsWith('.json') || file.endsWith('.json.key')) &&
+          !ignore?.(file)
+        )
           files.add(file);
   }
   if (scope === 'drafts') return [...files];
@@ -123,9 +130,14 @@ export async function recoverTaskStorageMigration() {
   }
 }
 
-/** Everything that can still point into task storage: records, drafts, sessions, receipts. */
+/**
+ * Everything that can still point into task storage: records, drafts, sessions, receipts.
+ * Files that `ignore` selects are left out of the folders that are walked, for data that
+ * is about to be removed anyway. JSON that a remaining record points at always counts.
+ */
 async function collectStorageReferences(
   scope: ReferenceScope = 'all',
+  ignore?: (file: string) => boolean,
 ): Promise<unknown[]> {
   const references: unknown[] = [];
   if (scope !== 'drafts') {
@@ -139,7 +151,7 @@ async function collectStorageReferences(
       );
   }
   // Store config contains legacy task indexes; these also protect old references.
-  for (const file of await metadataFiles(scope)) {
+  for (const file of await metadataFiles(scope, ignore)) {
     if (file.endsWith('.json.key')) {
       if (readJson(file.slice(0, -4)) === null) continue;
       const key = await fs.promises.readFile(file, 'utf8');
@@ -182,7 +194,7 @@ function once<T>(load: () => Promise<T>): () => Promise<T> {
   return () => (value ??= load());
 }
 
-/** One log line per outcome; the labels name what was reclaimed and what was kept. */
+/** One log line per outcome; the labels complete "reclaimed N …" and "kept N …". */
 function logReclaim(report: ReclaimReport, reclaimed: string, kept: string) {
   if (report.files)
     logMessage(
@@ -190,10 +202,7 @@ function logReclaim(report: ReclaimReport, reclaimed: string, kept: string) {
       'info',
     );
   if (report.retained.length)
-    logMessage(
-      `Task cleanup: kept ${report.retained.length} ${kept} still referenced by other records`,
-      'info',
-    );
+    logMessage(`Task cleanup: kept ${report.retained.length} ${kept}`, 'info');
   if (report.errors.length)
     logMessage(
       `Task cleanup incomplete, the rest is collected later: ${report.errors.join('; ')}`,
@@ -268,7 +277,24 @@ export function reclaimDeletedWorkItems(
           ]),
         );
 
-      // 1. Saved drafts and quality reviews: their identities name files inside the task
+      // 1. Receipts and outputs that automation kept for these tasks. This goes first: the
+      // receipts mention the task storage and would keep all of it pinned.
+      logReclaim(
+        await reclaimAutomationData({
+          ids: [...ids, ...(request.jobIds ?? [])],
+          protector: async (ignore) =>
+            createProtector(
+              await expandReferences([
+                runs.all(),
+                ...(await collectStorageReferences('all', ignore)),
+              ]),
+            ),
+        }),
+        'files of automation jobs',
+        'automation item(s) still referenced by other records or unfinished jobs',
+      );
+
+      // 2. Saved drafts and quality reviews: their identities name files inside the task
       // storage and would keep all of it pinned.
       const draftReport = await reclaimDeletedDrafts(
         draftStores(),
@@ -289,24 +315,24 @@ export function reclaimDeletedWorkItems(
           'warning',
         );
 
-      // 2. Run storage and stage workspaces of the deleted tasks.
+      // 3. Run storage and stage workspaces of the deleted tasks.
       logReclaim(
         await reclaimRetiredProjects(runs, {
           projectIds: ids,
           references: async () => [...(await records()), ...(await drafts())],
         }),
         'files of deleted task data',
-        'location(s)',
+        'location(s) still referenced by other records',
       );
 
-      // 3. Subtitles that older flows cached among the shared temp files.
+      // 4. Subtitles that older flows cached among the shared temp files.
       logReclaim(
         await reclaimIntermediateSubtitles(
           intermediateSubtitles(request.items, sharedTempDirectories()),
           () => claims(true),
         ),
         'intermediate subtitle file(s)',
-        'intermediate subtitle file(s)',
+        'intermediate subtitle file(s) still referenced by other records',
       );
     } catch (error) {
       logMessage(`Task cleanup failed: ${String(error)}`, 'warning');

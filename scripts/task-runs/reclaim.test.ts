@@ -10,6 +10,14 @@ import { test } from 'node:test';
 const here = path.resolve(__dirname, 'reclaim.test.ts');
 const load = createRequire(here);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Waits for something another task is expected to do, however loaded the machine is. */
+const until = async (condition: () => boolean) => {
+  const deadline = Date.now() + 10_000;
+  while (!condition()) {
+    assert.ok(Date.now() < deadline, 'condition timed out');
+    await sleep(5);
+  }
+};
 
 const state: {
   userData: string;
@@ -68,8 +76,13 @@ const { createTaskRunStore } = load('../../main/helpers/taskRuns/store');
 const { createTaskRunLocations } = load(
   '../../main/helpers/taskRuns/locations',
 );
-const { setTaskDataReclaimer, startTaskDataReclaim, settleTaskDataReclaim } =
-  load('../../main/helpers/taskDataReclaim');
+const {
+  setTaskDataReclaimer,
+  startTaskDataReclaim,
+  settleTaskDataReclaim,
+  setAutomationReclaimer,
+  reclaimAutomationData,
+} = load('../../main/helpers/taskDataReclaim');
 
 function setup(t: any) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'task-reclaim-'));
@@ -157,8 +170,7 @@ test('the reclaim holds no maintenance lock, so other tasks can keep writing', a
     items: [item('deleted')],
     proofreadFiles: [],
   });
-  await sleep(50);
-  assert.ok(blocked, 'the reclaim is mid-removal');
+  await until(() => blocked);
   assert.doesNotThrow(() => store.write(run('newcomer', 'queued')));
   release();
   await reclaim;
@@ -192,8 +204,7 @@ test('the global collector and the reclaim never run at the same time', async (t
     items: [item('deleted')],
     proofreadFiles: [],
   });
-  await sleep(50);
-  assert.ok(blocked);
+  await until(() => blocked);
   const before = allCalls;
   const collector = runtime.cleanTaskStorage();
   await sleep(50);
@@ -443,6 +454,199 @@ test('a failure while collecting references keeps the intermediate subtitles', a
   );
 });
 
+const automationFolder = (...parts: string[]) =>
+  path.join(state.userData, 'automation', ...parts);
+const emptyReport = {
+  files: 0,
+  bytes: 0,
+  errors: [],
+  retained: [] as string[],
+};
+
+test('automation data of a deleted task goes first, so its receipt no longer pins the task storage', async (t) => {
+  const { store, seed, item } = setup(t);
+  const gone = seed('deleted');
+  store.prepareRetirement(['deleted']).commit();
+  // The job that ran the task recorded the files it published from the task storage.
+  const receipt = automationFolder('jobs', 'deleted.json');
+  fs.mkdirSync(path.dirname(receipt), { recursive: true });
+  fs.writeFileSync(
+    receipt,
+    JSON.stringify({
+      id: 'deleted',
+      result: { files: [{ srtFile: gone.media }] },
+    }),
+  );
+  await runtime.reclaimDeletedWorkItems({
+    items: [item('deleted')],
+    proofreadFiles: [],
+  });
+  assert.ok(fs.existsSync(gone.media), 'a receipt that is still there pins it');
+
+  const asked: string[][] = [];
+  setAutomationReclaimer(async (scope: any) => {
+    asked.push(scope.ids);
+    fs.rmSync(receipt);
+    return { ...emptyReport, files: 1, bytes: 40 };
+  });
+  try {
+    await runtime.reclaimDeletedWorkItems({
+      items: [item('deleted')],
+      proofreadFiles: [],
+    });
+  } finally {
+    setAutomationReclaimer(undefined);
+  }
+  assert.deepEqual(asked, [['deleted']]);
+  assert.equal(
+    fs.existsSync(gone.directory),
+    false,
+    'and it goes once the receipt does',
+  );
+  assert.ok(
+    state.logs.some(
+      (entry) =>
+        entry.type === 'info' &&
+        /reclaimed 1 files of automation jobs/.test(entry.message),
+    ),
+    'what automation reclaimed is logged',
+  );
+});
+
+test('automation weighs the remaining references, but not the files it says are going away', async (t) => {
+  const { item, store, run } = setup(t);
+  const outputs = (id: string, file = 'x.srt') =>
+    automationFolder('outputs', id, file);
+  const receiptOf = (id: string) => automationFolder('jobs', `${id}.json`);
+  const write = (file: string, value: unknown) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(value));
+  };
+  // the deleted job's receipt and one of its own output files mention its outputs
+  write(receiptOf('a'), { id: 'a', artifacts: [{ path: outputs('a') }] });
+  write(outputs('a', 'words.json'), { subtitlePath: outputs('a') });
+  // another job's receipt and a remaining task use the outputs of jobs c and b
+  write(receiptOf('c'), { id: 'c', artifacts: [{ path: outputs('c') }] });
+  state.workItems = [
+    {
+      id: 'other',
+      type: 'proofread',
+      proofreadEntries: [{ sourceSubtitlePath: outputs('b') }],
+    },
+  ];
+  // and so does a task run that is still around
+  store.write({
+    ...run('live', 'running'),
+    files: [{ fileId: 'f', input: { path: outputs('d') } }],
+  });
+  const answers: Record<string, boolean> = {};
+  setAutomationReclaimer(async (scope: any) => {
+    const isOwn = (file: string) =>
+      file === receiptOf('a') ||
+      file.startsWith(automationFolder('outputs', 'a') + path.sep);
+    const protect = await scope.protector(isOwn);
+    for (const id of ['a', 'b', 'c', 'd'])
+      answers[id] = protect(automationFolder('outputs', id));
+    answers.unfiltered = (await scope.protector(() => false))(
+      automationFolder('outputs', 'a'),
+    );
+    return emptyReport;
+  });
+  try {
+    await runtime.reclaimDeletedWorkItems({
+      items: [item('a')],
+      proofreadFiles: [],
+    });
+  } finally {
+    setAutomationReclaimer(undefined);
+  }
+  assert.deepEqual(answers, {
+    a: false,
+    b: true,
+    c: true,
+    d: true,
+    unfiltered: true,
+  });
+});
+
+test('a job deleted without a task is handed to automation alone', async (t) => {
+  const { seed, item } = setup(t);
+  const running = seed('running', 'running');
+  const asked: string[][] = [];
+  setAutomationReclaimer(async (scope: any) => {
+    asked.push(scope.ids);
+    return { ...emptyReport, retained: ['/somewhere/else'] };
+  });
+  try {
+    await runtime.reclaimDeletedWorkItems({
+      items: [],
+      proofreadFiles: [],
+      jobIds: ['speech-job'],
+    });
+    await runtime.reclaimDeletedWorkItems({
+      items: [item('x')],
+      proofreadFiles: [],
+      jobIds: ['speech-job'],
+    });
+  } finally {
+    setAutomationReclaimer(undefined);
+  }
+  assert.deepEqual(asked, [['speech-job'], ['x', 'speech-job']]);
+  assert.ok(fs.existsSync(running.media), 'the other task is untouched');
+  assert.ok(
+    state.logs.some((entry) =>
+      /kept 1 automation item\(s\) still referenced/.test(entry.message),
+    ),
+    'what automation kept is logged',
+  );
+});
+
+test('a failing automation does not stop the rest of the cleanup', async (t) => {
+  const { store, seed, item } = setup(t);
+  const gone = seed('deleted');
+  store.prepareRetirement(['deleted']).commit();
+  setAutomationReclaimer(async () => {
+    throw new Error('receipts are locked');
+  });
+  try {
+    await runtime.reclaimDeletedWorkItems({
+      items: [item('deleted')],
+      proofreadFiles: [],
+    });
+  } finally {
+    setAutomationReclaimer(undefined);
+  }
+  assert.equal(fs.existsSync(gone.directory), false);
+  assert.ok(
+    state.logs.some(
+      (entry) =>
+        entry.type === 'warning' && /receipts are locked/.test(entry.message),
+    ),
+    'the problem is logged as a warning',
+  );
+});
+
+test('automation is only asked when it runs and there is something deleted', async () => {
+  const scope = (ids: string[]) => ({
+    ids,
+    protector: async () => () => false,
+  });
+  assert.deepEqual(await reclaimAutomationData(scope(['a'])), emptyReport);
+  let calls = 0;
+  setAutomationReclaimer(async () => {
+    calls += 1;
+    return emptyReport;
+  });
+  try {
+    assert.deepEqual(await reclaimAutomationData(scope([])), emptyReport);
+    assert.equal(calls, 0);
+    await reclaimAutomationData(scope(['a']));
+    assert.equal(calls, 1);
+  } finally {
+    setAutomationReclaimer(undefined);
+  }
+});
+
 test('the registered reclaimer runs for started requests and settle waits for it', async () => {
   const seen: string[][] = [];
   let finished = false;
@@ -454,10 +658,14 @@ test('the registered reclaimer runs for started requests and settle waits for it
   try {
     startTaskDataReclaim({ items: [{ id: 'a' }], proofreadFiles: [] });
     startTaskDataReclaim({ items: [], proofreadFiles: [] });
+    startTaskDataReclaim({ items: [], proofreadFiles: [], jobIds: [] });
     assert.equal(finished, false);
     await settleTaskDataReclaim();
     assert.equal(finished, true);
     assert.deepEqual(seen, [['a']], 'empty requests are ignored');
+    startTaskDataReclaim({ items: [], proofreadFiles: [], jobIds: ['job'] });
+    await settleTaskDataReclaim();
+    assert.deepEqual(seen, [['a'], []], 'a job without a task is a request');
   } finally {
     setTaskDataReclaimer(undefined);
   }

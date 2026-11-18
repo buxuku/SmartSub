@@ -18,7 +18,12 @@ import {
   getWorkItemById,
   deleteWorkItem,
 } from '../helpers/workItemStore';
-import { settleTaskDataReclaim } from '../helpers/taskDataReclaim';
+import {
+  settleTaskDataReclaim,
+  startTaskDataReclaim,
+  type AutomationReclaimScope,
+} from '../helpers/taskDataReclaim';
+import type { ReclaimReport } from '../helpers/taskRuns/cleanup';
 import {
   enqueueTaskSubmission,
   isTranscriptionBusy,
@@ -69,6 +74,7 @@ import {
 import { invokeHandler, sendHandler } from './handlers';
 import { createServiceEvent } from './events';
 import { JobStore, JobFailure, collectArtifacts, terminal } from './jobs';
+import { reclaimAutomationJobs } from './reclaim';
 import { getCt2ProgressKey } from '../helpers/fasterWhisperModelDownloader';
 import { getFunasrProgressKey } from '../helpers/funasrModelDownloader';
 import { getQwenProgressKey } from '../helpers/qwenModelDownloader';
@@ -104,6 +110,10 @@ function assertOutput(file?: string) {
   if (!path.isAbsolute(file)) throw new Error('ABSOLUTE_PATH_REQUIRED');
   if (fs.existsSync(file)) throw new Error(`OUTPUT_EXISTS: ${file}`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
+}
+/** Where a job's outputs go when its caller does not choose a folder. */
+function defaultOutputDirectory(jobId: string) {
+  return path.join(app.getPath('userData'), 'automation', 'outputs', jobId);
 }
 function assertNoDraft(file: string) {
   const directory = path.join(app.getPath('userData'), 'proofread-drafts');
@@ -146,6 +156,25 @@ export class AutomationService {
   readonly jobs = new JobStore();
   private modelOperation = false;
   private editing = new Set<string>();
+  /**
+   * Called once tasks were deleted: removes the receipts of their jobs and the outputs
+   * those jobs wrote to the app's own folder. Outputs in a folder the caller chose are
+   * never touched, and neither is anything that has not finished.
+   */
+  reclaimWorkItems(scope: AutomationReclaimScope): Promise<ReclaimReport> {
+    return reclaimAutomationJobs({
+      ids: scope.ids,
+      jobs: this.jobs.list(),
+      isBusy: (id) => {
+        const job = this.jobs.get(id);
+        return !job || this.jobs.isActive(id) || !terminal.has(job.status);
+      },
+      outputDirectory: defaultOutputDirectory,
+      receiptPath: (id) => this.jobs.receiptPath(id),
+      discard: (id) => this.jobs.discard(id),
+      protector: scope.protector,
+    });
+  }
   private refreshReview(job: AutomationJob) {
     if (job.status !== 'review' || !job.projectId || this.jobs.isActive(job.id))
       return;
@@ -334,9 +363,7 @@ export class AutomationService {
           'TARGET_LANGUAGE_REQUIRED: Translation requires an explicit targetLanguage other than auto. Read system.languages for supported codes.',
         );
     }
-    const outputDir =
-      a.outputDir ||
-      path.join(app.getPath('userData'), 'automation', 'outputs', ctx.jobId!);
+    const outputDir = a.outputDir || defaultOutputDirectory(ctx.jobId!);
     if (!path.isAbsolute(outputDir)) throw new Error('ABSOLUTE_PATH_REQUIRED');
     // A per-task child prevents overwriting desktop outputs and same-name batch inputs.
     const files = a.files.map((file: string, index: number) => {
@@ -572,10 +599,19 @@ export class AutomationService {
       if (job) {
         if (this.jobs.isActive(a.id) || job.status === 'review')
           throw new Error('TASK_BUSY');
+        // The task's deletion reclaims the receipts and outputs of all of its jobs. A job
+        // without a task of its own (speech synthesis, say) asks for that directly.
         if (job.projectId && getWorkItemById(job.projectId))
           deleteWorkItem(job.projectId);
+        else
+          startTaskDataReclaim({
+            items: [],
+            proofreadFiles: [],
+            jobIds: [job.id],
+          });
         await settleTaskDataReclaim();
-        return this.jobs.delete(a.id);
+        // The receipt is usually gone by now; without a reclaimer it is still here.
+        return this.jobs.get(a.id) ? this.jobs.delete(a.id) : { deleted: true };
       }
       deleteWorkItem(a.id);
       await settleTaskDataReclaim();
@@ -798,13 +834,7 @@ export class AutomationService {
         throw new Error('SELECT_EXACTLY_ONE_TTS_MODEL_OR_PROVIDER');
       const output =
         a.outputPath ||
-        path.join(
-          app.getPath('userData'),
-          'automation',
-          'outputs',
-          ctx.jobId!,
-          'speech.wav',
-        );
+        path.join(defaultOutputDirectory(ctx.jobId!), 'speech.wav');
       assertOutput(output);
       ctx.setCancel(() => {});
       const result = await previewVoice(
