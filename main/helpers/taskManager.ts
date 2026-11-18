@@ -3,7 +3,10 @@ import { latestTaskActivity } from '../../types/taskActivity';
 import { IFiles, TaskProject, TaskProjectType } from '../../types';
 import { isPipelineWorkItem, type WorkItem } from '../../types/workItem';
 import { getTaskContext } from './taskContext';
-import { assertLegacyTaskWriteAllowed, requireTaskRunService as getRunService } from './taskRuns/access';
+import {
+  assertLegacyTaskWriteAllowed,
+  requireTaskRunService as getRunService,
+} from './taskRuns/access';
 import {
   deleteWorkItem,
   getWorkItemById,
@@ -110,10 +113,18 @@ export function applyTaskEventToProjects(
 
 /** @deprecated 请使用 getWorkItems；保留兼容 shim */
 export function setupTaskManager() {
-  ipcMain.handle('taskRuns:get', (_event, { projectId, runId }) => getRunService().get(projectId, runId));
-  ipcMain.handle('taskRuns:list', (_event, projectId: string) => getRunService().list(projectId));
-  ipcMain.handle('taskRuns:getDraft', (_event, projectId: string) => getRunService().getDraft(projectId));
-  ipcMain.handle('taskRuns:saveDraft', (_event, input) => getRunService().saveDraft(input));
+  ipcMain.handle('taskRuns:get', (_event, { projectId, runId }) =>
+    getRunService().get(projectId, runId),
+  );
+  ipcMain.handle('taskRuns:list', (_event, projectId: string) =>
+    getRunService().list(projectId),
+  );
+  ipcMain.handle('taskRuns:getDraft', (_event, projectId: string) =>
+    getRunService().getDraft(projectId),
+  );
+  ipcMain.handle('taskRuns:saveDraft', (_event, input) =>
+    getRunService().saveDraft(input),
+  );
   ipcMain.handle('getTaskProjects', () => listTaskProjects());
 
   ipcMain.handle('getTaskProject', (_event, id: string) => {
