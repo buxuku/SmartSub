@@ -24,7 +24,10 @@ import {
 import { logMessage } from './storeManager';
 import type { WorkItem } from '../../types/workItem';
 import { isTaskProjectBusy } from './taskProcessor';
-import { assertLegacyTaskWriteAllowed, retireTaskRuns } from './taskRuns/access';
+import {
+  assertLegacyTaskWriteAllowed,
+  retireTaskRuns,
+} from './taskRuns/access';
 
 export function setupWorkItemHandlers(): void {
   setWorkItemDeletionHandler((items: WorkItem[]) => {
@@ -54,10 +57,17 @@ export function setupWorkItemHandlers(): void {
     const proofreadFiles = planManagedDeletion(items, remaining);
     const staged = stageSessionDeletion(ids);
     let runDeletion: ReturnType<typeof retireTaskRuns>;
-    try { runDeletion = retireTaskRuns(items.map(item => item.id)); }
-    catch (error) { staged.rollback(); throw error; }
+    try {
+      runDeletion = retireTaskRuns(items.map((item) => item.id));
+    } catch (error) {
+      staged.rollback();
+      throw error;
+    }
     return {
-      rollback: () => { runDeletion?.rollback(); staged.rollback(); },
+      rollback: () => {
+        runDeletion?.rollback();
+        staged.rollback();
+      },
       commit: () => {
         // Retain referenced history on disk, but never reconstruct a deleted project at startup.
         runDeletion?.commit();
