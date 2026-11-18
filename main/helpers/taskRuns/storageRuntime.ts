@@ -13,14 +13,21 @@ import {
   liveWorkspaces,
   reclaimRetiredProjects,
   retiredDirectories,
+  type ReclaimReport,
 } from './cleanup';
-import { reclaimDeletedDrafts, type KeyedEntryStore } from './deletionReclaim';
+import {
+  intermediateSubtitles,
+  reclaimDeletedDrafts,
+  reclaimIntermediateSubtitles,
+  type KeyedEntryStore,
+} from './deletionReclaim';
 import { readJson, referencedPaths, walkFiles } from './storageIO';
 import { withTaskStorageMaintenance } from './maintenance';
 import { hasTaskResultWrites } from './access';
 import { logMessage } from '../logger';
 import { createProofreadDraftStore } from '../proofreadDraftStore';
 import { createQualityReviewStore } from '../qualityReviewStore';
+import { resolveTempDir } from '../storagePaths';
 import {
   setTaskDataReclaimer,
   type TaskDataReclaimRequest,
@@ -153,6 +160,47 @@ function draftStores(): KeyedEntryStore[] {
   ];
 }
 
+/** Where older flows cached intermediate subtitles: the temp directory in use and the default one. */
+function sharedTempDirectories(): string[] {
+  const settings = store.get('settings');
+  const systemTempDir = app.getPath('temp');
+  return [
+    ...new Set([
+      resolveTempDir({
+        useCustomTempDir: settings?.useCustomTempDir,
+        customTempDir: settings?.customTempDir,
+        storageRoot: settings?.storageRoot,
+        systemTempDir,
+      }).path,
+      resolveTempDir({ systemTempDir }).path,
+    ]),
+  ];
+}
+
+function once<T>(load: () => Promise<T>): () => Promise<T> {
+  let value: Promise<T> | undefined;
+  return () => (value ??= load());
+}
+
+/** One log line per outcome; the labels name what was reclaimed and what was kept. */
+function logReclaim(report: ReclaimReport, reclaimed: string, kept: string) {
+  if (report.files)
+    logMessage(
+      `Task cleanup: reclaimed ${report.files} ${reclaimed} (${(report.bytes / 1048576).toFixed(1)} MB)`,
+      'info',
+    );
+  if (report.retained.length)
+    logMessage(
+      `Task cleanup: kept ${report.retained.length} ${kept} still referenced by other records`,
+      'info',
+    );
+  if (report.errors.length)
+    logMessage(
+      `Task cleanup incomplete, the rest is collected later: ${report.errors.join('; ')}`,
+      'warning',
+    );
+}
+
 // The global collector and the per-deletion reclaim both remove retired data, so they
 // run one at a time. The reclaim itself never takes the maintenance lock: it must work
 // while other tasks are running.
@@ -208,55 +256,58 @@ export function reclaimDeletedWorkItems(
     const ids = [...new Set(request.items.map((item) => item.id))];
     try {
       const runs = getRunStore();
-      // The records are read at most once, whichever step needs them first.
-      let records: Promise<unknown[]> | undefined;
-      const recordReferences = () =>
-        (records ??= collectStorageReferences('records'));
-      // Saved drafts and quality reviews of these tasks go first: their identities name
-      // files inside the task storage and would keep all of it pinned.
-      const drafts = await reclaimDeletedDrafts(
+      // Each kind of reference is read at most once, whichever step needs it first.
+      const records = once(() => collectStorageReferences('records'));
+      const drafts = once(() => collectStorageReferences('drafts'));
+      const claims = async (withDrafts: boolean) =>
+        createProtector(
+          await expandReferences([
+            runs.all(),
+            ...(await records()),
+            ...(withDrafts ? await drafts() : []),
+          ]),
+        );
+
+      // 1. Saved drafts and quality reviews: their identities name files inside the task
+      // storage and would keep all of it pinned.
+      const draftReport = await reclaimDeletedDrafts(
         draftStores(),
         {
           sidecars: request.proofreadFiles,
           directories: retiredDirectories(runs, ids),
         },
-        async () =>
-          createProtector(
-            await expandReferences([runs.all(), ...(await recordReferences())]),
-          ),
+        () => claims(false),
       );
-      if (drafts.removed)
+      if (draftReport.removed)
         logMessage(
-          `Task cleanup: removed ${drafts.removed} saved proofread draft(s) and review(s) of deleted tasks`,
+          `Task cleanup: removed ${draftReport.removed} saved proofread draft(s) and review(s) of deleted tasks`,
           'info',
         );
-      if (drafts.errors.length)
+      if (draftReport.errors.length)
         logMessage(
-          `Task cleanup could not remove some saved drafts: ${drafts.errors.join('; ')}`,
+          `Task cleanup could not remove some saved drafts: ${draftReport.errors.join('; ')}`,
           'warning',
         );
-      const retired = await reclaimRetiredProjects(runs, {
-        projectIds: ids,
-        references: async () => [
-          ...(await recordReferences()),
-          ...(await collectStorageReferences('drafts')),
-        ],
-      });
-      if (retired.files)
-        logMessage(
-          `Task cleanup: reclaimed ${retired.files} files (${(retired.bytes / 1048576).toFixed(1)} MB) of deleted task data`,
-          'info',
-        );
-      if (retired.retained.length)
-        logMessage(
-          `Task cleanup: kept ${retired.retained.length} location(s) still referenced by other records`,
-          'info',
-        );
-      if (retired.errors.length)
-        logMessage(
-          `Task cleanup incomplete, the rest is collected later: ${retired.errors.join('; ')}`,
-          'warning',
-        );
+
+      // 2. Run storage and stage workspaces of the deleted tasks.
+      logReclaim(
+        await reclaimRetiredProjects(runs, {
+          projectIds: ids,
+          references: async () => [...(await records()), ...(await drafts())],
+        }),
+        'files of deleted task data',
+        'location(s)',
+      );
+
+      // 3. Subtitles that older flows cached among the shared temp files.
+      logReclaim(
+        await reclaimIntermediateSubtitles(
+          intermediateSubtitles(request.items, sharedTempDirectories()),
+          () => claims(true),
+        ),
+        'intermediate subtitle file(s)',
+        'intermediate subtitle file(s)',
+      );
     } catch (error) {
       logMessage(`Task cleanup failed: ${String(error)}`, 'warning');
     }
