@@ -25,7 +25,7 @@ export function createProtector(references: Set<string>) {
 }
 
 /** Rejects junctions before the recursive removal, then tallies what was reclaimed. */
-async function removeTree(target: string, report: CleanupReport) {
+export async function removeTree(target: string, report: CleanupReport) {
   const files = await walkFiles(target);
   const bytes = (
     await Promise.all(files.map((file) => fs.promises.stat(file)))

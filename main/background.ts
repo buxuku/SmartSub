@@ -30,6 +30,7 @@ import { setupTaskProcessor } from './helpers/taskProcessor';
 import { setupSystemInfoManager } from './helpers/systemInfoManager';
 import { setupStoreHandlers, store, logMessage } from './helpers/storeManager';
 import { setupTaskManager } from './helpers/taskManager';
+import { setAutomationReclaimer } from './helpers/taskDataReclaim';
 import {
   initializeTaskRuns,
   flushTaskRunProgress,
@@ -356,6 +357,8 @@ app.on('before-quit', (event) => {
   registerEngineIpcHandlers();
   setMainWindowForEngine(mainWindow);
   const automationService = new AutomationService();
+  // Deleting a task also removes the receipts and outputs automation kept for it.
+  setAutomationReclaimer((scope) => automationService.reclaimWorkItems(scope));
   setupAssistantHandlers(automationService);
   setupMcpConfigHandlers();
   await startAutomationServer(automationService);

@@ -94,9 +94,13 @@ export class JobStore {
       }
     }
   }
+  /** The file a job's receipt is kept in. */
+  receiptPath(id: string) {
+    return path.join(this.directory, `${id}.json`);
+  }
   save(job: AutomationJob) {
     job.updatedAt = Date.now();
-    const target = path.join(this.directory, `${job.id}.json`);
+    const target = this.receiptPath(job.id);
     const temp = `${target}.${randomUUID()}.tmp`;
     const fd = fs.openSync(temp, 'wx', 0o600);
     try {
@@ -134,9 +138,17 @@ export class JobStore {
     if (!job) throw new Error('TASK_NOT_FOUND');
     if (this.active.has(id) || job.status === 'review')
       throw new Error('TASK_BUSY');
-    fs.unlinkSync(path.join(this.directory, `${id}.json`));
-    this.jobs.delete(id);
+    this.discard(id);
     return { deleted: true };
+  }
+  /**
+   * Forgets a job and removes its receipt. A job or receipt that is already gone is
+   * fine, which is what deleting the task it belongs to may have left behind.
+   */
+  discard(id: string) {
+    if (this.active.has(id)) throw new Error('TASK_BUSY');
+    fs.rmSync(this.receiptPath(id), { force: true });
+    this.jobs.delete(id);
   }
   submit(
     operation: string,

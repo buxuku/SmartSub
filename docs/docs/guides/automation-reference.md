@@ -294,7 +294,7 @@ Retry interrupted or failed pipeline files using the saved execution settings.
 
 ## tasks.delete
 
-Delete a completed task record; does not delete input media.
+Delete a completed task record and the outputs kept for it in the default outputs folder. Input media and outputs written to a folder you chose are never deleted.
 
 - CLI：`smartsub tasks delete`
 - MCP：`smartsub_tasks_delete`
