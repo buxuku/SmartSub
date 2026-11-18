@@ -155,7 +155,9 @@ export function createTaskRunStore(
       };
       try {
         for (const projectId of projectIds) {
-          if (!list(projectId).length) continue;
+          // Reading the runs proves every pinned location is reachable. Projects without
+          // runs still get marked: a lone draft.json must be reclaimed with its task too.
+          list(projectId);
           for (const directory of projectDirectories(projectId)) {
             if (!operations.existsSync(directory)) continue;
             const target = path.join(directory, 'retired.json');
@@ -179,6 +181,12 @@ export function createTaskRunStore(
     },
     writeDraft(projectId: string, draft: TaskDraft) {
       assertTaskStorageWritable();
+      // Saving a draft under a previously deleted id starts a live project again, so the
+      // retirement marker must not let reclamation remove what is written next.
+      for (const directory of projectDirectories(projectId))
+        operations.rmSync(path.join(directory, 'retired.json'), {
+          force: true,
+        });
       writeJson(path.join(projectPath(projectId), 'draft.json'), draft);
     },
     all(

@@ -860,6 +860,138 @@ async function testStuckSidecarDoesNotBlockDeletion(tmp) {
   }
 }
 
+const reclaimRegistry = require('../main/helpers/taskDataReclaim.ts');
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function testDeletionWaitsForTheTaskDataReclaim(tmp) {
+  const root = path.join(tmp, 'reclaim', 'proofread-data');
+  const own = sidecarAt(root, 'own.json');
+  const requests = [];
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  reclaimRegistry.setTaskDataReclaimer(async (request) => {
+    requests.push({
+      ids: request.items.map((item) => item.id),
+      proofreadFiles: request.proofreadFiles,
+    });
+    await gate;
+  });
+  storage.setProofreadDataRoot(root);
+  try {
+    startStore([
+      workItem('t1', { pipelineFiles: [pipelineFile(own)] }),
+      workItem('t2'),
+    ]);
+    let replied = false;
+    const reply = ipcHandlers
+      .get('deleteWorkItem')(null, 't1')
+      .then((value) => {
+        replied = true;
+        return value;
+      });
+    await sleep(20);
+    same(
+      requests,
+      [{ ids: ['t1'], proofreadFiles: [own] }],
+      'the reclaimer learns which tasks went and which sidecars were removed',
+    );
+    ok(!workItems.getWorkItemById('t1'), 'the task record is already gone');
+    ok(!replied, 'the IPC call waits until the cleanup has finished');
+    release();
+    ok((await reply) === true, 'and then reports the deletion');
+    ok(replied, 'only after the cleanup finished');
+  } finally {
+    reclaimRegistry.setTaskDataReclaimer(undefined);
+    storage.setProofreadDataRoot(undefined);
+  }
+}
+
+async function testClearingAllTasksWaitsForTheReclaim() {
+  const requests = [];
+  let finished = false;
+  reclaimRegistry.setTaskDataReclaimer(async (request) => {
+    requests.push(request.items.map((item) => item.id).sort());
+    await sleep(30);
+    finished = true;
+  });
+  try {
+    startStore([workItem('a'), workItem('b')]);
+    ok(
+      (await ipcHandlers.get('clearAllWorkItems')(null)) === true,
+      'clearing everything succeeds',
+    );
+    ok(finished, 'and only replies once the cleanup finished');
+    same(requests, [['a', 'b']], 'one cleanup covers every deleted task');
+  } finally {
+    reclaimRegistry.setTaskDataReclaimer(undefined);
+  }
+}
+
+async function testReclaimFailureNeverFailsTheDeletion() {
+  const warn = console.warn;
+  const warnings = [];
+  console.warn = (...args) => warnings.push(args.map(String).join(' '));
+  reclaimRegistry.setTaskDataReclaimer(async () => {
+    throw new Error('EBUSY: antivirus holds a file');
+  });
+  try {
+    startStore([workItem('t')]);
+    ok(
+      (await ipcHandlers.get('deleteWorkItem')(null, 't')) === true,
+      'a cleanup failure does not fail the deletion',
+    );
+    ok(!workItems.getWorkItemById('t'), 'the task stays deleted');
+    ok(
+      warnings.some((line) => /EBUSY/.test(line)),
+      'the failure is reported in the log',
+    );
+  } finally {
+    console.warn = warn;
+    reclaimRegistry.setTaskDataReclaimer(undefined);
+  }
+}
+
+async function testRolledBackDeletionReclaimsNothing() {
+  const requests = [];
+  reclaimRegistry.setTaskDataReclaimer(async (request) => {
+    requests.push(request);
+  });
+  try {
+    startStore([workItem('t')]);
+    memoryStore.failWrites = true;
+    const failed = await attempt(() =>
+      ipcHandlers.get('deleteWorkItem')(null, 't'),
+    );
+    ok(failed.error, 'the deletion fails when the task list cannot be saved');
+    await reclaimRegistry.settleTaskDataReclaim();
+    same(requests, [], 'nothing is reclaimed for a task that is still listed');
+    ok(workItems.getWorkItemById('t'), 'and the task is still listed');
+  } finally {
+    memoryStore.failWrites = false;
+    reclaimRegistry.setTaskDataReclaimer(undefined);
+  }
+}
+
+async function testBackgroundDeletionStillSettles() {
+  let finished = false;
+  reclaimRegistry.setTaskDataReclaimer(async () => {
+    await sleep(30);
+    finished = true;
+  });
+  try {
+    startStore([workItem('t')]);
+    // Synchronous callers (automation, proofread store) never wait on their own.
+    ok(workItems.deleteWorkItem('t'), 'a synchronous deletion succeeds');
+    ok(!finished, 'without waiting for the cleanup');
+    await reclaimRegistry.settleTaskDataReclaim();
+    ok(finished, 'while settle still waits for the cleanup it started');
+  } finally {
+    reclaimRegistry.setTaskDataReclaimer(undefined);
+  }
+}
+
 async function run() {
   const tmp = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), 'smartsub-proofread-storage-'),
@@ -893,6 +1025,21 @@ async function run() {
     await section('clearing all', () => testClearingAllTasks(tmp));
     await section('stuck sidecar', () =>
       testStuckSidecarDoesNotBlockDeletion(tmp),
+    );
+    await section('deletion waits for task data cleanup', () =>
+      testDeletionWaitsForTheTaskDataReclaim(tmp),
+    );
+    await section('clearing all waits for cleanup', () =>
+      testClearingAllTasksWaitsForTheReclaim(),
+    );
+    await section('cleanup failure', () =>
+      testReclaimFailureNeverFailsTheDeletion(),
+    );
+    await section('rolled back deletion', () =>
+      testRolledBackDeletionReclaimsNothing(),
+    );
+    await section('background deletion', () =>
+      testBackgroundDeletionStillSettles(),
     );
   } finally {
     storage.setProofreadDataRoot(undefined);

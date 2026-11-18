@@ -6,10 +6,19 @@ import { store } from '../store';
 import { getWorkItems } from '../workItemStore';
 import { getRunStore } from './runtime';
 import { createTaskRunMigration } from './migration';
-import { collectTaskRunGarbage, liveWorkspaces } from './cleanup';
+import {
+  collectTaskRunGarbage,
+  liveWorkspaces,
+  reclaimRetiredProjects,
+} from './cleanup';
 import { readJson, referencedPaths, walkFiles } from './storageIO';
 import { withTaskStorageMaintenance } from './maintenance';
 import { hasTaskResultWrites } from './access';
+import { logMessage } from '../logger';
+import {
+  setTaskDataReclaimer,
+  type TaskDataReclaimRequest,
+} from '../taskDataReclaim';
 import type {
   TaskStorageStatus,
   TaskStorageMigrationPreview,
@@ -89,44 +98,66 @@ export async function recoverTaskStorageMigration() {
   }
 }
 
+/** Everything that can still point into task storage: records, drafts, sessions, receipts. */
+async function collectStorageReferences(): Promise<unknown[]> {
+  const references: unknown[] = [getWorkItems()];
+  const migration = taskRunMigration().journal();
+  if (migration?.phase === 'cleanup')
+    references.push(
+      migration.files
+        ?.filter((file) => file.remove)
+        .map((file) => ({ path: file.source })),
+    );
+  // Store config contains legacy task indexes; these also protect old references.
+  for (const file of await metadataFiles()) {
+    if (file.endsWith('.json.key')) {
+      if (readJson(file.slice(0, -4)) === null) continue;
+      const key = await fs.promises.readFile(file, 'utf8');
+      const prefix = 'smartsub_proofread_draft_v1:';
+      if (!key.startsWith(prefix))
+        throw new Error('TASK_DRAFT_IDENTITY_UNKNOWN');
+      references.push(JSON.parse(key.slice(prefix.length)));
+    } else references.push(readJson(file));
+  }
+  return references;
+}
+
+// The global collector and the per-deletion reclaim both remove retired data, so they
+// run one at a time. The reclaim itself never takes the maintenance lock: it must work
+// while other tasks are running.
+let exclusive: Promise<unknown> = Promise.resolve();
+function runExclusive<T>(work: () => Promise<T>): Promise<T> {
+  const result = exclusive.then(work);
+  exclusive = result.catch(() => undefined);
+  return result;
+}
+
 let cleanup: Promise<any> | undefined;
 export function cleanTaskStorage() {
   if (cleanup) return cleanup;
-  cleanup = withTaskStorageMaintenance(async () => {
-    const manifests = getRunStore();
-    if (
-      liveWorkspaces.size ||
-      hasTaskResultWrites() ||
-      manifests
-        .all()
-        .some((run) =>
-          ['preparing', 'queued', 'running', 'pausing', 'cancelling'].includes(
-            run.status,
-          ),
-        )
-    )
-      return { files: 0, bytes: 0, errors: ['TASK_STORAGE_BUSY'] };
-    const references: unknown[] = [getWorkItems()];
-    const migration = taskRunMigration().journal();
-    if (migration?.phase === 'cleanup')
-      references.push(
-        migration.files
-          ?.filter((file) => file.remove)
-          .map((file) => ({ path: file.source })),
-      );
-    for (const file of await metadataFiles()) {
-      if (file.endsWith('.json.key')) {
-        if (readJson(file.slice(0, -4)) === null) continue;
-        const key = await fs.promises.readFile(file, 'utf8');
-        const prefix = 'smartsub_proofread_draft_v1:';
-        if (!key.startsWith(prefix))
-          throw new Error('TASK_DRAFT_IDENTITY_UNKNOWN');
-        references.push(JSON.parse(key.slice(prefix.length)));
-      } else references.push(readJson(file));
-    }
-    // Store config contains legacy task indexes; these also protect old references.
-    return collectTaskRunGarbage(manifests, { references });
-  })
+  cleanup = runExclusive(() =>
+    withTaskStorageMaintenance(async () => {
+      const manifests = getRunStore();
+      if (
+        liveWorkspaces.size ||
+        hasTaskResultWrites() ||
+        manifests
+          .all()
+          .some((run) =>
+            [
+              'preparing',
+              'queued',
+              'running',
+              'pausing',
+              'cancelling',
+            ].includes(run.status),
+          )
+      )
+        return { files: 0, bytes: 0, errors: ['TASK_STORAGE_BUSY'] };
+      const references = await collectStorageReferences();
+      return collectTaskRunGarbage(manifests, { references });
+    }),
+  )
     .catch((error) => ({ files: 0, bytes: 0, errors: [String(error)] }))
     .finally(() => {
       cleanup = undefined;
@@ -134,7 +165,44 @@ export function cleanTaskStorage() {
   return cleanup;
 }
 
+/**
+ * Reclaims what freshly deleted work items left behind, while the user waits for the
+ * deletion to finish. Nothing here may fail the deletion: problems are logged, and
+ * leftovers fall back to the startup collector or the manual cache cleanup.
+ */
+export function reclaimDeletedWorkItems(
+  request: TaskDataReclaimRequest,
+): Promise<void> {
+  return runExclusive(async () => {
+    const ids = [...new Set(request.items.map((item) => item.id))];
+    try {
+      const retired = await reclaimRetiredProjects(getRunStore(), {
+        projectIds: ids,
+        references: collectStorageReferences,
+      });
+      if (retired.files)
+        logMessage(
+          `Task cleanup: reclaimed ${retired.files} files (${(retired.bytes / 1048576).toFixed(1)} MB) of deleted task data`,
+          'info',
+        );
+      if (retired.retained.length)
+        logMessage(
+          `Task cleanup: kept ${retired.retained.length} location(s) still referenced by other records`,
+          'info',
+        );
+      if (retired.errors.length)
+        logMessage(
+          `Task cleanup incomplete, the rest is collected later: ${retired.errors.join('; ')}`,
+          'warning',
+        );
+    } catch (error) {
+      logMessage(`Task cleanup failed: ${String(error)}`, 'warning');
+    }
+  });
+}
+
 export function setupTaskStorageHandlers() {
+  setTaskDataReclaimer(reclaimDeletedWorkItems);
   const previews = new Map<string, TaskStorageMigrationPreview>();
   ipcMain.handle('taskStorage:status', async (): Promise<TaskStorageStatus> => {
     const manifests = getRunStore();

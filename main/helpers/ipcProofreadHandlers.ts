@@ -7,6 +7,7 @@ import { app } from 'electron';
 import path from 'path';
 import { createProofreadDraftStore } from './proofreadDraftStore';
 import { createQualityReviewStore } from './qualityReviewStore';
+import { settleTaskDataReclaim } from './taskDataReclaim';
 import {
   detectSubtitlesForVideo,
   matchSubtitlesByRules,
@@ -421,6 +422,7 @@ export function setupProofreadHandlers(): void {
       try {
         logMessage(`Deleting proofread task: ${taskId}`, 'info');
         const deleted = deleteProofreadTask(taskId);
+        await settleTaskDataReclaim();
         return { success: true, data: deleted };
       } catch (error) {
         logMessage(`Error deleting proofread task: ${error}`, 'error');
@@ -434,6 +436,7 @@ export function setupProofreadHandlers(): void {
     try {
       logMessage('Clearing all proofread tasks', 'info');
       clearProofreadTasks();
+      await settleTaskDataReclaim();
       return { success: true };
     } catch (error) {
       logMessage(`Error clearing proofread tasks: ${error}`, 'error');
