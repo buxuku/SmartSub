@@ -15,5 +15,8 @@ export function createQualityReviewStore(directory: string) {
     save(key: string, state: unknown) {
       files.write(key, JSON.stringify(parseQualityReview(state)));
     },
+    /** Same entry identity as the recovery drafts, so deleting a task can find its reviews. */
+    list: () => files.list(),
+    remove: (key: string) => files.remove(key),
   };
 }

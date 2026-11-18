@@ -223,6 +223,104 @@ test('an unreadable draft identity stops the cleanup instead of risking referenc
   );
 });
 
+const { createProofreadDraftStore } = load(
+  '../../main/helpers/proofreadDraftStore',
+);
+const draftKey = (...parts: string[]) =>
+  `smartsub_proofread_draft_v1:${JSON.stringify(parts)}`;
+const entryStores = () =>
+  ['proofread-drafts', 'quality-reviews'].map((name) =>
+    createProofreadDraftStore(path.join(state.userData, name)),
+  );
+/** A saved draft and a quality review for one document, as the editor writes them. */
+const saveEntries = (key: string) =>
+  entryStores().forEach((entries) => entries.write(key, '{"subtitles":[]}'));
+/** Whether the draft and the review of a document still exist. */
+const savedEntries = (key: string) =>
+  entryStores().map((entries) => entries.list().includes(key));
+
+test('saved drafts and reviews of a deleted task go with it instead of pinning its storage', async (t) => {
+  const { base, store, seed, item } = setup(t);
+  const gone = seed('deleted');
+  const subtitle = path.join(gone.directory, 'files', 'f', 'out.srt');
+  fs.writeFileSync(subtitle, '1\n');
+  const userFile = path.join(base, 'movie.srt');
+  fs.writeFileSync(userFile, '1\n');
+  saveEntries(draftKey('', subtitle, ''));
+  saveEntries(draftKey('', userFile, ''));
+  store.prepareRetirement(['deleted']).commit();
+  await runtime.reclaimDeletedWorkItems({
+    items: [item('deleted')],
+    proofreadFiles: [],
+  });
+  assert.equal(
+    fs.existsSync(gone.directory),
+    false,
+    'its own drafts no longer keep its storage alive',
+  );
+  assert.deepEqual(savedEntries(draftKey('', subtitle, '')), [false, false]);
+  assert.deepEqual(
+    savedEntries(draftKey('', userFile, '')),
+    [true, true],
+    "the draft of the user's own file stays",
+  );
+  assert.ok(
+    state.logs.some(
+      (entry) =>
+        entry.type === 'info' &&
+        /removed 2 saved proofread draft/.test(entry.message),
+    ),
+    'the removal is logged',
+  );
+});
+
+test('a draft of a file another task still uses stays, and so does that storage', async (t) => {
+  const { store, seed, item } = setup(t);
+  const gone = seed('deleted');
+  const subtitle = path.join(gone.directory, 'files', 'f', 'out.srt');
+  fs.writeFileSync(subtitle, '1\n');
+  state.workItems = [
+    {
+      id: 'other',
+      type: 'proofread',
+      proofreadEntries: [{ sourceSubtitlePath: subtitle }],
+    },
+  ];
+  saveEntries(draftKey('', subtitle, ''));
+  store.prepareRetirement(['deleted']).commit();
+  await runtime.reclaimDeletedWorkItems({
+    items: [item('deleted')],
+    proofreadFiles: [],
+  });
+  assert.deepEqual(savedEntries(draftKey('', subtitle, '')), [true, true]);
+  assert.ok(fs.existsSync(subtitle), 'the file the other task uses is kept');
+  assert.ok(
+    state.logs.some((entry) => /still referenced/.test(entry.message)),
+    'the kept storage is reported',
+  );
+});
+
+test('the drafts of a sidecar reclaimed with the task go, those of other sidecars stay', async (t) => {
+  const { base, item } = setup(t);
+  const sidecar = path.join(state.userData, 'proofread-data', 'gone.json');
+  const other = path.join(state.userData, 'proofread-data', 'other.json');
+  const userFile = path.join(base, 'movie.srt');
+  state.workItems = [
+    { id: 'other', type: 'proofread', historicalProofreadFiles: [other] },
+  ];
+  saveEntries(draftKey(sidecar, userFile, ''));
+  saveEntries(draftKey(other, userFile, ''));
+  await runtime.reclaimDeletedWorkItems({
+    items: [item('deleted')],
+    proofreadFiles: [sidecar],
+  });
+  assert.deepEqual(savedEntries(draftKey(sidecar, userFile, '')), [
+    false,
+    false,
+  ]);
+  assert.deepEqual(savedEntries(draftKey(other, userFile, '')), [true, true]);
+});
+
 test('the registered reclaimer runs for started requests and settle waits for it', async () => {
   const seen: string[][] = [];
   let finished = false;
