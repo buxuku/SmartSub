@@ -34,6 +34,58 @@ test('complete snapshots and cleared tombstones survive a fresh store with safe 
   expect(() => store.write('../../outside', 'bad')).toThrow('Invalid');
 });
 
+test('list reports the entries that can name their own document', () => {
+  const store = createProofreadDraftStore(directory);
+  expect(store.list()).toEqual([]);
+  const tombstone = 'smartsub_proofread_draft_v1:["a","b",""]';
+  store.write(key, '{"version":1}');
+  store.write(tombstone, null);
+  expect(store.list().sort()).toEqual([key, tombstone].sort());
+  // Data without an identity, and an identity that does not hash to its own file, say
+  // nothing about which document they belong to.
+  fs.writeFileSync(path.join(directory, `${'e'.repeat(64)}.json`), '{}');
+  fs.writeFileSync(path.join(directory, `${'f'.repeat(64)}.json.key`), key);
+  fs.writeFileSync(
+    path.join(directory, `${'d'.repeat(64)}.json.key`),
+    'not-a-draft-key',
+  );
+  expect(store.list().sort()).toEqual([key, tombstone].sort());
+});
+
+test('remove deletes one entry completely and can be repeated', () => {
+  const store = createProofreadDraftStore(directory);
+  const other = 'smartsub_proofread_draft_v1:["other"]';
+  store.write(key, 'draft');
+  store.write(other, 'kept');
+  store.remove(key);
+  store.remove(key);
+  expect(store.read(key)).toBeNull();
+  expect(store.list()).toEqual([other]);
+  expect(store.read(other)).toBe('kept');
+  expect(fs.readdirSync(directory)).toHaveLength(2);
+  expect(() => store.remove('../../outside')).toThrow('Invalid');
+});
+
+test('a failed remove keeps the identity so that a retry finishes the job', () => {
+  const store = createProofreadDraftStore(directory);
+  store.write(key, 'draft');
+  const unlink = fs.unlinkSync;
+  const failure = jest.spyOn(fs, 'unlinkSync').mockImplementation(((
+    target: fs.PathLike,
+  ) => {
+    if (String(target).endsWith('.key'))
+      throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+    return unlink(target);
+  }) as typeof fs.unlinkSync);
+  expect(() => store.remove(key)).toThrow('busy');
+  failure.mockRestore();
+  // The data is already gone, the key is still there to be found again.
+  expect(store.read(key)).toBeNull();
+  expect(store.list()).toEqual([key]);
+  store.remove(key);
+  expect(fs.readdirSync(directory)).toEqual([]);
+});
+
 test.each(['writeFileSync', 'fsyncSync', 'renameSync'] as const)(
   '%s failure leaves the previous complete draft and cleans temporary files',
   (operation) => {

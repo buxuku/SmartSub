@@ -55,5 +55,54 @@ export function createProofreadDraftStore(directory: string) {
         }
       }
     },
+    /**
+     * Keys of the entries that recorded their identity. Entries from before the key
+     * sidecar existed, and sidecars that do not hash to their own file, are skipped:
+     * nobody can tell which document they belong to.
+     */
+    list(): string[] {
+      let names: string[];
+      try {
+        names = fs.readdirSync(directory);
+      } catch (error) {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+      }
+      const keys: string[] = [];
+      for (const name of names) {
+        if (!name.endsWith('.json.key')) continue;
+        let key: string;
+        try {
+          key = fs.readFileSync(path.join(directory, name), 'utf8');
+        } catch (error) {
+          if (error.code === 'ENOENT') continue;
+          throw error;
+        }
+        let expected: string;
+        try {
+          expected = path.basename(fileFor(key));
+        } catch {
+          continue;
+        }
+        if (expected !== name.slice(0, -'.key'.length)) continue;
+        keys.push(key);
+      }
+      return keys;
+    },
+    /**
+     * Deletes the draft and its identity. The data goes first: a crash in between
+     * leaves a key without data (harmless, and list() still finds it to finish the
+     * job) rather than data nobody can attribute and therefore keeps forever.
+     */
+    remove(key: string): void {
+      const file = fileFor(key);
+      for (const target of [file, `${file}.key`]) {
+        try {
+          fs.unlinkSync(target);
+        } catch (error) {
+          if (error.code !== 'ENOENT') throw error;
+        }
+      }
+    },
   };
 }

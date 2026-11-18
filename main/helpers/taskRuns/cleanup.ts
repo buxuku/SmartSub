@@ -17,7 +17,7 @@ export const liveWorkspaces = new Set<string>();
 const media = /\.(wav|mp3|m4a|flac|ogg|opus|aac|mp4|mkv|webm|mov)$/i;
 
 /** A target is protected when it is, or contains, any referenced path. */
-function createProtector(references: Set<string>) {
+export function createProtector(references: Set<string>) {
   return (target: string) =>
     [...references].some(
       (ref) => path.relative(target, ref) === '' || within(target, ref),
@@ -35,7 +35,8 @@ async function removeTree(target: string, report: CleanupReport) {
   report.bytes += bytes;
 }
 
-async function expandReferences(values: unknown[]) {
+/** Every absolute path the records point at, following referenced JSON metadata. */
+export async function expandReferences(values: unknown[]) {
   const references = referencedPaths(values);
   const visited = new Set<string>();
   for (const target of references) {
@@ -214,6 +215,16 @@ async function ownedWorkspaces(store: TaskRunStore, projectIds: Set<string>) {
   return found;
 }
 
+/** Run-storage directories of the given projects that carry the deletion marker. */
+export function retiredDirectories(
+  store: TaskRunStore,
+  projectIds: Iterable<string>,
+): string[] {
+  return [...new Set(projectIds)]
+    .flatMap((id) => store.projectDirectories(id))
+    .filter((directory) => fs.existsSync(path.join(directory, 'retired.json')));
+}
+
 /**
  * Deleting a task reclaims its own retired data right away. Unlike
  * collectTaskRunGarbage this takes no maintenance lock and never inventories other
@@ -237,11 +248,7 @@ export async function reclaimRetiredProjects(
   };
   const ids = new Set(options.projectIds);
   try {
-    const directories = [...ids]
-      .flatMap((id) => store.projectDirectories(id))
-      .filter((directory) =>
-        fs.existsSync(path.join(directory, 'retired.json')),
-      );
+    const directories = retiredDirectories(store, ids);
     const workspaces = await ownedWorkspaces(store, ids);
     if (!directories.length && !workspaces.length) return report;
     const runs = store.all();

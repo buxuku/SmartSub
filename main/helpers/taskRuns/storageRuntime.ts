@@ -8,13 +8,19 @@ import { getRunStore } from './runtime';
 import { createTaskRunMigration } from './migration';
 import {
   collectTaskRunGarbage,
+  createProtector,
+  expandReferences,
   liveWorkspaces,
   reclaimRetiredProjects,
+  retiredDirectories,
 } from './cleanup';
+import { reclaimDeletedDrafts, type KeyedEntryStore } from './deletionReclaim';
 import { readJson, referencedPaths, walkFiles } from './storageIO';
 import { withTaskStorageMaintenance } from './maintenance';
 import { hasTaskResultWrites } from './access';
 import { logMessage } from '../logger';
+import { createProofreadDraftStore } from '../proofreadDraftStore';
+import { createQualityReviewStore } from '../qualityReviewStore';
 import {
   setTaskDataReclaimer,
   type TaskDataReclaimRequest,
@@ -24,21 +30,33 @@ import type {
   TaskStorageMigrationPreview,
 } from '../../../types/taskStorage';
 
-async function metadataFiles() {
-  const files = new Set<string>([store.path]);
+const DRAFT_DIRECTORY = 'proofread-drafts';
+const REVIEW_DIRECTORY = 'quality-reviews';
+
+/**
+ * Saved drafts and quality reviews are listed apart from the other records: deleting a
+ * task removes its own before they get a chance to pin the storage it used.
+ */
+type ReferenceScope = 'all' | 'records' | 'drafts';
+
+async function metadataFiles(scope: ReferenceScope = 'all') {
+  const files = new Set<string>(scope === 'drafts' ? [] : [store.path]);
   for (const name of [
     'proofread-data',
-    'proofread-drafts',
-    'quality-reviews',
+    DRAFT_DIRECTORY,
+    REVIEW_DIRECTORY,
     'dubbing-sessions',
     'automation',
   ]) {
+    const isDraft = name === DRAFT_DIRECTORY || name === REVIEW_DIRECTORY;
+    if (scope !== 'all' && isDraft !== (scope === 'drafts')) continue;
     const directory = path.join(app.getPath('userData'), name);
     if (fs.existsSync(directory))
       for (const file of await walkFiles(directory))
         if (file.endsWith('.json') || file.endsWith('.json.key'))
           files.add(file);
   }
+  if (scope === 'drafts') return [...files];
   // Standalone proofread metadata can live alongside a user's media. Follow only
   // registered JSON references; never scan arbitrary output directories.
   const refs = referencedPaths([store.store, getWorkItems()]);
@@ -99,17 +117,22 @@ export async function recoverTaskStorageMigration() {
 }
 
 /** Everything that can still point into task storage: records, drafts, sessions, receipts. */
-async function collectStorageReferences(): Promise<unknown[]> {
-  const references: unknown[] = [getWorkItems()];
-  const migration = taskRunMigration().journal();
-  if (migration?.phase === 'cleanup')
-    references.push(
-      migration.files
-        ?.filter((file) => file.remove)
-        .map((file) => ({ path: file.source })),
-    );
+async function collectStorageReferences(
+  scope: ReferenceScope = 'all',
+): Promise<unknown[]> {
+  const references: unknown[] = [];
+  if (scope !== 'drafts') {
+    references.push(getWorkItems());
+    const migration = taskRunMigration().journal();
+    if (migration?.phase === 'cleanup')
+      references.push(
+        migration.files
+          ?.filter((file) => file.remove)
+          .map((file) => ({ path: file.source })),
+      );
+  }
   // Store config contains legacy task indexes; these also protect old references.
-  for (const file of await metadataFiles()) {
+  for (const file of await metadataFiles(scope)) {
     if (file.endsWith('.json.key')) {
       if (readJson(file.slice(0, -4)) === null) continue;
       const key = await fs.promises.readFile(file, 'utf8');
@@ -120,6 +143,14 @@ async function collectStorageReferences(): Promise<unknown[]> {
     } else references.push(readJson(file));
   }
   return references;
+}
+
+function draftStores(): KeyedEntryStore[] {
+  const userData = app.getPath('userData');
+  return [
+    createProofreadDraftStore(path.join(userData, DRAFT_DIRECTORY)),
+    createQualityReviewStore(path.join(userData, REVIEW_DIRECTORY)),
+  ];
 }
 
 // The global collector and the per-deletion reclaim both remove retired data, so they
@@ -176,9 +207,40 @@ export function reclaimDeletedWorkItems(
   return runExclusive(async () => {
     const ids = [...new Set(request.items.map((item) => item.id))];
     try {
-      const retired = await reclaimRetiredProjects(getRunStore(), {
+      const runs = getRunStore();
+      // The records are read at most once, whichever step needs them first.
+      let records: Promise<unknown[]> | undefined;
+      const recordReferences = () =>
+        (records ??= collectStorageReferences('records'));
+      // Saved drafts and quality reviews of these tasks go first: their identities name
+      // files inside the task storage and would keep all of it pinned.
+      const drafts = await reclaimDeletedDrafts(
+        draftStores(),
+        {
+          sidecars: request.proofreadFiles,
+          directories: retiredDirectories(runs, ids),
+        },
+        async () =>
+          createProtector(
+            await expandReferences([runs.all(), ...(await recordReferences())]),
+          ),
+      );
+      if (drafts.removed)
+        logMessage(
+          `Task cleanup: removed ${drafts.removed} saved proofread draft(s) and review(s) of deleted tasks`,
+          'info',
+        );
+      if (drafts.errors.length)
+        logMessage(
+          `Task cleanup could not remove some saved drafts: ${drafts.errors.join('; ')}`,
+          'warning',
+        );
+      const retired = await reclaimRetiredProjects(runs, {
         projectIds: ids,
-        references: collectStorageReferences,
+        references: async () => [
+          ...(await recordReferences()),
+          ...(await collectStorageReferences('drafts')),
+        ],
       });
       if (retired.files)
         logMessage(
