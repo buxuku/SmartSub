@@ -158,7 +158,9 @@ export function setupTaskManager() {
         throw new Error('TASK_DRAFT_INVALID');
       if (files.length === 0 && !taskDraft) {
         deleteWorkItem(id);
-        return null;
+        // Every other save answers at once. Emptying a project deletes it, so the reply
+        // waits for its temporary data to be gone, as deleteTaskProject does.
+        return settleTaskDataReclaim().then(() => null);
       }
 
       const now = Date.now();

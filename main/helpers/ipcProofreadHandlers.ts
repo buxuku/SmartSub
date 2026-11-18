@@ -541,6 +541,8 @@ export function setupProofreadHandlers(): void {
       try {
         logMessage(`Removing item ${itemId} from task ${taskId}`, 'info');
         const task = removeItemFromTask(taskId, itemId);
+        // Taking out the last item deletes the task; wait for its data to go as well.
+        if (!task) await settleTaskDataReclaim();
         return { success: true, data: task };
       } catch (error) {
         logMessage(`Error removing item from task: ${error}`, 'error');
