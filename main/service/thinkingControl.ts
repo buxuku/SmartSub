@@ -110,6 +110,14 @@ export function resolveThinkingParams(
   if (id === 'siliconflow' || matchesUrl(provider, 'siliconflow')) {
     return { enable_thinking: false };
   }
+  // Atlas Cloud 是异构网关：上游 qwen / glm / kimi / deepseek 都接受
+  // enable_thinking:false，但透传的 OpenAI 官方型号（openai/gpt-*）会拒绝该
+  // 参数，交给下面的型号嗅探处理（命不中就不下发，同未映射服务商）。
+  const isAtlasCloud =
+    id === 'atlascloud' || matchesUrl(provider, 'api.atlascloud.ai');
+  if (isAtlasCloud && !model.startsWith('openai/')) {
+    return { enable_thinking: false };
+  }
   if (
     matchesUrl(provider, 'volces.com') ||
     matchesUrl(provider, 'volcengine')
