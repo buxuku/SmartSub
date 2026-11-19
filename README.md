@@ -41,6 +41,20 @@ CrazyToken 提供 Claude、GPT、Gemini、Kimi、GLM、DeepSeek、Qwen、Grok �
 - ⚡ **稳定高速，高并发不限流**：为批量字幕翻译与多任务处理提供稳定的 API 服务，减少调用等待。
 - 🎁 **新用户注册赠送 $20**：通过[专属链接](https://www.aiyoyoo.com/register?aff=YWL9FL2XFPKM)注册即送 **$20 体验额度**，充值额外加赠；提供 **1 对 1 远程配置服务**，真人协助完成模型 API 配置。
 
+<a href="https://www.infistar.cc/register?aff=6HUEDNAX&amp;ref_source=link" target="_blank" rel="noopener noreferrer"><img src="./resources/sponsors/infistar-zh.jpg" alt="SmartSub × Infistar.cc 无限星河｜Claude、GPT、Gemini、Grok、DeepSeek 等模型，一个 Key，官方价的零头" /></a>
+
+❤️ 感谢 [**Infistar.cc 无限星河**](https://www.infistar.cc/register?aff=6HUEDNAX&ref_source=link) 对 SmartSub 的赞助支持！
+
+#### Infistar.cc 无限星河 | Claude、GPT、Gemini、Grok、DeepSeek 等模型，一个 Key，官方价的零头
+
+- 💥 **低至官方 0.1 折，省 99%**：同样的模型，只花官方价的零头
+- ✅ **官方渠道，100% 官方纯血模型**：每个模型都能验真
+- ⚡ **上千线路安全冗余自动切换**
+- 🧩 **200+ 个模型、16 个品牌**：文本、图片、视频一个 Key 全搞定
+- 🏆 **100+ 顶级开源项目都在推荐**，最高 10 万+ star
+- 🎯 **在妙幕里做多语字幕翻译和精修**，一个 Key 就能切换模型
+- 🎁 **妙幕用户专属**：[通过专属链接注册，直接送 ¥5](https://www.infistar.cc/register?aff=6HUEDNAX&ref_source=link)
+
 ## 妙幕是什么
 
 妙幕（SmartSub）是一款开源的音视频字幕与配音工具，把「语音转文字 → 字幕翻译 → 校对润色 → TTS 配音 → 烧录合成」整条流水线装进一个桌面应用，还内置在线视频下载，粘贴 B 站 / YouTube 等平台链接即可直接取材。转写基于 whisper.cpp、sherpa-onnx 等本地模型完成，文件不出本机；支持批量处理，支持 NVIDIA / AMD / Intel / Apple Silicon 硬件加速，可在 Windows、macOS、Linux 上运行。
