@@ -16,7 +16,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square&logo=electron&logoColor=white)](https://github.com/buxuku/SmartSub/releases)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/buxuku/SmartSub/blob/master/LICENSE)
 
-[中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md)
+[中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md) | [Türkçe](README_TR.md)
 
 [下载安装](#下载安装) · [功能特性](#功能特性) · [AI 助手与自动化](#-ai-创作助手智能副驾) · [免费方案](#全流程免费方案) · [常见问题](#常见问题) · [更新日志](https://github.com/buxuku/SmartSub/releases)
 
