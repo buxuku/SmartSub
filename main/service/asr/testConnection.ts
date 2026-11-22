@@ -8,6 +8,7 @@ import {
   ASR_VOLCENGINE,
   ASR_XFYUN,
   ASR_XIAOMI_MIMO,
+  DEFAULT_ELEVENLABS_ASR_MODEL,
   parseAsrModels,
   type AsrProvider,
 } from '../../../types/asrProvider';
@@ -189,7 +190,10 @@ export async function testAsrConnection(
     if (provider?.type === ASR_ELEVENLABS) {
       const base = normalizeElevenLabsBaseURL(provider.apiUrl);
       const form = new FormData();
-      form.append('model_id', parseAsrModels(provider)[0] || 'scribe_v2');
+      form.append(
+        'model_id',
+        parseAsrModels(provider)[0] || DEFAULT_ELEVENLABS_ASR_MODEL,
+      );
       const res = await fetch(`${base}/speech-to-text`, {
         method: 'POST',
         headers: { 'xi-api-key': apiKey },

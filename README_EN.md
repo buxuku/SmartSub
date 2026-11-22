@@ -234,7 +234,7 @@ FunASR / Qwen3-ASR / FireRedASR / Parakeet all run on the bundled sherpa-onnx na
 Cloud ASR lives in the "Cloud ASR" group of the Engines & Models sidebar. Each provider has its own entry — select it, fill in the credentials, and use "Test connection" to verify. Transcription uploads audio to the endpoint you configure; a privacy confirmation appears on first run. Avoid sensitive content and mind each provider's usage costs.
 
 - **OpenAI-compatible**: the `audio/transcriptions` protocol (`whisper-1`, `gpt-4o-transcribe`, and the like). OpenAI / Groq / SiliconFlow presets sit right in the sidebar; any other compatible endpoint (self-hosted, proxies) connects via "Add custom", as many as you need
-- **ElevenLabs Scribe**: the `scribe_v1` model
+- **ElevenLabs Scribe** transcribes files with `scribe_v3` or `scribe_v2` and uses word-level timestamps to generate subtitles.
 - **Deepgram**: `nova-2` / `nova-3` models
 - **Volcengine Doubao**: flash file recognition (bigmodel). Uses an API key issued under "API Key management" in the Doubao Speech console (activate the model first; Volcano Ark API keys are not interchangeable); billed by duration
 - **Tencent Cloud**: flash file recognition. Uses the AppID / SecretId / SecretKey from the ASR console (activate first; 5 free hours per month). The recognition language follows the task's source language; the model picker only chooses the tier — standard, or large (better accuracy, higher price, free-tier concurrency capped at 5)

@@ -69,6 +69,8 @@ export const ASR_XFYUN = 'xfyun';
 export const ASR_GLADIA = 'gladia';
 export const ASR_XIAOMI_MIMO = 'xiaomiMimo';
 
+export const DEFAULT_ELEVENLABS_ASR_MODEL = 'scribe_v3';
+
 /**
  * 火山豆包极速版：官方音频上限 2h/100MB，但 base64 进 JSON 体膨胀 ×4/3 且整体驻留内存，
  * 保守取 16MB（base64 后 ≈21.3MB）。切片是未压缩 WAV 直传（16kHz 单声道 ≈1.92MB/min），
@@ -219,13 +221,12 @@ export const ASR_PROVIDER_TYPES: AsrProviderType[] = [
         placeholder: 'phElevenApiKey',
       },
       {
-        // 枚举型模型清单（勾选，不做自由文本）：scribe_v1 已废弃（官方 2026-07 移除），默认 v2。
         key: 'models',
         label: 'asrModels',
         type: 'select',
-        options: ['scribe_v2', 'scribe_v1'],
+        options: [DEFAULT_ELEVENLABS_ASR_MODEL, 'scribe_v2', 'scribe_v1'],
         required: true,
-        defaultValue: 'scribe_v2',
+        defaultValue: DEFAULT_ELEVENLABS_ASR_MODEL,
         tips: 'asrModelsElevenTips',
       },
       {

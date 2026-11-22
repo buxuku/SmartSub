@@ -410,7 +410,7 @@
   "asrRequestIntervalTips": "为遵守限流，两次请求之间的最小间隔秒数（0 = 不限制）。",
   "asrElevenApiKeyTips": "ElevenLabs API Key，可在 <a href='https://elevenlabs.io/app/settings/api-keys' style='color: blue'>ElevenLabs 控制台 ▸ API Keys</a> 注册并创建。仅保存在本地。",
   "asrApiUrlElevenTips": "ElevenLabs 端点的 Base URL，通常留空即用官方地址 https://api.elevenlabs.io/v1（走代理时再填写）。",
-  "asrModelsElevenTips": "点选启用的模型，默认使用第一个已选项。scribe_v1 已废弃（官方 2026-07 移除），建议使用 scribe_v2。",
+  "asrModelsElevenTips": "新配置默认启用 scribe_v3。可在听写任务中选择已启用的模型。scribe_v1 已弃用。",
   "phElevenApiKey": "你的 ElevenLabs API Key",
   "asrDeepgramApiKeyTips": "Deepgram API Key，可在 <a href='https://console.deepgram.com/' style='color: blue'>Deepgram 控制台</a> 注册并创建，新用户有免费额度。仅保存在本地。",
   "asrApiUrlDeepgramTips": "Deepgram 端点的 Base URL，通常留空即用官方地址 https://api.deepgram.com/v1（走代理时再填写）。",

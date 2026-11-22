@@ -28,7 +28,7 @@ keywords:
 | [OpenAI 兼容](./openai-compatible)           | 视端点而定         | 多语种          | 协议通用：OpenAI / Groq / 硅基流动或自建端点，可加多个实例 |
 | [Groq（OpenAI 兼容预设）](./groq)            | 有免费档           | 多语种          | whisper-large-v3 推理极快，免费档慷慨                      |
 | [硅基流动（OpenAI 兼容预设）](./siliconflow) | 有免费模型         | 中文强          | SenseVoice 系模型，国内直连                                |
-| [ElevenLabs Scribe](./elevenlabs)            | 有免费档           | 90+             | scribe_v2 模型，词级时间戳                                 |
+| [ElevenLabs Scribe](./elevenlabs)            | 有免费档           | 90+             | Scribe v3 / v2 文件转写，词级时间戳                        |
 | [Deepgram](./deepgram)                       | 新用户赠额度       | 30+             | nova-2 / nova-3，速度快                                    |
 | [火山引擎豆包](./volcengine)                 | 无                 | 中文强          | 录音文件识别·极速版，按时长计费                            |
 | [腾讯云](./tencent)                          | **每月赠 5 小时**  | 中英粤 + 多语种 | 录音识别极速版，标准 / 大模型双档位                        |
