@@ -1,8 +1,8 @@
 ---
 sidebar_position: 5
 title: ElevenLabs Scribe
-description: 妙幕 ElevenLabs Scribe 云端听写配置指南：scribe_v2 模型支持 90+ 语种与词级时间戳，注册有免费额度。
-keywords: [ElevenLabs, Scribe, 语音转文字, 多语种转写, scribe_v2]
+description: 在妙幕中配置 ElevenLabs Scribe v3 或 v2，将音频和视频文件转写为带时间轴的字幕。
+keywords: [ElevenLabs, Scribe, 语音转文字, 多语种转写, scribe_v3, scribe_v2]
 ---
 
 # ElevenLabs Scribe
@@ -16,7 +16,7 @@ keywords: [ElevenLabs, Scribe, 语音转文字, 多语种转写, scribe_v2]
   bestFor="多语种内容；已订阅 ElevenLabs（配音 / 克隆）的用户复用同一账号"
 />
 
-以 TTS 闻名的 ElevenLabs 的转写产品线：Scribe 模型支持 90+ 语种、词级时间戳（妙幕会走内置成句管线，时间轴更精准）。
+Scribe v3 支持 90 多种语言。转写录音或视频时，妙幕使用模型返回的词级时间戳断句，生成带时间轴的字幕。
 
 ## 申请步骤
 
@@ -25,7 +25,7 @@ keywords: [ElevenLabs, Scribe, 语音转文字, 多语种转写, scribe_v2]
 
 ## 在妙幕中配置
 
-「引擎」页面 → 云端听写分组选「ElevenLabs」：
+打开「引擎」页面，在「云端听写」分组选「ElevenLabs」。下图展示旧版界面的入口，新版模型列表中可勾选 `scribe_v3`。
 
 <div className="img-container">
   <img src="/img/v3/cloud-asr/elevenlabs.webp" alt="ElevenLabs Scribe 云端听写配置表单" />
@@ -34,10 +34,10 @@ keywords: [ElevenLabs, Scribe, 语音转文字, 多语种转写, scribe_v2]
 | 字段     | 填写                                               |
 | -------- | -------------------------------------------------- |
 | API Key  | 上一步创建的密钥                                   |
-| 模型     | 默认 `scribe_v2`（`scribe_v1` 已被官方废弃，勿选） |
+| 模型     | 新配置默认勾选 `scribe_v3`，也可选择 `scribe_v2`   |
 | Base url | 默认 `https://api.elevenlabs.io/v1`，一般无需修改  |
 
-点「**测试连接**」验证后即可使用。
+点击「**测试连接**」检查密钥。升级前已配置 ElevenLabs 的用户会保留原有模型选择。要改用 v3，在此处勾选 `scribe_v3`，然后在听写任务中选择该模型。
 
 ## 常见问题
 
@@ -47,4 +47,4 @@ keywords: [ElevenLabs, Scribe, 语音转文字, 多语种转写, scribe_v2]
 
 ---
 
-> 信息更新于 2026-07，模型与定价以 [ElevenLabs 官网](https://elevenlabs.io/pricing) 为准。
+> [ElevenLabs 语音转文字模型说明](https://elevenlabs.io/docs/overview/capabilities/speech-to-text) · [套餐与用量](https://elevenlabs.io/pricing)

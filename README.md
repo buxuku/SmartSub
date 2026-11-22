@@ -250,7 +250,7 @@ FunASR / Qwen3-ASR / FireRedASR / Parakeet 均通过内置的 sherpa-onnx 原生
 云端听写在「引擎与模型」左栏的「云端听写」分组中配置。每个服务商是一个独立入口，选中即见配置表单，填入凭据即可（支持「测试连接」）。转写时音频会上传到你配置的端点，首次运行有隐私确认——请勿用于敏感内容，并留意服务商的用量费用。
 
 - **OpenAI 兼容**：`audio/transcriptions` 协议（`whisper-1`、`gpt-4o-transcribe` 等）。OpenAI / Groq / 硅基流动预设直接列在侧栏，其它兼容端点（自建服务、中转站）经「添加自定义」接入，可添加多个
-- **ElevenLabs Scribe**：`scribe_v1` 模型
+- **ElevenLabs Scribe** 支持 `scribe_v3` 和 `scribe_v2` 文件听写，按词级时间戳生成字幕。
 - **Deepgram**：`nova-2` / `nova-3` 模型
 - **火山引擎豆包**：录音文件识别·极速版（bigmodel）。使用新版「豆包语音」控制台「API Key 管理」签发的 API Key（需先开通对应模型；火山方舟的 API Key 不通用），按转写时长计费
 - **腾讯云**：录音文件识别极速版。使用「语音识别」控制台的 AppID / SecretId / SecretKey（需先开通，每月赠 5 小时免费额度）。识别语言自动跟随任务的「原语言」，模型只选档位——standard 普通版或 large 大模型版（识别更强、计费更高、免费并发仅 5）

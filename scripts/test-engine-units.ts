@@ -3940,18 +3940,37 @@ eq(
 );
 
 // --- asrProvider: 品牌型模型清单为枚举 options（UI 勾选/只读，不做自由文本） ---
-eq(
-  getAsrProviderType(ASR_ELEVENLABS)?.fields.find((f) => f.key === 'models')
-    ?.options,
-  ['scribe_v2', 'scribe_v1'],
-  'asr: elevenlabs models are enumerable options (scribe_v2 first)',
-);
-eq(
-  getAsrProviderType(ASR_ELEVENLABS)?.fields.find((f) => f.key === 'models')
-    ?.defaultValue,
-  'scribe_v2',
-  'asr: elevenlabs default model scribe_v2 (v1 deprecated)',
-);
+{
+  const eleven = getAsrProviderType(ASR_ELEVENLABS)!;
+  eq(
+    eleven.fields.find((f) => f.key === 'models')?.options,
+    ['scribe_v3', 'scribe_v2', 'scribe_v1'],
+    'asr: ElevenLabs offers Scribe v3 alongside the existing file models',
+  );
+  const instance = buildInstanceFromPreset(eleven, undefined, () => 'eleven');
+  eq(
+    parseAsrModels(instance),
+    ['scribe_v3'],
+    'asr: a new ElevenLabs instance enables only Scribe v3 by default',
+  );
+  const saved = { ...instance, apiKey: 'test', models: 'scribe_v1, scribe_v2' };
+  const groups = getEngineModelGroups(undefined, { asrProviders: [saved] });
+  eq(
+    groups[0]?.models,
+    ['scribe_v1', 'scribe_v2'],
+    'asr: the task picker preserves the saved ElevenLabs model list and order',
+  );
+  const last = {
+    engine: 'cloud' as const,
+    model: 'scribe_v2',
+    asrProviderId: saved.id,
+  };
+  eq(
+    pickDefaultEngineModel(groups, last),
+    last,
+    'asr: a saved task selection keeps its explicitly chosen Scribe model',
+  );
+}
 eq(
   getAsrProviderType('deepgram')?.fields.find((f) => f.key === 'models')
     ?.options,
