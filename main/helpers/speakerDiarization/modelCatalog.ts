@@ -15,7 +15,13 @@ export const SPEAKER_DIARIZATION_SEGMENTATION_ARCHIVE =
 export const SPEAKER_DIARIZATION_EMBEDDING_FILE =
   '3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx';
 export const SPEAKER_DIARIZATION_SEGMENTATION_BYTES = 5_992_913;
-export const SPEAKER_DIARIZATION_EMBEDDING_BYTES = 39_593_761;
+// 上游在 2026-11-19 重新上传了 3D-Speaker 模型，文件比原来多 1 字节。
+// 下载按当前上游的大小计算；校验时两个版本都接受，已经装好旧文件的用户不用重新下载。
+export const SPEAKER_DIARIZATION_EMBEDDING_BYTES = 39_593_762;
+const SPEAKER_DIARIZATION_EMBEDDING_ACCEPTED_BYTES: readonly number[] = [
+  39_593_761,
+  SPEAKER_DIARIZATION_EMBEDDING_BYTES,
+];
 
 export const SPEAKER_DIARIZATION_ASSETS = {
   segmentation: {
@@ -71,17 +77,19 @@ export function validateSpeakerDiarizationModelDir(dir: string): {
   const expected = [
     {
       relative: path.join('pyannote', 'model.onnx'),
-      bytes: SPEAKER_DIARIZATION_SEGMENTATION_BYTES,
+      acceptedBytes: [SPEAKER_DIARIZATION_SEGMENTATION_BYTES],
     },
     {
       relative: SPEAKER_DIARIZATION_EMBEDDING_FILE,
-      bytes: SPEAKER_DIARIZATION_EMBEDDING_BYTES,
+      acceptedBytes: SPEAKER_DIARIZATION_EMBEDDING_ACCEPTED_BYTES,
     },
   ];
   const missing = expected
-    .filter(({ relative, bytes }) => {
+    .filter(({ relative, acceptedBytes }) => {
       try {
-        return fs.statSync(path.join(dir, relative)).size !== bytes;
+        return !acceptedBytes.includes(
+          fs.statSync(path.join(dir, relative)).size,
+        );
       } catch {
         return true;
       }
