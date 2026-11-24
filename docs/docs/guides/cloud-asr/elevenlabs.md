@@ -25,17 +25,17 @@ Scribe v3 支持 90 多种语言。转写录音或视频时，妙幕使用模型
 
 ## 在妙幕中配置
 
-打开「引擎」页面，在「云端听写」分组选「ElevenLabs」。下图展示旧版界面的入口，新版模型列表中可勾选 `scribe_v3`。
+打开「引擎」页面，在「云端听写」分组选「ElevenLabs」。
 
 <div className="img-container">
   <img src="/img/v3/cloud-asr/elevenlabs.webp" alt="ElevenLabs Scribe 云端听写配置表单" />
 </div>
 
-| 字段     | 填写                                               |
-| -------- | -------------------------------------------------- |
-| API Key  | 上一步创建的密钥                                   |
-| 模型     | 新配置默认勾选 `scribe_v3`，也可选择 `scribe_v2`   |
-| Base url | 默认 `https://api.elevenlabs.io/v1`，一般无需修改  |
+| 字段     | 填写                                              |
+| -------- | ------------------------------------------------- |
+| API Key  | 上一步创建的密钥                                  |
+| 模型     | 新配置默认勾选 `scribe_v3`，也可选择 `scribe_v2`  |
+| Base url | 默认 `https://api.elevenlabs.io/v1`，一般无需修改 |
 
 点击「**测试连接**」检查密钥。升级前已配置 ElevenLabs 的用户会保留原有模型选择。要改用 v3，在此处勾选 `scribe_v3`，然后在听写任务中选择该模型。
 
@@ -47,4 +47,4 @@ Scribe v3 支持 90 多种语言。转写录音或视频时，妙幕使用模型
 
 ---
 
-> [ElevenLabs 语音转文字模型说明](https://elevenlabs.io/docs/overview/capabilities/speech-to-text) · [套餐与用量](https://elevenlabs.io/pricing)
+> 信息更新于 2026-11，模型与定价以 [ElevenLabs 官网](https://elevenlabs.io/pricing) 为准；[语音转文字模型说明](https://elevenlabs.io/docs/overview/capabilities/speech-to-text)。

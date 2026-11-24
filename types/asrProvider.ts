@@ -221,6 +221,8 @@ export const ASR_PROVIDER_TYPES: AsrProviderType[] = [
         placeholder: 'phElevenApiKey',
       },
       {
+        // 枚举型模型清单（勾选，不做自由文本）：scribe_v3 为官方最新且新配置默认；v2 仍可用；
+        // v1 官方已列入弃用，仅为历史配置保留。勾选时按此 options 顺序排列，首项即默认使用的模型。
         key: 'models',
         label: 'asrModels',
         type: 'select',
