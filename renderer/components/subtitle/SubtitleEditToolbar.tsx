@@ -108,8 +108,9 @@ interface SubtitleEditToolbarProps {
   ) => void;
   shouldShowTranslation: boolean;
   getCursorPosition?: () => number; // 获取当前光标位置
+  getSplitPlayheadTime?: () => number | undefined;
   // 外部触发器
-  triggerSplit?: boolean;
+  splitRequest?: { index: number; playheadTime: number | undefined };
   onTriggerHandled?: () => void; // 当触发器被处理后调用
   /** 外部请求打开搜索替换（Cmd/Ctrl+F）：token 递增时展开面板并聚焦搜索框 */
   searchOpenToken?: number;
@@ -138,7 +139,8 @@ export default function SubtitleEditToolbar({
   onSplitSubtitle,
   shouldShowTranslation,
   getCursorPosition,
-  triggerSplit,
+  getSplitPlayheadTime,
+  splitRequest,
   onTriggerHandled,
   searchOpenToken,
   onLocateSubtitle,
@@ -179,7 +181,13 @@ export default function SubtitleEditToolbar({
   // 拆分对话框状态
   const [showSplit, setShowSplit] = useState(false);
   const [splitPosition, setSplitPosition] = useState(0);
-  const [splitTimePercent, setSplitTimePercent] = useState(50); // 时间拆分百分比
+  const [splitTimeMs, setSplitTimeMs] = useState(0);
+  const [splitSubtitleIndex, setSplitSubtitleIndex] = useState(-1);
+  const splitSubtitle = subtitles[splitSubtitleIndex];
+  const canConfirmSplit =
+    splitSubtitle &&
+    splitTimeMs > Math.round((splitSubtitle.startTimeInSeconds ?? 0) * 1000) &&
+    splitTimeMs < Math.round((splitSubtitle.endTimeInSeconds ?? 0) * 1000);
 
   // 时间轴偏移状态
   const [showTimeOffset, setShowTimeOffset] = useState(false);
@@ -425,25 +433,36 @@ export default function SubtitleEditToolbar({
   }, [mergeStart, mergeEnd, subtitles.length, onMergeSubtitles, t]);
 
   // 打开拆分对话框
-  const handleOpenSplit = useCallback(() => {
-    if (currentSubtitleIndex >= 0 && currentSubtitleIndex < subtitles.length) {
-      const subtitle = subtitles[currentSubtitleIndex];
+  const handleOpenSplit = useCallback(
+    (index: number, playheadTime: number | undefined) => {
+      const subtitle = subtitles[index];
+      if (!subtitle) return;
       const content = subtitle.sourceContent || '';
       const cursorPos = getCursorPosition
         ? getCursorPosition()
         : Math.floor(content.length / 2);
       setSplitPosition(Math.max(1, Math.min(cursorPos, content.length - 1)));
-      setSplitTimePercent(50);
+      const startMs = Math.round((subtitle.startTimeInSeconds ?? 0) * 1000);
+      const endMs = Math.round((subtitle.endTimeInSeconds ?? 0) * 1000);
+      const playheadMs =
+        playheadTime === undefined ? NaN : Math.round(playheadTime * 1000);
+      setSplitTimeMs(
+        playheadMs > startMs && playheadMs < endMs
+          ? playheadMs
+          : Math.round(startMs + (endMs - startMs) / 2),
+      );
+      setSplitSubtitleIndex(index);
       setShowSplit(true);
-    }
-  }, [currentSubtitleIndex, subtitles, getCursorPosition]);
+    },
+    [subtitles, getCursorPosition],
+  );
 
   useEffect(() => {
-    if (triggerSplit && currentSubtitleIndex >= 0) {
-      handleOpenSplit();
+    if (splitRequest) {
+      handleOpenSplit(splitRequest.index, splitRequest.playheadTime);
       onTriggerHandled?.();
     }
-  }, [triggerSplit, currentSubtitleIndex, handleOpenSplit, onTriggerHandled]);
+  }, [splitRequest, handleOpenSplit, onTriggerHandled]);
 
   return (
     <div
@@ -729,7 +748,9 @@ export default function SubtitleEditToolbar({
           variant="ghost"
           size="sm"
           className="h-8"
-          onClick={handleOpenSplit}
+          onClick={() =>
+            handleOpenSplit(currentSubtitleIndex, getSplitPlayheadTime?.())
+          }
           disabled={currentSubtitleIndex < 0}
           title={t('splitSubtitle')}
         >
@@ -743,18 +764,17 @@ export default function SubtitleEditToolbar({
           </DialogHeader>
           {/* 长字幕时预览区可滚动，确保底部的确认按钮始终可见 */}
           <div className="flex-1 min-h-0 overflow-y-auto">
-            {currentSubtitleIndex >= 0 &&
-              currentSubtitleIndex < subtitles.length && (
-                <SplitPreview
-                  subtitle={subtitles[currentSubtitleIndex]}
-                  splitPosition={splitPosition}
-                  setSplitPosition={setSplitPosition}
-                  splitTimePercent={splitTimePercent}
-                  setSplitTimePercent={setSplitTimePercent}
-                  shouldShowTranslation={shouldShowTranslation}
-                  t={t}
-                />
-              )}
+            {splitSubtitle && (
+              <SplitPreview
+                subtitle={splitSubtitle}
+                splitPosition={splitPosition}
+                setSplitPosition={setSplitPosition}
+                splitTimeMs={splitTimeMs}
+                setSplitTimeMs={setSplitTimeMs}
+                shouldShowTranslation={shouldShowTranslation}
+                t={t}
+              />
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -767,18 +787,13 @@ export default function SubtitleEditToolbar({
             </Button>
             <Button
               className="gap-1.5"
+              disabled={!canConfirmSplit}
               onClick={() => {
-                if (currentSubtitleIndex >= 0) {
-                  const subtitle = subtitles[currentSubtitleIndex];
-                  const startTime = subtitle.startTimeInSeconds || 0;
-                  const endTime = subtitle.endTimeInSeconds || 0;
-                  const splitTime =
-                    startTime +
-                    (endTime - startTime) * (splitTimePercent / 100);
+                if (canConfirmSplit) {
                   onSplitSubtitle(
-                    currentSubtitleIndex,
+                    splitSubtitleIndex,
                     splitPosition,
-                    splitTime,
+                    splitTimeMs / 1000,
                   );
                   setShowSplit(false);
                 }
@@ -892,8 +907,8 @@ interface SplitPreviewProps {
   subtitle: Subtitle;
   splitPosition: number;
   setSplitPosition: (pos: number) => void;
-  splitTimePercent: number;
-  setSplitTimePercent: (percent: number) => void;
+  splitTimeMs: number;
+  setSplitTimeMs: (timeMs: number) => void;
   shouldShowTranslation: boolean;
   t: (key: string) => string;
 }
@@ -902,8 +917,8 @@ function SplitPreview({
   subtitle,
   splitPosition,
   setSplitPosition,
-  splitTimePercent,
-  setSplitTimePercent,
+  splitTimeMs,
+  setSplitTimeMs,
   shouldShowTranslation,
   t,
 }: SplitPreviewProps) {
@@ -911,7 +926,8 @@ function SplitPreview({
   const targetContent = subtitle.targetContent || '';
   const startTime = subtitle.startTimeInSeconds || 0;
   const endTime = subtitle.endTimeInSeconds || 0;
-  const duration = endTime - startTime;
+  const firstInteriorMs = Math.round(startTime * 1000) + 1;
+  const lastInteriorMs = Math.round(endTime * 1000) - 1;
 
   // 计算拆分后的内容
   const part1 = content.slice(0, splitPosition);
@@ -925,13 +941,13 @@ function SplitPreview({
   const targetPart2 = targetContent.slice(targetSplitPos);
 
   // 计算时间
-  const splitTime = startTime + duration * (splitTimePercent / 100);
+  const splitTime = splitTimeMs / 1000;
 
   // 格式化时间显示
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
-    const s = (seconds % 60).toFixed(2);
-    return `${m}:${s.padStart(5, '0')}`;
+    const s = (seconds % 60).toFixed(3);
+    return `${m}:${s.padStart(6, '0')}`;
   };
 
   return (
@@ -1008,11 +1024,16 @@ function SplitPreview({
             {formatTime(startTime)}
           </span>
           <Slider
-            value={[splitTimePercent]}
-            min={5}
-            max={95}
-            step={1}
-            onValueChange={([v]) => setSplitTimePercent(v)}
+            aria-label={t('timeSplitPosition')}
+            value={[splitTimeMs]}
+            min={firstInteriorMs}
+            max={Math.max(firstInteriorMs, lastInteriorMs)}
+            step={Math.max(
+              1,
+              Math.round((lastInteriorMs - firstInteriorMs + 2) / 100),
+            )}
+            disabled={firstInteriorMs >= lastInteriorMs}
+            onValueChange={([v]) => setSplitTimeMs(v)}
             className="flex-1"
           />
           <span className="text-sm text-muted-foreground">

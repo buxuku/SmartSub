@@ -360,6 +360,11 @@ export default function ProofreadEditor({
     [handleProgress, playerRef, setCurrentSubtitleIndex],
   );
 
+  const getSplitPlayheadTime = useCallback(
+    () => playerRef.current?.getCurrentTime(),
+    [playerRef],
+  );
+
   const splitAtPlayhead = () => {
     if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
     const row = getSubtitles()[currentSubtitleIndex];
@@ -441,7 +446,10 @@ export default function ProofreadEditor({
   const showLeftPanel = hasVideo && !videoCollapsed;
 
   // 外部触发器状态
-  const [triggerSplit, setTriggerSplit] = useState(false);
+  const [splitRequest, setSplitRequest] = useState<{
+    index: number;
+    playheadTime: number | undefined;
+  }>();
 
   // 处理从字幕列表点击 AI 优化按钮
   const handleAiOptimizeClick = useCallback(
@@ -455,18 +463,16 @@ export default function ProofreadEditor({
   // 处理从字幕列表点击拆分按钮
   const handleSplitClick = useCallback(
     (index: number) => {
-      handleSubtitleClick(index);
-      // 使用 setTimeout 确保 currentSubtitleIndex 已更新
-      setTimeout(() => {
-        setTriggerSplit(true);
-      }, 0);
+      // Select the cue without seeking: the split dialog needs the current playhead.
+      setSplitRequest({ index, playheadTime: getSplitPlayheadTime() });
+      setCurrentSubtitleIndex(index);
     },
-    [handleSubtitleClick],
+    [getSplitPlayheadTime, setCurrentSubtitleIndex],
   );
 
   // 重置触发器
   const handleTriggerHandled = useCallback(() => {
-    setTriggerSplit(false);
+    setSplitRequest(undefined);
   }, []);
 
   // 注册全局离开守卫（拦截侧栏 NavLink、Cmd+K 命令面板、浏览器前进后退等）
@@ -866,7 +872,8 @@ export default function ProofreadEditor({
           onSplitSubtitle={handleSplitSubtitle}
           shouldShowTranslation={shouldShowTranslation}
           getCursorPosition={getCursorPosition}
-          triggerSplit={triggerSplit}
+          getSplitPlayheadTime={getSplitPlayheadTime}
+          splitRequest={splitRequest}
           onTriggerHandled={handleTriggerHandled}
           searchOpenToken={searchOpenToken}
           onLocateSubtitle={handleSubtitleClick}
