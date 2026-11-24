@@ -3965,11 +3965,14 @@ eq(
     model: 'scribe_v2',
     asrProviderId: saved.id,
   };
+  const selected = pickDefaultEngineModel(groups, last);
+  eq(selected?.engine, last.engine, 'asr: restores the saved cloud engine');
   eq(
-    pickDefaultEngineModel(groups, last),
-    last,
-    'asr: a saved task selection keeps its explicitly chosen Scribe model',
+    selected?.asrProviderId,
+    last.asrProviderId,
+    'asr: restores the saved ElevenLabs provider instance',
   );
+  eq(selected?.model, last.model, 'asr: restores the saved Scribe model');
 }
 eq(
   getAsrProviderType('deepgram')?.fields.find((f) => f.key === 'models')

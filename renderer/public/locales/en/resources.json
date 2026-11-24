@@ -410,7 +410,7 @@
   "asrRequestIntervalTips": "Minimum seconds between requests to respect rate limits (0 = no limit).",
   "asrElevenApiKeyTips": "ElevenLabs API Key — sign up and create one at the <a href='https://elevenlabs.io/app/settings/api-keys' style='color: blue'>ElevenLabs console ▸ API Keys</a>. Stored locally only.",
   "asrApiUrlElevenTips": "Base URL of the ElevenLabs endpoint. Leave empty to use the official https://api.elevenlabs.io/v1 (set it only if you use a proxy).",
-  "asrModelsElevenTips": "New configurations use scribe_v3 by default. You can choose any enabled model for a transcription task. scribe_v1 is deprecated.",
+  "asrModelsElevenTips": "Toggle the models to enable; the first selected is used by default (new configurations enable scribe_v3). You can also pick any enabled model per transcription task. scribe_v1 is deprecated.",
   "phElevenApiKey": "your ElevenLabs API key",
   "asrDeepgramApiKeyTips": "Deepgram API Key — sign up and create one in the <a href='https://console.deepgram.com/' style='color: blue'>Deepgram console</a>; new accounts include free credits. Stored locally only.",
   "asrApiUrlDeepgramTips": "Base URL of the Deepgram endpoint. Leave empty to use the official https://api.deepgram.com/v1 (set it only if you use a proxy).",
