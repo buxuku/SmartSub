@@ -13,7 +13,8 @@ import {
 // v24：同 type 服务实例与任务内回退链
 // v25：AI 翻译默认批次与并发调优；AI 断句复用服务商并发配置
 // v26：新增有道免费翻译 youdaoFree；autoFree 未自定义的旧默认回退链改为有道在前
-const CURRENT_PROVIDER_VERSION = 26;
+// v27：新增 Atlas Cloud（OpenAI 兼容）AI 翻译服务商
+const CURRENT_PROVIDER_VERSION = 27;
 
 export async function getAndInitializeProviders(): Promise<Provider[]> {
   try {
