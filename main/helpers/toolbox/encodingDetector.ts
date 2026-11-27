@@ -124,15 +124,20 @@ export function detectBufferEncoding(buffer: Buffer): EncodingDetectResult {
 export function decodeBufferToString(
   buffer: Buffer,
   forcedEncoding?: string,
+  { preserveLineEndings = false } = {},
 ): { text: string; detectedEncoding: string } {
   const detect = detectBufferEncoding(buffer);
-  const targetEncoding = (forcedEncoding && forcedEncoding !== 'auto')
-    ? forcedEncoding.toLowerCase()
-    : detect.encoding.toLowerCase();
+  const targetEncoding =
+    forcedEncoding && forcedEncoding !== 'auto'
+      ? forcedEncoding.toLowerCase()
+      : detect.encoding.toLowerCase();
 
   let raw = '';
 
-  if (targetEncoding.includes('utf-8 with bom') || (targetEncoding.includes('utf-8') && detect.hasBom)) {
+  if (
+    targetEncoding.includes('utf-8 with bom') ||
+    (targetEncoding.includes('utf-8') && detect.hasBom)
+  ) {
     raw = buffer.subarray(3).toString('utf-8');
   } else if (targetEncoding.includes('utf-16le')) {
     const offset = detect.hasBom ? 2 : 0;
@@ -148,11 +153,8 @@ export function decodeBufferToString(
     raw = buffer.toString('utf-8');
   }
 
-  // 规整换行符为标准 \n
-  const normalized = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
   return {
-    text: normalized,
+    text: preserveLineEndings ? raw : raw.replace(/\r\n?/g, '\n'),
     detectedEncoding: detect.encoding,
   };
 }
@@ -163,11 +165,14 @@ export function decodeBufferToString(
 export function encodeStringToBuffer(
   text: string,
   targetEncoding: 'utf-8' | 'utf-8-bom' | 'gb18030' | 'big5' = 'utf-8',
+  { preserveLineEndings = false } = {},
 ): Buffer {
   // 规范换行符：在 Windows 下如果目标是 GB18030/ANSI，使用 \r\n，否则保持 \n
-  const outputText = targetEncoding === 'gb18030'
-    ? text.replace(/\r?\n/g, '\r\n')
-    : text.replace(/\r\n/g, '\n');
+  const outputText = preserveLineEndings
+    ? text
+    : targetEncoding === 'gb18030'
+      ? text.replace(/\r?\n/g, '\r\n')
+      : text.replace(/\r\n/g, '\n');
 
   switch (targetEncoding) {
     case 'utf-8-bom':

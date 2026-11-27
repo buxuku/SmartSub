@@ -9,6 +9,7 @@
 
 import fs from 'fs';
 import { reserveToolboxOutput, writeToolboxOutput } from './outputPath';
+import { retimeFormattedSubtitle } from './subtitleSyncFormats';
 import path from 'path';
 import {
   FRAMERATE_RATIO_PRESETS,
@@ -20,7 +21,6 @@ import {
   parseSubtitleCues,
   serializeSubtitleCues,
   type SubtitleCue,
-  type SubtitleFormat,
 } from '../subtitleFormats';
 import type {
   SubtitleSyncConfig,
@@ -107,11 +107,29 @@ export async function executeSubtitleSync(
     }
 
     const buffer = await fs.promises.readFile(filePath);
-    const { text, detectedEncoding } = decodeBufferToString(buffer);
+    const { text, detectedEncoding } = decodeBufferToString(buffer, undefined, {
+      preserveLineEndings: true,
+    });
     const format = detectSubtitleFormatFromContent(filePath, text);
-    const cues = parseSubtitleCues(text, format);
+    let outputContent: string;
+    let cuesCount: number;
+    if (format === 'vtt' || format === 'ass') {
+      const unchangedOffset =
+        config.mode === 'offset' && (config.offsetMs ?? 0) === 0;
+      const retimed = retimeFormattedSubtitle(text, format, (timing) =>
+        unchangedOffset
+          ? timing
+          : syncCues([{ ...timing, text: '' }], config)[0],
+      );
+      outputContent = retimed.text;
+      cuesCount = retimed.cuesCount;
+    } else {
+      const updatedCues = syncCues(parseSubtitleCues(text, format), config);
+      outputContent = serializeSubtitleCues(updatedCues, format);
+      cuesCount = updatedCues.length;
+    }
 
-    if (cues.length === 0) {
+    if (cuesCount === 0) {
       return {
         success: false,
         outputPath: '',
@@ -119,12 +137,6 @@ export async function executeSubtitleSync(
         error: 'No valid subtitle cues found',
       };
     }
-
-    const updatedCues = syncCues(cues, config);
-    const outputContent = serializeSubtitleCues(
-      updatedCues,
-      format as SubtitleFormat,
-    );
 
     const dir = outputPath ? path.dirname(outputPath) : path.dirname(filePath);
     const ext = path.extname(filePath);
@@ -137,6 +149,7 @@ export async function executeSubtitleSync(
     const outBuf = encodeStringToBuffer(
       outputContent,
       detectedEncoding.toLowerCase().includes('bom') ? 'utf-8-bom' : 'utf-8',
+      { preserveLineEndings: format === 'vtt' || format === 'ass' },
     );
 
     await writeToolboxOutput(targetOutput, outBuf);
@@ -144,7 +157,7 @@ export async function executeSubtitleSync(
     return {
       success: true,
       outputPath: targetOutput,
-      cuesCount: updatedCues.length,
+      cuesCount,
     };
   } catch (err: any) {
     return {
