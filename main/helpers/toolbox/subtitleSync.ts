@@ -30,6 +30,7 @@ import type {
 export function syncCues(
   cues: SubtitleCue[],
   config: SubtitleSyncConfig,
+  format?: SubtitleFormat,
 ): SubtitleCue[] {
   const {
     mode,
@@ -58,13 +59,22 @@ export function syncCues(
   )
     throw new Error('Anchor timestamps must be finite and increasing');
 
-  return cues.map((cue) => {
+  return cues.flatMap((cue) => {
     let newStart = cue.startMs;
     let newEnd = cue.endMs;
 
     if (mode === 'offset') {
       newStart = Math.max(0, cue.startMs + offsetMs);
-      newEnd = Math.max(newStart + 10, cue.endMs + offsetMs);
+      const shiftedEnd = cue.endMs + offsetMs;
+      // A cue wholly before the new timeline has no visible part.
+      if (offsetMs < 0 && shiftedEnd <= 0) return [];
+      newEnd =
+        offsetMs < 0 && shiftedEnd > newStart
+          ? format === 'ass'
+            ? // ASS stores centiseconds; don't serialize a visible cue at zero duration.
+              Math.max(shiftedEnd, (Math.floor(newStart / 10) + 1) * 10)
+            : shiftedEnd
+          : Math.max(newStart + 10, shiftedEnd);
     } else if (mode === 'scale') {
       newStart = Math.max(0, scale(cue.startMs));
       newEnd = Math.max(newStart + 10, scale(cue.endMs));
@@ -120,11 +130,20 @@ export async function executeSubtitleSync(
       };
     }
 
-    const updatedCues = syncCues(cues, config);
+    const updatedCues = syncCues(cues, config, format);
     const outputContent = serializeSubtitleCues(
       updatedCues,
       format as SubtitleFormat,
     );
+
+    if (updatedCues.length === 0) {
+      return {
+        success: false,
+        outputPath: '',
+        cuesCount: 0,
+        error: 'All subtitle cues end before or at zero after the offset',
+      };
+    }
 
     const dir = outputPath ? path.dirname(outputPath) : path.dirname(filePath);
     const ext = path.extname(filePath);
