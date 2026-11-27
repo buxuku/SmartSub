@@ -10,6 +10,7 @@ const testFiles = [
   'test-video-trimmer.ts',
   'test-media-probe.cjs',
   'test-subtitle-sync.ts',
+  'test-subtitle-sync-formats.ts',
   'test-bilingual-subtitles.ts',
   'test-audio-extractor.ts',
   'test-embedded-subtitles.cjs',
