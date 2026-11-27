@@ -123,6 +123,66 @@ async function runTests() {
     assert.strictEqual(res.cuesCount, 2);
     const content = fs.readFileSync(res.outputPath, 'utf-8');
     assert.ok(content.includes('00:00:02,000 --> 00:00:04,000'));
+
+    const negativePath = path.join(tmpDir, 'negative.srt');
+    fs.writeFileSync(
+      negativePath,
+      [
+        '1\n00:00:01,000 --> 00:00:02,000\nBefore zero',
+        '2\n00:00:02,000 --> 00:00:03,000\nEnds exactly at zero',
+        '3\n00:00:02,990 --> 00:00:03,005\nCrosses zero',
+        '4\n00:00:05,000 --> 00:00:06,000\nAfter zero',
+      ].join('\n\n'),
+      'utf-8',
+    );
+    const negative = await executeSubtitleSync({
+      filePath: negativePath,
+      mode: 'offset',
+      offsetMs: -3000,
+    });
+    assert.strictEqual(negative.success, true, negative.error);
+    assert.strictEqual(negative.cuesCount, 2);
+    const negativeContent = fs.readFileSync(negative.outputPath, 'utf-8');
+    assert.doesNotMatch(negativeContent, /Before zero|Ends exactly at zero/);
+    assert.match(
+      negativeContent,
+      /00:00:00,000 --> 00:00:00,005\nCrosses zero/,
+    );
+    assert.match(negativeContent, /00:00:02,000 --> 00:00:03,000\nAfter zero/);
+
+    const assPath = path.join(tmpDir, 'negative.ass');
+    fs.writeFileSync(
+      assPath,
+      [
+        '[Script Info]',
+        'ScriptType: v4.00+',
+        '[Events]',
+        'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
+        'Dialogue: 0,0:00:02.99,0:00:03.00,Default,,0,0,0,,Crosses zero',
+      ].join('\n'),
+    );
+    const ass = await executeSubtitleSync({
+      filePath: assPath,
+      mode: 'offset',
+      offsetMs: -2995,
+    });
+    assert.strictEqual(ass.success, true, ass.error);
+    assert.strictEqual(ass.cuesCount, 1);
+    assert.match(
+      fs.readFileSync(ass.outputPath, 'utf-8'),
+      /Dialogue: 0,0:00:00\.00,0:00:00\.01,/,
+    );
+
+    const allBeforeZero = await executeSubtitleSync({
+      filePath: negativePath,
+      mode: 'offset',
+      offsetMs: -6000,
+      outputPath: path.join(tmpDir, 'all-before-zero.srt'),
+    });
+    assert.strictEqual(allBeforeZero.success, false);
+    assert.strictEqual(allBeforeZero.cuesCount, 0);
+    assert.match(allBeforeZero.error ?? '', /before or at zero/);
+    assert.ok(!fs.existsSync(path.join(tmpDir, 'all-before-zero.srt')));
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
